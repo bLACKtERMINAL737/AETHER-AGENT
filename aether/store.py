@@ -249,10 +249,12 @@ class TaskStore:
         return dict(row)
 
     def list_session_messages(self, session_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        # Use the declared primary key rather than SQLite rowid; the table may be
+        # backed by a WITHOUT ROWID schema in an existing local database.
         with self.connect() as con:
             rows = con.execute(
                 "SELECT * FROM (SELECT * FROM session_messages WHERE session_id=? "
-                "ORDER BY created_at DESC, rowid DESC LIMIT ?) ORDER BY created_at, rowid",
+                "ORDER BY created_at DESC, id DESC LIMIT ?) ORDER BY created_at, id",
                 (session_id, limit),
             ).fetchall()
         return [dict(row) for row in rows]
