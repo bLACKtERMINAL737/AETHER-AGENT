@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 import logging
+import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from .coding import CodingEngine, CodingError
 from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
@@ -20,6 +22,11 @@ primary_provider = ModelProvider(settings.model_base_url, settings.model_api_key
 coding_provider = ModelProvider(settings.coding_model_base_url, settings.coding_model_api_key, settings.coding_model_name)
 fallback_provider = ModelProvider(settings.fallback_model_base_url, settings.fallback_model_api_key, settings.fallback_model_name)
 router = ModelRouter(primary_provider, coding_provider, fallback_provider)
+coding = CodingEngine(
+    settings.workspace, store, router,
+    enable_test_runner=os.getenv("AETHER_ENABLE_TEST_RUNNER", "").lower() == "true",
+    test_timeout_seconds=int(os.getenv("AETHER_TEST_TIMEOUT_SECONDS", "60")),
+)
 
 
 @asynccontextmanager
@@ -30,7 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Project Aether API", version="0.2.0",
+app = FastAPI(title="Project Aether API", version="0.3.0",
               description="Local-first hybrid AI agent MVP. Bind to localhost only.", lifespan=lifespan)
 
 
@@ -49,6 +56,11 @@ class ToolRequest(BaseModel):
     input: dict[str, object] = Field(default_factory=dict)
 
 
+class CodingProposalRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=8_000)
+    paths: list[str] = Field(min_length=1, max_length=8)
+
+
 @app.get("/health")
 def health():
     return {
@@ -57,6 +69,7 @@ def health():
         "provider_configured": primary_provider.configured,
         "coding_route_configured": coding_provider.configured,
         "fallback_route_configured": fallback_provider.configured,
+        "coding_test_runner_enabled": coding.enable_test_runner,
     }
 
 
@@ -124,3 +137,62 @@ async def chat(request: ChatRequest):
         logger.exception("Model provider request failed")
         raise HTTPException(status_code=502, detail="Model provider request failed; see local logs") from exc
     return result
+
+
+@app.post("/coding/proposals")
+async def create_coding_proposal(request: CodingProposalRequest):
+    try:
+        return await coding.propose(request.instruction, request.paths)
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CodingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Could not create coding proposal")
+        raise HTTPException(status_code=502, detail="Coding proposal failed; see local logs") from exc
+
+
+@app.get("/coding/proposals/{proposal_id}")
+def get_coding_proposal(proposal_id: str):
+    proposal = store.get_proposal(proposal_id)
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    return proposal
+
+
+@app.post("/coding/proposals/{proposal_id}/approve")
+def approve_coding_proposal(proposal_id: str):
+    try:
+        return coding.approve(proposal_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CodingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/coding/proposals/{proposal_id}/reject")
+def reject_coding_proposal(proposal_id: str):
+    try:
+        return coding.reject(proposal_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/coding/proposals/{proposal_id}/apply")
+def apply_coding_proposal(proposal_id: str):
+    try:
+        return coding.apply(proposal_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CodingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/coding/run-tests")
+def run_coding_tests():
+    try:
+        return coding.run_tests()
+    except CodingError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
