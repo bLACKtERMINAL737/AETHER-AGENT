@@ -5,6 +5,8 @@ A local-first AI agent foundation with durable task state, configurable model ro
 ## Included
 
 - FastAPI local API and OpenAPI docs
+- Optional API bearer token and same-origin checks for state-changing requests
+- SQLite-backed explicit long-term memory with category/tag search and deletion
 - SQLite task journal and durable tool execution records
 - Workspace-confined file listing and text search
 - OpenAI-compatible model adapter with primary, coding-specialist, and fallback routes
@@ -19,8 +21,10 @@ A local-first AI agent foundation with durable task state, configurable model ro
 
 ## Important safety notes
 
-- Bind the API to localhost only. API authentication is not included yet.
-- The UI is a local review surface, not an authentication system. Anyone able to reach the API can call its endpoints.
+- Bind the API to localhost only. Set `AETHER_API_TOKEN` to require a shared token for API routes; health, UI assets, and API schema/docs remain reachable without the token.
+- The local UI stores the entered token in this browser tab's session storage and sends it in the `X-Aether-Token` header. Do not expose this unauthenticated static UI or the API to a public network.
+- When no token is configured, API requests are allowed only from loopback clients. This is a development fallback, not authentication against other local processes.
+- State-changing requests with an Origin header must use the same loopback host and port. This is defense in depth, not a substitute for keeping the service local.
 - Coding proposals only edit explicitly selected, existing files. New-file creation and arbitrary shell access are not supported.
 - The Docker test runner is disabled by default. When enabled, it requires a prebuilt local image, disables networking, drops Linux capabilities, runs as an unprivileged UID, sets resource limits, uses a read-only container root, and tests a disposable copy of the workspace.
 - Docker isolation is a useful layer, not a perfect security boundary. Keep Docker and the host patched. Do not run hostile workloads on a sensitive machine.
@@ -43,6 +47,15 @@ cp .env.example .env
 
 Environment variables are read from the process. This MVP does not load `.env` automatically; export the values with your preferred local environment manager.
 
+Generate a local API token:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+export AETHER_API_TOKEN='paste-generated-token-here'
+```
+
+On PowerShell, set `$env:AETHER_API_TOKEN="paste-generated-token-here"`. Start the server after setting the variable, then paste the same token into the UI's API token field. Never commit the token to Git.
+
 ## Configure model providers
 
 - `AETHER_MODEL_BASE_URL`, `AETHER_MODEL_API_KEY`, `AETHER_MODEL_NAME`: default route
@@ -53,6 +66,7 @@ Environment variables are read from the process. This MVP does not load `.env` a
 - `AETHER_ENABLE_TEST_RUNNER`: defaults to `false`; set to `true` to enable Docker-backed pytest
 - `AETHER_TEST_TIMEOUT_SECONDS`: timeout, clamped to 5–120 seconds
 - `AETHER_SANDBOX_IMAGE`: local image name, default `aether-sandbox:latest`
+- `AETHER_API_TOKEN`: optional shared token required for API routes; leave unset only for loopback-only development
 
 Never commit real API keys.
 
@@ -109,6 +123,17 @@ Equivalent API endpoints:
 - `GET /coding/files?path=.`
 - `POST /coding/run-tests`
 
+## Long-term memory
+
+Memory is explicit and local, not an automatic model context feed. Use the UI's memory section or these API routes:
+
+- `POST /memory` to save `{ "category": "preference", "content": "...", "tags": ["..."], "source": "user" }`
+- `GET /memory?limit=100&category=preference` to list saved memories
+- `POST /memory/search` to perform local keyword search
+- `DELETE /memory/{memory_id}` to delete a record
+
+Memory search is lexical keyword matching, not embeddings or semantic retrieval. The app does not silently infer or store user memories from chats.
+
 ## Reliability behavior
 
 - SQLite WAL persistence for tasks, tool executions, and coding proposals.
@@ -127,8 +152,6 @@ The test suite includes unit tests for workspace path restrictions, proposal app
 
 ## Next milestones
 
-1. Add local API authentication and CSRF/origin safeguards before allowing non-local access.
-2. Run security tests against the full approval/apply flow, including concurrent requests and crashes.
-3. Add crash/concurrency tests and harden the proposal/apply lifecycle.
-4. Add session history and controlled memory retrieval.
-5. Benchmark latency, reliability, and cost before enabling automatic cost-based routing.
+1. Run security tests against the full approval/apply flow, including concurrent requests and crashes.
+2. Add session history and optional, user-approved memory retrieval into model context.
+3. Benchmark latency, reliability, and cost before enabling automatic cost-based routing.
