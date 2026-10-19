@@ -36,15 +36,20 @@ class CodingEngine:
         raw = Path(relative)
         if raw.is_absolute():
             raise CodingError("Use relative paths inside the configured workspace")
-        target = (self.workspace / raw).resolve()
+        candidate = self.workspace / raw
+        # Reject symlinks before resolve(), because resolve() hides the symlink itself.
+        cursor = candidate
+        while cursor != self.workspace and cursor != cursor.parent:
+            if cursor.is_symlink():
+                raise CodingError("Symlink paths are not supported")
+            cursor = cursor.parent
+        target = candidate.resolve()
         try:
             target.relative_to(self.workspace)
         except ValueError as exc:
             raise CodingError("Path escapes the configured workspace") from exc
         if must_exist and (not target.exists() or not target.is_file()):
             raise CodingError(f"File does not exist: {relative}")
-        if target.exists() and target.is_symlink():
-            raise CodingError("Symlink targets are not supported")
         return target
 
     def read_sources(self, paths: list[str]) -> list[dict[str, str]]:
