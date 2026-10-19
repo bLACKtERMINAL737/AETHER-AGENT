@@ -131,7 +131,7 @@ async def test_iterative_loop_returns_pending_proposal_after_sandbox_pass(tmp_pa
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     source = workspace / "sample.py"
-    original = "def value():\\n    return 1\\n"
+    original = "def value():\n    return 1\n"
     source.write_text(original, encoding="utf-8")
     store = TaskStore(tmp_path / "aether.sqlite3")
     router = SequenceRouter()
@@ -168,7 +168,7 @@ async def test_iterative_loop_never_proposes_failed_candidate(tmp_path: Path, mo
 
     assert outcome["passed"] is False
     assert outcome["proposal"] is None
-    assert source.read_text(encoding="utf-8") == "def value():\\n    return 1\\n"
+    assert source.read_text(encoding="utf-8") == "def value():\n    return 1\n"
     assert all(p["status"] == "rejected" for p in store.list_proposals())
 
 
