@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
 import logging
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
 from .config import Settings
-from .provider import ModelProvider, ProviderNotConfigured
+from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .tools import ToolRegistry, ToolError
 
@@ -13,7 +16,10 @@ settings = Settings.from_env()
 settings.workspace.mkdir(parents=True, exist_ok=True)
 store = TaskStore(settings.db_path)
 tools = ToolRegistry(settings.workspace)
-provider = ModelProvider(settings.model_base_url, settings.model_api_key, settings.model_name)
+primary_provider = ModelProvider(settings.model_base_url, settings.model_api_key, settings.model_name)
+coding_provider = ModelProvider(settings.coding_model_base_url, settings.coding_model_api_key, settings.coding_model_name)
+fallback_provider = ModelProvider(settings.fallback_model_base_url, settings.fallback_model_api_key, settings.fallback_model_name)
+router = ModelRouter(primary_provider, coding_provider, fallback_provider)
 
 
 @asynccontextmanager
@@ -24,12 +30,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Project Aether API", version="0.1.0",
+app = FastAPI(title="Project Aether API", version="0.2.0",
               description="Local-first hybrid AI agent MVP. Bind to localhost only.", lifespan=lifespan)
 
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
+    task_type: Literal["general", "coding", "reasoning"] = "general"
 
 
 class TaskRequest(BaseModel):
@@ -44,8 +51,13 @@ class ToolRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "project": "aether",
-            "provider_configured": bool(settings.model_base_url and settings.model_api_key and settings.model_name)}
+    return {
+        "status": "ok",
+        "project": "aether",
+        "provider_configured": primary_provider.configured,
+        "coding_route_configured": coding_provider.configured,
+        "fallback_route_configured": fallback_provider.configured,
+    }
 
 
 @app.get("/tools")
@@ -105,10 +117,10 @@ def get_task(task_id: str):
 @app.post("/chat")
 async def chat(request: ChatRequest):
     try:
-        answer = await provider.chat(request.message)
+        result = await router.chat(request.message, request.task_type)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Model provider request failed")
         raise HTTPException(status_code=502, detail="Model provider request failed; see local logs") from exc
-    return {"answer": answer}
+    return result
