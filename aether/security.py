@@ -8,7 +8,6 @@ from starlette.responses import JSONResponse
 
 EXEMPT_PATHS = {"/health", "/ui", "/ui/", "/docs", "/openapi.json", "/redoc"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def _is_loopback(host: str | None) -> bool:
@@ -25,32 +24,26 @@ def _is_loopback(host: str | None) -> bool:
 
 def _origin_is_local(origin: str, request_host: str, request_scheme: str | None = None) -> bool:
     try:
-        parsed = urlsplit(origin)
-        origin_host = parsed.hostname
-        request_name = request_host.split(":", 1)[0].strip("[]").lower()
-        if not parsed.scheme or not origin_host or parsed.username or parsed.password:
+        parsed_origin = urlsplit(origin)
+        parsed_request = urlsplit("//" + request_host)
+        origin_host = parsed_origin.hostname
+        request_name = parsed_request.hostname
+        if not parsed_origin.scheme or not origin_host or not request_name:
             return False
-        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        if parsed_origin.username or parsed_origin.password or parsed_origin.path not in {"", "/"}:
             return False
-        if request_scheme and parsed.scheme.lower() != request_scheme.lower():
+        if parsed_origin.query or parsed_origin.fragment:
             return False
-        origin_port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
-        host_port = None
-        if ":" in request_host and not request_host.startswith("["):
-            request_name, port_text = request_host.rsplit(":", 1)
-            if port_text.isdigit():
-                host_port = int(port_text)
-        elif request_host.startswith("[") and "]:" in request_host:
-            request_name, port_text = request_host[1:].split("]:", 1)
-            if port_text.isdigit():
-                host_port = int(port_text)
-        if host_port is None:
-            host_port = 443 if parsed.scheme.lower() == "https" else 80
+        if request_scheme and parsed_origin.scheme.lower() != request_scheme.lower():
+            return False
+        default_port = 443 if parsed_origin.scheme.lower() == "https" else 80
+        origin_port = parsed_origin.port or default_port
+        request_port = parsed_request.port or default_port
         return (
             _is_loopback(origin_host)
             and _is_loopback(request_name)
             and origin_host.lower().strip("[]") == request_name.lower().strip("[]")
-            and origin_port == host_port
+            and origin_port == request_port
         )
     except (TypeError, ValueError):
         return False
