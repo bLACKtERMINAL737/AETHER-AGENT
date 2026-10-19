@@ -10,6 +10,7 @@ A local-first AI agent foundation with durable task state, configurable model ro
 - OpenAI-compatible model adapter with primary, coding-specialist, and fallback routes
 - Bounded retries for transient network, timeout, and HTTP 5xx failures
 - Coding proposals with complete-file diffs and persisted approval state
+- Bounded test-and-fix loop (up to 3 rounds) on a disposable workspace copy; only a passing candidate becomes a pending proposal
 - Explicit approval before proposed file changes are applied
 - Stale-file detection and workspace path checks
 - Local review UI at `http://127.0.0.1:8000/ui/`
@@ -100,6 +101,7 @@ uvicorn aether.app:app --host 127.0.0.1 --port 8000
 
 Equivalent API endpoints:
 - `POST /coding/proposals`
+- `POST /coding/iterate` with `instruction`, `paths`, and optional `max_rounds` (1–3)
 - `GET /coding/proposals/{proposal_id}`
 - `POST /coding/proposals/{proposal_id}/approve`
 - `POST /coding/proposals/{proposal_id}/reject`
@@ -127,6 +129,6 @@ The test suite includes unit tests for workspace path restrictions, proposal app
 
 1. Add local API authentication and CSRF/origin safeguards before allowing non-local access.
 2. Run security tests against the full approval/apply flow, including concurrent requests and crashes.
-3. Add a safe iterative coding loop that generates a proposal, runs sandbox tests, summarizes failures, and asks for approval before applying any new patch.
+3. Add crash/concurrency tests and harden the proposal/apply lifecycle.
 4. Add session history and controlled memory retrieval.
 5. Benchmark latency, reliability, and cost before enabling automatic cost-based routing.
