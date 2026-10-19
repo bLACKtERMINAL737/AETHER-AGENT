@@ -24,7 +24,7 @@ def make_engine(tmp_path: Path, answer: str):
 
 @pytest.mark.asyncio
 async def test_proposal_is_pending_and_does_not_change_files(tmp_path: Path):
-    answer = '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
+    answer = '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\n    return 2\n"}]}'
     engine, store, workspace, source = make_engine(tmp_path, answer)
     before = source.read_text(encoding="utf-8")
     proposal = await engine.propose("Change value to 2", ["sample.py"])
