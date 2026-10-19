@@ -89,6 +89,7 @@ $("saveToken").onclick=()=>{
  const token=$("apiToken").value.trim();
  if(token) sessionStorage.setItem("aetherApiToken",token); else sessionStorage.removeItem("aetherApiToken");
  setStatus("tokenStatus",token?"Token saved for this tab.":"No token saved.","good");
+ refreshFiles();loadMemories();
 };
 $("clearToken").onclick=()=>{
  sessionStorage.removeItem("aetherApiToken");$("apiToken").value="";
