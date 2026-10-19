@@ -12,6 +12,7 @@ from .coding import CodingEngine, CodingError
 from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
+from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError
 
 logging.basicConfig(level=logging.INFO)
@@ -40,8 +41,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Project Aether API", version="0.3.0",
+app = FastAPI(title="Project Aether API", version="0.4.0",
               description="Local-first hybrid AI agent MVP. Bind to localhost only.", lifespan=lifespan)
+app.add_middleware(LocalAPIProtection)
 
 
 class ChatRequest(BaseModel):
@@ -70,6 +72,18 @@ class CodingIterationRequest(BaseModel):
     max_rounds: int = Field(default=3, ge=1, le=3)
 
 
+class MemoryCreateRequest(BaseModel):
+    category: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=4_000)
+    source: str = Field(default="user", max_length=100)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+class MemorySearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=300)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
 @app.get("/health")
 def health():
     return {
@@ -80,6 +94,7 @@ def health():
         "fallback_route_configured": fallback_provider.configured,
         "coding_test_runner_enabled": coding.enable_test_runner,
         "sandbox_image": coding.sandbox_image,
+        "api_token_required": bool(os.getenv("AETHER_API_TOKEN", "").strip()),
     }
 
 
@@ -240,3 +255,27 @@ def list_coding_files(path: str = "."):
 
 
 app.mount("/ui", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="ui")
+
+
+@app.post("/memory")
+def create_memory(request: MemoryCreateRequest):
+    return store.add_memory(request.category, request.content, request.source, request.tags)
+
+
+@app.get("/memory")
+def list_memory(limit: int = 100, category: str | None = None):
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    return {"memories": store.list_memories(limit=limit, category=category)}
+
+
+@app.post("/memory/search")
+def search_memory(request: MemorySearchRequest):
+    return {"memories": store.search_memories(request.query, limit=request.limit)}
+
+
+@app.delete("/memory/{memory_id}")
+def delete_memory(memory_id: str):
+    if not store.delete_memory(memory_id):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"deleted": True, "id": memory_id}
