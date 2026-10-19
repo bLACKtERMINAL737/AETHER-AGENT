@@ -30,9 +30,24 @@ def _origin_is_local(origin: str, request_host: str) -> bool:
         request_name = request_host.split(":", 1)[0].strip("[]").lower()
         if not parsed.scheme or not origin_host or parsed.username or parsed.password:
             return False
-        # Accept only same-host local origins. Browser ports may be omitted by the host parser,
-        # so compare the hostname; the API has no cross-origin CORS allowance.
-        return _is_loopback(origin_host) and _is_loopback(request_name)
+        origin_port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+        host_port = None
+        if ":" in request_host and not request_host.startswith("["):
+            request_name, port_text = request_host.rsplit(":", 1)
+            if port_text.isdigit():
+                host_port = int(port_text)
+        elif request_host.startswith("[") and "]:" in request_host:
+            request_name, port_text = request_host[1:].split("]:", 1)
+            if port_text.isdigit():
+                host_port = int(port_text)
+        if host_port is None:
+            host_port = 443 if parsed.scheme.lower() == "https" else 80
+        return (
+            _is_loopback(origin_host)
+            and _is_loopback(request_name)
+            and origin_host.lower().strip("[]") == request_name.lower().strip("[]")
+            and origin_port == host_port
+        )
     except (TypeError, ValueError):
         return False
 
