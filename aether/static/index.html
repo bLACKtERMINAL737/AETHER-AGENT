@@ -56,6 +56,21 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     <div class="actions"><button class="primary" id="iterate">Try code → test → fix (max 3 rounds)</button><button id="runTests">Run sandboxed pytest</button></div>
     <div id="testStatus" class="status" role="status"></div><pre id="testOutput" style="display:none"></pre>
   </section>
+  <section class="panel" style="margin-top:16px">
+    <h2>4. Long-term memory</h2>
+    <div class="muted small">Memory is stored locally in SQLite. Aether does not automatically inject these records into model prompts; search and review them explicitly.</div>
+    <label for="memoryCategory">Category</label>
+    <input id="memoryCategory" maxlength="80" value="preference">
+    <label for="memoryContent">Memory content</label>
+    <textarea id="memoryContent" maxlength="4000" placeholder="A fact or preference you explicitly want Aether to remember"></textarea>
+    <label for="memoryTags">Tags (comma-separated)</label>
+    <input id="memoryTags" maxlength="300" placeholder="project, style">
+    <div class="actions"><button class="primary" id="saveMemory">Save memory</button></div>
+    <label for="memoryQuery">Search saved memory</label>
+    <div style="display:flex;gap:8px"><input id="memoryQuery" maxlength="300" placeholder="Search by keywords"><button id="searchMemory">Search</button><button id="listMemory">List all</button></div>
+    <div id="memoryStatus" class="status" role="status"></div>
+    <div id="memoryResults" class="files"></div>
+  </section>
 </main>
 <script>
 const $ = id => document.getElementById(id);
@@ -79,6 +94,40 @@ $("clearToken").onclick=()=>{
  sessionStorage.removeItem("aetherApiToken");$("apiToken").value="";
  setStatus("tokenStatus","Token cleared from this tab.","good");
 };
+function renderMemories(items){
+ const container=$("memoryResults");container.replaceChildren();
+ if(!items.length){container.textContent="No matching memories.";return;}
+ for(const item of items){
+   const card=document.createElement("div");card.className="file";card.style.display="block";
+   const heading=document.createElement("div");heading.style.display="flex";heading.style.justifyContent="space-between";heading.style.gap="8px";
+   const title=document.createElement("strong");title.textContent=item.category;
+   const remove=document.createElement("button");remove.textContent="Delete";
+   remove.onclick=async()=>{try{await api("/memory/"+encodeURIComponent(item.id),{method:"DELETE"});await loadMemories();setStatus("memoryStatus","Memory deleted.","good");}catch(e){setStatus("memoryStatus",e.message,"bad");}};
+   heading.append(title,remove);
+   const body=document.createElement("div");body.textContent=item.content;body.style.marginTop="6px";
+   const meta=document.createElement("div");meta.className="muted small";meta.textContent=(item.tags||[]).join(", ")+(item.source?" · source: "+item.source:"");
+   card.append(heading,body,meta);container.append(card);
+ }
+}
+async function loadMemories(query=""){
+ try{
+  const data=query.trim()
+   ? await api("/memory/search",{method:"POST",body:JSON.stringify({query:query.trim(),limit:50})})
+   : await api("/memory?limit=100");
+  renderMemories(data.memories||[]);
+ }catch(e){setStatus("memoryStatus",e.message,"bad");}
+}
+$("saveMemory").onclick=async()=>{
+ const category=$("memoryCategory").value.trim(),content=$("memoryContent").value.trim();
+ if(!category||!content){setStatus("memoryStatus","Enter a category and memory content.","bad");return;}
+ try{
+  const tags=$("memoryTags").value.split(",").map(t=>t.trim()).filter(Boolean).slice(0,20);
+  await api("/memory",{method:"POST",body:JSON.stringify({category,content,source:"user",tags})});
+  $("memoryContent").value="";setStatus("memoryStatus","Memory saved locally.","good");await loadMemories();
+ }catch(e){setStatus("memoryStatus",e.message,"bad");}
+};
+$("searchMemory").onclick=()=>loadMemories($("memoryQuery").value);
+$("listMemory").onclick=()=>loadMemories();
 async function refreshFiles(){
   setStatus("leftStatus","Loading workspace…");
   try{
@@ -162,6 +211,7 @@ $("runTests").onclick=async()=>{
  finally{$("runTests").disabled=false;}
 };
 refreshFiles();
+loadMemories();
 </script>
 </body>
 </html>
