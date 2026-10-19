@@ -44,3 +44,4 @@ def test_origin_requires_same_local_host_and_port():
     assert _origin_is_local('http://127.0.0.1:8000', '127.0.0.1:8000')
     assert not _origin_is_local('http://127.0.0.1:9000', '127.0.0.1:8000')
     assert not _origin_is_local('https://example.com', '127.0.0.1:8000')
+    assert not _origin_is_local('https://127.0.0.1:8000', '127.0.0.1:8000', 'http')
