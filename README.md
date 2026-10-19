@@ -7,6 +7,8 @@ A local-first AI agent foundation with durable task state, configurable model ro
 - FastAPI local API and OpenAPI docs
 - Optional API bearer token and same-origin checks for state-changing requests
 - SQLite-backed explicit long-term memory with category/tag search and deletion
+- Persistent conversation sessions and message history
+- Opt-in saved-memory retrieval per chat request; stored text is marked as untrusted reference data
 - SQLite task journal and durable tool execution records
 - Workspace-confined file listing and text search
 - OpenAI-compatible model adapter with primary, coding-specialist, and fallback routes
@@ -123,6 +125,19 @@ Equivalent API endpoints:
 - `GET /coding/files?path=.`
 - `POST /coding/run-tests`
 
+## Chat sessions and memory-aware context
+
+The local UI includes persistent chat sessions. Each chat message is saved in SQLite and the latest 12 prior user/assistant messages are passed to the configured model on follow-up turns. The UI lets you create a new chat, reopen a saved chat, and delete a conversation with its messages.
+
+Saved memory use is **off by default for each request**. Check the opt-in box to retrieve up to five keyword-matched records for that message. Memory records are added as explicitly labeled untrusted reference data, not as instructions. The model provider still receives the selected conversation text and any explicitly enabled memory records, so do not store secrets in chat or memory. This is lexical retrieval, not embeddings.
+
+API routes:
+- `POST /sessions` to create a session
+- `GET /sessions` to list sessions
+- `GET /sessions/{session_id}` to fetch messages
+- `DELETE /sessions/{session_id}` to delete a session and its messages
+- `POST /chat` with `message`, optional `session_id`, `task_type`, and `use_saved_memories` (default `false`)
+
 ## Long-term memory
 
 Memory is explicit and local, not an automatic model context feed. Use the UI's memory section or these API routes:
@@ -136,7 +151,7 @@ Memory search is lexical keyword matching, not embeddings or semantic retrieval.
 
 ## Reliability behavior
 
-- SQLite WAL persistence for tasks, tool executions, and coding proposals.
+- SQLite WAL persistence for tasks, tool executions, coding proposals, sessions, session messages, and saved memories.
 - In-flight tasks/tool executions are marked `unknown` on startup; potentially side-effecting work is not replayed automatically.
 - Provider retries are bounded and restricted to transient failures.
 - Coding proposal application checks original file hashes before replacing files.
