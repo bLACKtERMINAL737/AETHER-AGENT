@@ -46,6 +46,11 @@ class TaskStore:
               status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected','applied')),
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error_text TEXT
             );
+            CREATE TABLE IF NOT EXISTS memories (
+              id TEXT PRIMARY KEY, category TEXT NOT NULL, content TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'user', tags_json TEXT NOT NULL DEFAULT '[]',
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
             """)
 
     def create_task(self, title: str, input_text: str) -> dict[str, Any]:
@@ -134,3 +139,55 @@ class TaskStore:
             )
             if cursor.rowcount == 0:
                 raise KeyError("Proposal not found")
+
+
+    def add_memory(self, category: str, content: str, source: str = "user",
+                   tags: list[str] | None = None) -> dict[str, Any]:
+        memory_id, now = str(uuid4()), utc_now()
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO memories(id,category,content,source,tags_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (memory_id, category.strip(), content.strip(), source.strip() or "user",
+                 json.dumps(tags or [], ensure_ascii=False), now, now),
+            )
+        return self.get_memory(memory_id)  # type: ignore[return-value]
+
+    def get_memory(self, memory_id: str) -> dict[str, Any] | None:
+        with self.connect() as con:
+            row = con.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["tags"] = json.loads(result.pop("tags_json"))
+        return result
+
+    def list_memories(self, limit: int = 100, category: str | None = None) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            if category:
+                rows = con.execute(
+                    "SELECT id FROM memories WHERE category=? ORDER BY updated_at DESC LIMIT ?",
+                    (category, limit),
+                ).fetchall()
+            else:
+                rows = con.execute("SELECT id FROM memories ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+        return [item for row in rows if (item := self.get_memory(row["id"])) is not None]
+
+    def search_memories(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        terms = [term.casefold() for term in query.split() if term.strip()]
+        if not terms:
+            return []
+        # Keep retrieval local and deterministic; this is lexical search, not semantic ranking.
+        candidates = self.list_memories(limit=500)
+        ranked = []
+        for item in candidates:
+            haystack = (item["category"] + " " + item["content"] + " " + " ".join(item["tags"])).casefold()
+            score = sum(1 for term in terms if term in haystack)
+            if score:
+                ranked.append((score, item["updated_at"], item))
+        ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
+        return [item for _, _, item in ranked[:limit]]
+
+    def delete_memory(self, memory_id: str) -> bool:
+        with self.connect() as con:
+            cursor = con.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+        return cursor.rowcount > 0
