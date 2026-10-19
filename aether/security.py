@@ -23,12 +23,16 @@ def _is_loopback(host: str | None) -> bool:
         return False
 
 
-def _origin_is_local(origin: str, request_host: str) -> bool:
+def _origin_is_local(origin: str, request_host: str, request_scheme: str | None = None) -> bool:
     try:
         parsed = urlsplit(origin)
         origin_host = parsed.hostname
         request_name = request_host.split(":", 1)[0].strip("[]").lower()
         if not parsed.scheme or not origin_host or parsed.username or parsed.password:
+            return False
+        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            return False
+        if request_scheme and parsed.scheme.lower() != request_scheme.lower():
             return False
         origin_port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
         host_port = None
@@ -77,7 +81,7 @@ class LocalAPIProtection:
             if method in UNSAFE_METHODS and "origin" in headers:
                 origin = headers["origin"]
                 host = headers.get("host", "")
-                if not _origin_is_local(origin, host):
+                if not _origin_is_local(origin, host, scope.get("scheme")):
                     response = JSONResponse({"detail": "Cross-origin API mutations are not allowed"}, status_code=403)
                     await response(scope, receive, send)
                     return
