@@ -49,6 +49,8 @@ app.add_middleware(LocalAPIProtection)
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     task_type: Literal["general", "coding", "reasoning"] = "general"
+    session_id: str | None = None
+    use_saved_memories: bool = False
 
 
 class TaskRequest(BaseModel):
@@ -154,14 +156,39 @@ def get_task(task_id: str):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
+    session_id = request.session_id
+    if session_id:
+        if not store.get_session(session_id):
+            raise HTTPException(status_code=404, detail="Conversation session not found")
+    else:
+        session = store.create_session(request.message[:80] or "New conversation")
+        session_id = session["id"]
+
     try:
-        result = await router.chat(request.message, request.task_type)
+        store.add_session_message(session_id, "user", request.message)
+        recent = store.list_session_messages(session_id, limit=13)
+        history = [
+            {"role": item["role"], "content": item["content"]}
+            for item in recent[:-1]
+            if item["role"] in {"user", "assistant"}
+        ][-12:]
+        memories = store.search_memories(request.message, limit=5) if request.use_saved_memories else []
+        result = await router.chat(
+            request.message,
+            request.task_type,
+            history=history,
+            memories=memories,
+        )
+        answer = str(result["answer"])
+        store.add_session_message(session_id, "assistant", answer)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Conversation session not found") from exc
     except Exception as exc:
         logger.exception("Model provider request failed")
-        raise HTTPException(status_code=502, detail="Model provider request failed; see local logs") from exc
-    return result
+        raise HTTPException(status_code=502, detail="Model provider request failed; user message is saved in session history") from exc
+    return {**result, "session_id": session_id, "memory_context_used": bool(request.use_saved_memories and memories)}
 
 
 @app.post("/coding/proposals")
@@ -279,3 +306,33 @@ def delete_memory(memory_id: str):
     if not store.delete_memory(memory_id):
         raise HTTPException(status_code=404, detail="Memory not found")
     return {"deleted": True, "id": memory_id}
+
+
+@app.post("/sessions")
+def create_session(title: str = "New conversation"):
+    return store.create_session(title)
+
+
+@app.get("/sessions")
+def list_sessions(limit: int = 50):
+    if not 1 <= limit <= 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
+    return {"sessions": store.list_sessions(limit=limit)}
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: str, limit: int = 100):
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    session = store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Conversation session not found")
+    session["messages"] = store.list_session_messages(session_id, limit=limit)
+    return session
+
+
+@app.delete("/sessions/{session_id}")
+def delete_session(session_id: str):
+    if not store.delete_session(session_id):
+        raise HTTPException(status_code=404, detail="Conversation session not found")
+    return {"deleted": True, "id": session_id}
