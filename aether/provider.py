@@ -118,7 +118,11 @@ class ModelRouter:
             for attempt in range(self.max_attempts):
                 attempts += 1
                 try:
-                    answer = await provider.chat(message, task_type, history=history, memories=memories)
+                    # Preserve compatibility with simple provider adapters that implement the original signature.
+                    if history or memories:
+                        answer = await provider.chat(message, task_type, history=history, memories=memories)
+                    else:
+                        answer = await provider.chat(message, task_type)
                     return {
                         "answer": answer,
                         "route": provider_route,
