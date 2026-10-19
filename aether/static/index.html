@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Aether · Coding Workspace</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#121a2e;--line:#27334e;--text:#e9eefb;--muted:#9aa9c4;--accent:#9b8cff;--good:#6ee7b7;--bad:#fca5a5}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 450px at 20% -10%,#24305c 0,transparent 70%),var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1100px;margin:auto;padding:28px 18px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{font-size:clamp(25px,4vw,38px);margin:0}h2{font-size:17px;margin:0 0 12px}.muted{color:var(--muted)}.pill{border:1px solid var(--line);padding:5px 10px;border-radius:99px;color:var(--muted);font-size:12px}
+.grid{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;margin-top:20px}.panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:18px;min-width:0;box-shadow:0 12px 40px #0002}
+label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,textarea,select{width:100%;background:#0a1020;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit}textarea{min-height:115px;resize:vertical}button{border:1px solid var(--line);background:#202b45;color:var(--text);padding:10px 13px;border-radius:10px;cursor:pointer;font:inherit}button.primary{background:var(--accent);border-color:var(--accent);color:#100d27;font-weight:700}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.files{display:grid;gap:7px;margin-top:10px;max-height:310px;overflow:auto}.file{display:flex;align-items:flex-start;gap:9px;padding:9px;border:1px solid var(--line);border-radius:9px;overflow-wrap:anywhere}.file input{width:auto;margin-top:5px}.status{margin-top:12px;min-height:22px;color:var(--muted)}.status.good{color:var(--good)}.status.bad{color:var(--bad)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;border:1px solid var(--line);padding:13px;border-radius:10px;max-height:520px;overflow:auto;font-size:12px}.proposal{display:none}.warning{margin-top:16px;border:1px solid #725c2d;background:#382c153d;border-radius:12px;padding:12px;color:#f3d89a;font-size:13px}.small{font-size:12px}@media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:20px 12px 40px}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><div><h1>Project Aether</h1><div class="muted">Local coding workspace · proposal-first edits</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
+  <div class="warning">Keep the API bound to 127.0.0.1. This UI does not add authentication. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
+  <div class="grid">
+    <section class="panel">
+      <h2>1. Select existing files</h2>
+      <div class="muted small">Only files in the configured workspace can be proposed for edits.</div>
+      <label for="dir">Workspace folder</label>
+      <div style="display:flex;gap:8px"><input id="dir" value="." aria-label="Workspace folder"><button id="refresh">Refresh</button></div>
+      <div id="files" class="files">Loading workspace files…</div>
+      <label for="instruction">What should Aether change?</label>
+      <textarea id="instruction" placeholder="Example: Find and fix the off-by-one bug. Keep the public API unchanged."></textarea>
+      <div class="actions"><button class="primary" id="propose">Generate proposal</button><button id="health">Check API</button></div>
+      <div id="leftStatus" class="status" role="status"></div>
+    </section>
+    <section class="panel">
+      <h2>2. Review proposal</h2>
+      <div id="empty" class="muted">Choose files and generate a proposal. No files will change during proposal generation.</div>
+      <div id="proposal" class="proposal">
+        <h3 id="summary"></h3>
+        <div id="proposalMeta" class="muted small"></div>
+        <pre id="diff"></pre>
+        <div class="actions">
+          <button class="primary" id="approve">Approve proposal</button>
+          <button id="reject">Reject</button>
+          <button id="apply" disabled>Apply approved changes</button>
+        </div>
+        <div id="rightStatus" class="status" role="status"></div>
+      </div>
+    </section>
+  </div>
+  <section class="panel" style="margin-top:16px">
+    <h2>3. Run tests in Docker sandbox</h2>
+    <div class="muted small">Build the sandbox image first. Tests run on a disposable copy with networking disabled, read-only container root, reduced privileges, memory/CPU/PID limits, and a timeout. Review the output below.</div>
+    <div class="actions"><button id="runTests">Run sandboxed pytest</button></div>
+    <div id="testStatus" class="status" role="status"></div><pre id="testOutput" style="display:none"></pre>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let currentProposal = null;
+function setStatus(id, text, kind=""){const el=$(id);el.textContent=text;el.className="status "+kind;}
+async function api(url, options={}) {
+  const response = await fetch(url,{headers:{"Content-Type":"application/json"},...options});
+  const body = await response.json().catch(()=>({detail:response.statusText}));
+  if(!response.ok) throw new Error(body.detail || ("HTTP "+response.status));
+  return body;
+}
+async function refreshFiles(){
+  setStatus("leftStatus","Loading workspace…");
+  try{
+    const folder=$("dir").value.trim()||".";
+    const data=await api("/coding/files?path="+encodeURIComponent(folder));
+    $("files").replaceChildren();
+    const entries=data.entries.filter(e=>e.type==="file" && e.name!=="");
+    if(!entries.length){$("files").textContent="No files in this folder.";setStatus("leftStatus","");return;}
+    for(const entry of entries){
+      const label=document.createElement("label");label.className="file";
+      const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.value=entry.path;
+      checkbox.setAttribute("aria-label","Select "+entry.path);
+      const text=document.createElement("span");text.textContent=entry.path;
+      label.append(checkbox,text);$("files").append(label);
+    }
+    setStatus("leftStatus",entries.length+" file(s) available.");
+  }catch(e){$("files").textContent="Could not load files.";setStatus("leftStatus",e.message,"bad");}
+}
+$("refresh").onclick=refreshFiles;
+$("health").onclick=async()=>{try{const h=await api("/health");setStatus("leftStatus","API status: "+h.status+" · provider configured: "+h.provider_configured,h.status==="ok"?"good":"");}catch(e){setStatus("leftStatus",e.message,"bad");}};
+$("propose").onclick=async()=>{
+  const paths=[...$("files").querySelectorAll("input:checked")].map(x=>x.value);
+  if(!paths.length){setStatus("leftStatus","Select at least one file.","bad");return;}
+  if(!$("instruction").value.trim()){setStatus("leftStatus","Enter the requested code change.","bad");return;}
+  $("propose").disabled=true;setStatus("leftStatus","Asking the model to prepare a proposal…");
+  try{
+    currentProposal=await api("/coding/proposals",{method:"POST",body:JSON.stringify({instruction:$("instruction").value,paths})});
+    $("empty").style.display="none";$("proposal").style.display="block";
+    $("summary").textContent=currentProposal.summary;
+    $("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: "+currentProposal.status+" · "+currentProposal.changes.length+" file(s)";
+    $("diff").textContent=currentProposal.changes.map(c=>c.diff||("(No textual diff) "+c.path)).join("\n\n");
+    $("approve").disabled=currentProposal.status!=="pending";$("reject").disabled=currentProposal.status!=="pending";
+    $("apply").disabled=currentProposal.status!=="approved";
+    setStatus("rightStatus","Review every changed line before approving.");
+    setStatus("leftStatus","Proposal created; files are unchanged.","good");
+  }catch(e){setStatus("leftStatus",e.message,"bad");}
+  finally{$("propose").disabled=false;}
+};
+$("approve").onclick=async()=>{
+ if(!currentProposal)return;
+ try{currentProposal=await api("/coding/proposals/"+currentProposal.id+"/approve",{method:"POST",body:"{}"});$("approve").disabled=true;$("reject").disabled=true;$("apply").disabled=false;$("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: approved";setStatus("rightStatus","Approved. Apply only if the diff is correct.","good");}
+ catch(e){setStatus("rightStatus",e.message,"bad");}
+};
+$("reject").onclick=async()=>{
+ if(!currentProposal)return;
+ try{currentProposal=await api("/coding/proposals/"+currentProposal.id+"/reject",{method:"POST",body:"{}"});$("approve").disabled=true;$("reject").disabled=true;$("apply").disabled=true;$("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: rejected";setStatus("rightStatus","Proposal rejected; no files changed.");}
+ catch(e){setStatus("rightStatus",e.message,"bad");}
+};
+$("apply").onclick=async()=>{
+ if(!currentProposal||!confirm("Apply the approved file changes to the configured workspace?"))return;
+ try{const result=await api("/coding/proposals/"+currentProposal.id+"/apply",{method:"POST",body:"{}"});$("apply").disabled=true;$("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: applied";setStatus("rightStatus","Applied: "+result.changed_files.join(", "),"good");}
+ catch(e){setStatus("rightStatus",e.message,"bad");}
+};
+$("runTests").onclick=async()=>{
+ $("runTests").disabled=true;$("testOutput").style.display="none";setStatus("testStatus","Running tests in the Docker sandbox…");
+ try{const result=await api("/coding/run-tests",{method:"POST",body:"{}"});$("testOutput").style.display="block";$("testOutput").textContent="Passed: "+result.passed+"\nReturn code: "+result.returncode+"\nSandboxed: "+result.sandboxed+"\nNetwork: "+result.network+"\n\nSTDOUT\n"+result.stdout+"\nSTDERR\n"+result.stderr;setStatus("testStatus",result.passed?"Tests passed.":"Tests failed; inspect output.",result.passed?"good":"bad");}
+ catch(e){setStatus("testStatus",e.message,"bad");}
+ finally{$("runTests").disabled=false;}
+};
+refreshFiles();
+</script>
+</body>
+</html>
