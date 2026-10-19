@@ -51,6 +51,17 @@ class TaskStore:
               source TEXT NOT NULL DEFAULT 'user', tags_json TEXT NOT NULL DEFAULT '[]',
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS sessions (
+              id TEXT PRIMARY KEY, title TEXT NOT NULL,
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS session_messages (
+              id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+              role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
+              content TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_messages_session_created
+              ON session_messages(session_id, created_at);
             """)
 
     def create_task(self, title: str, input_text: str) -> dict[str, Any]:
@@ -190,4 +201,63 @@ class TaskStore:
     def delete_memory(self, memory_id: str) -> bool:
         with self.connect() as con:
             cursor = con.execute("DELETE FROM memories WHERE id=?", (memory_id,))
+        return cursor.rowcount > 0
+
+
+    def create_session(self, title: str = "New conversation") -> dict[str, Any]:
+        session_id, now = str(uuid4()), utc_now()
+        with self.connect() as con:
+            con.execute("INSERT INTO sessions(id,title,created_at,updated_at) VALUES(?,?,?,?)",
+                        (session_id, title.strip()[:120] or "New conversation", now, now))
+        return self.get_session(session_id)  # type: ignore[return-value]
+
+    def get_session(self, session_id: str) -> dict[str, Any] | None:
+        with self.connect() as con:
+            row = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_sessions(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT s.*, (SELECT COUNT(*) FROM session_messages m WHERE m.session_id=s.id) AS message_count "
+                "FROM sessions s ORDER BY s.updated_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_session_message(self, session_id: str, role: str, content: str) -> dict[str, Any]:
+        if role not in {"user", "assistant", "system"}:
+            raise ValueError("Invalid message role")
+        message_id, now = str(uuid4()), utc_now()
+        with self.connect() as con:
+            exists = con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if not exists:
+                raise KeyError("Session not found")
+            con.execute("INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
+                        (message_id, session_id, role, content, now))
+            con.execute("UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id))
+            if role == "user":
+                first_user = con.execute(
+                    "SELECT content FROM session_messages WHERE session_id=? AND role='user' ORDER BY created_at LIMIT 1",
+                    (session_id,),
+                ).fetchone()
+                if first_user:
+                    title = first_user["content"].strip().replace("\\n", " ")[:80] or "New conversation"
+                    con.execute("UPDATE sessions SET title=? WHERE id=? AND title='New conversation'",
+                                (title, session_id))
+        with self.connect() as con:
+            row = con.execute("SELECT * FROM session_messages WHERE id=?", (message_id,)).fetchone()
+        return dict(row)
+
+    def list_session_messages(self, session_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT * FROM (SELECT * FROM session_messages WHERE session_id=? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?) ORDER BY created_at, rowid",
+                (session_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_session(self, session_id: str) -> bool:
+        with self.connect() as con:
+            cursor = con.execute("DELETE FROM sessions WHERE id=?", (session_id,))
         return cursor.rowcount > 0
