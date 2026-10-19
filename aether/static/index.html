@@ -15,7 +15,13 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
 <body>
 <main>
   <div class="top"><div><h1>Project Aether</h1><div class="muted">Local coding workspace · proposal-first edits</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
-  <div class="warning">Keep the API bound to 127.0.0.1. This UI does not add authentication. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
+  <div class="warning">Keep the API bound to 127.0.0.1. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
+  <section class="panel" style="margin-top:14px">
+    <label for="apiToken">Aether API token (optional unless AETHER_API_TOKEN is configured)</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="apiToken" type="password" autocomplete="off" placeholder="Paste local API token" aria-label="Aether API token"><button id="saveToken">Save for this tab</button><button id="clearToken">Clear</button></div>
+    <div class="muted small">Token is kept in this browser tab's session storage and sent only as an API header.</div>
+    <div id="tokenStatus" class="status" role="status"></div>
+  </section>
   <div class="grid">
     <section class="panel">
       <h2>1. Select existing files</h2>
@@ -56,11 +62,23 @@ const $ = id => document.getElementById(id);
 let currentProposal = null;
 function setStatus(id, text, kind=""){const el=$(id);el.textContent=text;el.className="status "+kind;}
 async function api(url, options={}) {
-  const response = await fetch(url,{headers:{"Content-Type":"application/json"},...options});
+  const token = sessionStorage.getItem("aetherApiToken") || "";
+  const headers = {"Content-Type":"application/json", ...(token ? {"X-Aether-Token":token} : {}), ...(options.headers || {})};
+  const response = await fetch(url,{...options,headers});
   const body = await response.json().catch(()=>({detail:response.statusText}));
   if(!response.ok) throw new Error(body.detail || ("HTTP "+response.status));
   return body;
 }
+$("apiToken").value=sessionStorage.getItem("aetherApiToken") || "";
+$("saveToken").onclick=()=>{
+ const token=$("apiToken").value.trim();
+ if(token) sessionStorage.setItem("aetherApiToken",token); else sessionStorage.removeItem("aetherApiToken");
+ setStatus("tokenStatus",token?"Token saved for this tab.":"No token saved.","good");
+};
+$("clearToken").onclick=()=>{
+ sessionStorage.removeItem("aetherApiToken");$("apiToken").value="";
+ setStatus("tokenStatus","Token cleared from this tab.","good");
+};
 async function refreshFiles(){
   setStatus("leftStatus","Loading workspace…");
   try{
