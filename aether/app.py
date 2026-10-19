@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 import logging
 import os
 from typing import Literal
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .coding import CodingEngine, CodingError
@@ -26,6 +28,7 @@ coding = CodingEngine(
     settings.workspace, store, router,
     enable_test_runner=os.getenv("AETHER_ENABLE_TEST_RUNNER", "").lower() == "true",
     test_timeout_seconds=int(os.getenv("AETHER_TEST_TIMEOUT_SECONDS", "60")),
+    sandbox_image=os.getenv("AETHER_SANDBOX_IMAGE", "aether-sandbox:latest"),
 )
 
 
@@ -70,6 +73,7 @@ def health():
         "coding_route_configured": coding_provider.configured,
         "fallback_route_configured": fallback_provider.configured,
         "coding_test_runner_enabled": coding.enable_test_runner,
+        "sandbox_image": coding.sandbox_image,
     }
 
 
@@ -196,3 +200,22 @@ def run_coding_tests():
         return coding.run_tests()
     except CodingError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/coding/files")
+def list_coding_files(path: str = "."):
+    try:
+        result = tools.execute("workspace.list_files", {"path": path})
+    except ToolError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    base = "" if result["path"] == "." else str(result["path"]).rstrip("/") + "/"
+    return {
+        "path": result["path"],
+        "entries": [
+            {"name": entry["name"], "type": entry["type"], "path": base + entry["name"]}
+            for entry in result["entries"]
+        ],
+    }
+
+
+app.mount("/ui", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="ui")
