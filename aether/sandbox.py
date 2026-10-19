@@ -17,6 +17,9 @@ class DockerTestSandbox:
     This reduces exposure but is not a substitute for a patched host/container runtime.
     """
     EXCLUDED_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data"}
+    EXCLUDED_FILES = {".env", ".env.local", ".env.production", ".env.development",
+                      "id_rsa", "id_ed25519", "credentials", "credentials.json"}
+    EXCLUDED_SUFFIXES = {".pem", ".key", ".p12", ".pfx"}
 
     def __init__(self, workspace: Path, image: str = "aether-sandbox:latest",
                  timeout_seconds: int = 60, memory_limit: str = "512m",
@@ -44,6 +47,8 @@ class DockerTestSandbox:
                 source = root_path / name
                 if source.is_symlink():
                     raise SandboxError(f"Workspace contains a symlink; remove it before sandbox execution: {source.relative_to(self.workspace)}")
+                if name in self.EXCLUDED_FILES or name.startswith(".env.") or source.suffix.lower() in self.EXCLUDED_SUFFIXES:
+                    continue
                 if not source.is_file():
                     continue
                 file_count += 1
