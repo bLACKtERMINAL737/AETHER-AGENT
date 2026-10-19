@@ -64,6 +64,12 @@ class CodingProposalRequest(BaseModel):
     paths: list[str] = Field(min_length=1, max_length=8)
 
 
+class CodingIterationRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=8_000)
+    paths: list[str] = Field(min_length=1, max_length=8)
+    max_rounds: int = Field(default=3, ge=1, le=3)
+
+
 @app.get("/health")
 def health():
     return {
@@ -154,6 +160,21 @@ async def create_coding_proposal(request: CodingProposalRequest):
     except Exception as exc:
         logger.exception("Could not create coding proposal")
         raise HTTPException(status_code=502, detail="Coding proposal failed; see local logs") from exc
+
+
+@app.post("/coding/iterate")
+async def iterate_coding_task(request: CodingIterationRequest):
+    try:
+        return await coding.iterate_with_tests(
+            request.instruction, request.paths, max_rounds=request.max_rounds
+        )
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CodingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Iterative coding task failed")
+        raise HTTPException(status_code=502, detail="Iterative coding task failed; inspect local logs") from exc
 
 
 @app.get("/coding/proposals/{proposal_id}")
