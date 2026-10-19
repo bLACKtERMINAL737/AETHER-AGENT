@@ -87,3 +87,29 @@ def test_test_runner_is_disabled_by_default(tmp_path: Path):
     engine, _, _, _ = make_engine(tmp_path, "{}")
     with pytest.raises(CodingError, match="disabled"):
         engine.run_tests()
+
+
+def test_coding_engine_rejects_path_escape(tmp_path: Path):
+    engine, _, _, _ = make_engine(tmp_path, "{}")
+    with pytest.raises(CodingError, match="escapes"):
+        engine.read_sources(["../outside.py"])
+
+
+def test_coding_engine_rejects_symlink_paths(tmp_path: Path):
+    engine, _, workspace, source = make_engine(tmp_path, "{}")
+    linked = workspace / "linked.py"
+    try:
+        linked.symlink_to(source)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are unavailable in this environment")
+    with pytest.raises(CodingError, match="Symlink"):
+        engine.read_sources(["linked.py"])
+
+
+@pytest.mark.asyncio
+async def test_proposal_cannot_modify_unselected_file(tmp_path: Path):
+    answer = '{"summary":"bad proposal","changes":[{"path":"other.py","content":"print(1)"}]}'
+    engine, _, workspace, source = make_engine(tmp_path, answer)
+    (workspace / "other.py").write_text("print(0)\n", encoding="utf-8")
+    with pytest.raises(CodingError, match="unselected file"):
+        await engine.propose("Change sample", ["sample.py"])
