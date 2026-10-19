@@ -2,13 +2,12 @@ import difflib
 import hashlib
 import json
 import os
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from .provider import ModelRouter
+from .sandbox import DockerTestSandbox, SandboxError
 from .store import TaskStore
 
 
@@ -24,13 +23,15 @@ class CodingEngine:
     MAX_RESPONSE_BYTES = 300_000
 
     def __init__(self, workspace: Path, store: TaskStore, router: ModelRouter,
-                 enable_test_runner: bool = False, test_timeout_seconds: int = 60):
+                 enable_test_runner: bool = False, test_timeout_seconds: int = 60,
+                 sandbox_image: str = "aether-sandbox:latest"):
         self.workspace = workspace.resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.store = store
         self.router = router
         self.enable_test_runner = enable_test_runner
         self.test_timeout_seconds = max(5, min(test_timeout_seconds, 120))
+        self.sandbox_image = sandbox_image
 
     def _safe_path(self, relative: str, must_exist: bool = True) -> Path:
         raw = Path(relative)
@@ -200,30 +201,15 @@ class CodingEngine:
 
     def run_tests(self) -> dict[str, Any]:
         if not self.enable_test_runner:
-            raise CodingError("Test runner is disabled. Set AETHER_ENABLE_TEST_RUNNER=true to enable it.")
+            raise CodingError("Sandbox test runner is disabled. Set AETHER_ENABLE_TEST_RUNNER=true to enable it.")
         if not (self.workspace / "pyproject.toml").exists() and not (self.workspace / "tests").exists():
             raise CodingError("Test runner requires a project pyproject.toml or tests/ directory")
-        command = [sys.executable, "-m", "pytest", "-q"]
         try:
-            result = subprocess.run(
-                command, cwd=self.workspace, capture_output=True, text=True,
-                timeout=self.test_timeout_seconds, check=False,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            sandbox = DockerTestSandbox(
+                self.workspace,
+                image=self.sandbox_image,
+                timeout_seconds=self.test_timeout_seconds,
             )
-            return {
-                "command": command,
-                "returncode": result.returncode,
-                "passed": result.returncode == 0,
-                "stdout": result.stdout[-12000:],
-                "stderr": result.stderr[-12000:],
-                "timeout_seconds": self.test_timeout_seconds,
-                "sandboxed": False,
-            }
-        except subprocess.TimeoutExpired as exc:
-            return {
-                "command": command, "returncode": None, "passed": False,
-                "stdout": str(exc.stdout or "")[-12000:],
-                "stderr": str(exc.stderr or "")[-12000:],
-                "timeout_seconds": self.test_timeout_seconds, "timed_out": True,
-                "sandboxed": False,
-            }
+            return sandbox.run_pytest()
+        except SandboxError as exc:
+            raise CodingError(str(exc)) from exc
