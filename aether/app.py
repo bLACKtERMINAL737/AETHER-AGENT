@@ -165,11 +165,10 @@ async def chat(request: ChatRequest):
         session_id = session["id"]
 
     try:
-        store.add_session_message(session_id, "user", request.message)
-        recent = store.list_session_messages(session_id, limit=13)
+        recent = store.list_session_messages(session_id, limit=12)
         history = [
             {"role": item["role"], "content": item["content"]}
-            for item in recent[:-1]
+            for item in recent
             if item["role"] in {"user", "assistant"}
         ][-12:]
         memories = store.search_memories(request.message, limit=5) if request.use_saved_memories else []
@@ -180,6 +179,8 @@ async def chat(request: ChatRequest):
             memories=memories,
         )
         answer = str(result["answer"])
+        # Persist only successful turns so failed provider calls do not create orphan user messages.
+        store.add_session_message(session_id, "user", request.message)
         store.add_session_message(session_id, "assistant", answer)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
