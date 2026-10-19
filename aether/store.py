@@ -41,6 +41,11 @@ class TaskStore:
               status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','unknown')),
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL, result_json TEXT, error_text TEXT
             );
+            CREATE TABLE IF NOT EXISTS coding_proposals (
+              id TEXT PRIMARY KEY, summary TEXT NOT NULL, changes_json TEXT NOT NULL,
+              status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected','applied')),
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL, error_text TEXT
+            );
             """)
 
     def create_task(self, title: str, input_text: str) -> dict[str, Any]:
@@ -94,3 +99,38 @@ class TaskStore:
             tasks = con.execute("UPDATE tasks SET status='unknown',updated_at=?,error_text=COALESCE(error_text,?) WHERE status='running'",
                                 (now, "Process restarted during task; verify effects before retrying"))
         return tools.rowcount + tasks.rowcount
+
+
+    def create_proposal(self, summary: str, changes: list[dict[str, Any]]) -> dict[str, Any]:
+        proposal_id, now = str(uuid4()), utc_now()
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO coding_proposals(id,summary,changes_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (proposal_id, summary, json.dumps(changes, ensure_ascii=False), "pending", now, now),
+            )
+        return self.get_proposal(proposal_id)  # type: ignore[return-value]
+
+    def get_proposal(self, proposal_id: str) -> dict[str, Any] | None:
+        with self.connect() as con:
+            row = con.execute("SELECT * FROM coding_proposals WHERE id=?", (proposal_id,)).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["changes"] = json.loads(result.pop("changes_json"))
+        return result
+
+    def list_proposals(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            rows = con.execute("SELECT id FROM coding_proposals ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        return [proposal for row in rows if (proposal := self.get_proposal(row["id"])) is not None]
+
+    def set_proposal_status(self, proposal_id: str, status: str, error: str | None = None) -> None:
+        if status not in {"pending", "approved", "rejected", "applied"}:
+            raise ValueError("Invalid coding proposal status")
+        with self.connect() as con:
+            cursor = con.execute(
+                "UPDATE coding_proposals SET status=?,updated_at=?,error_text=? WHERE id=?",
+                (status, utc_now(), error, proposal_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError("Proposal not found")

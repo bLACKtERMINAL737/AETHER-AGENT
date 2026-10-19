@@ -45,9 +45,9 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     </section>
   </div>
   <section class="panel" style="margin-top:16px">
-    <h2>3. Run tests in Docker sandbox</h2>
-    <div class="muted small">Build the sandbox image first. Tests run on a disposable copy with networking disabled, read-only container root, reduced privileges, memory/CPU/PID limits, and a timeout. Review the output below.</div>
-    <div class="actions"><button id="runTests">Run sandboxed pytest</button></div>
+    <h2>3. Test and fix loop</h2>
+    <div class="muted small">Aether can make up to 3 attempts on a disposable copy, feed sandbox test failures into the next attempt, and stop when tests pass. The real workspace is not changed. A passing result creates a pending proposal that still requires your review and approval.</div>
+    <div class="actions"><button class="primary" id="iterate">Try code → test → fix (max 3 rounds)</button><button id="runTests">Run sandboxed pytest</button></div>
     <div id="testStatus" class="status" role="status"></div><pre id="testOutput" style="display:none"></pre>
   </section>
 </main>
@@ -113,6 +113,29 @@ $("apply").onclick=async()=>{
  if(!currentProposal||!confirm("Apply the approved file changes to the configured workspace?"))return;
  try{const result=await api("/coding/proposals/"+currentProposal.id+"/apply",{method:"POST",body:"{}"});$("apply").disabled=true;$("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: applied";setStatus("rightStatus","Applied: "+result.changed_files.join(", "),"good");}
  catch(e){setStatus("rightStatus",e.message,"bad");}
+};
+$("iterate").onclick=async()=>{
+ const paths=[...$("files").querySelectorAll("input:checked")].map(x=>x.value);
+ if(!paths.length){setStatus("testStatus","Select at least one file first.","bad");return;}
+ if(!$("instruction").value.trim()){setStatus("testStatus","Enter the coding task first.","bad");return;}
+ $("iterate").disabled=true;setStatus("testStatus","Trying changes in a disposable workspace; this may take a few minutes…");
+ $("testOutput").style.display="none";
+ try{
+   const result=await api("/coding/iterate",{method:"POST",body:JSON.stringify({instruction:$("instruction").value,paths,max_rounds:3})});
+   $("testOutput").style.display="block";
+   $("testOutput").textContent="Passed: "+result.passed+"\\n"+result.message+"\\n\\n"+result.rounds.map(r=>"ROUND "+r.round+" · "+(r.passed?"PASS":"FAIL")+"\\n"+r.summary+"\\n"+r.stdout+"\\n"+r.stderr).join("\\n\\n");
+   if(result.proposal){
+     currentProposal=result.proposal;
+     $("empty").style.display="none";$("proposal").style.display="block";
+     $("summary").textContent=currentProposal.summary;
+     $("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: "+currentProposal.status+" · "+currentProposal.changes.length+" file(s) · sandbox tests passed";
+     $("diff").textContent=currentProposal.changes.map(c=>c.diff||("(No textual diff) "+c.path)).join("\\n\\n");
+     $("approve").disabled=false;$("reject").disabled=false;$("apply").disabled=true;
+     setStatus("rightStatus","Sandbox tests passed. Review every changed line, then approve if correct.","good");
+   }
+   setStatus("testStatus",result.passed?"Tests passed; proposal awaits your approval.":"No passing candidate; the real workspace remains unchanged.",result.passed?"good":"bad");
+ }catch(e){setStatus("testStatus",e.message,"bad");}
+ finally{$("iterate").disabled=false;}
 };
 $("runTests").onclick=async()=>{
  $("runTests").disabled=true;$("testOutput").style.display="none";setStatus("testStatus","Running tests in the Docker sandbox…");

@@ -10,6 +10,8 @@ def test_snapshot_copies_workspace_and_skips_excluded_dirs(tmp_path: Path):
     (workspace / "sample.py").write_text("print('hello')\n", encoding="utf-8")
     (workspace / ".git").mkdir()
     (workspace / ".git" / "secret").write_text("ignore me", encoding="utf-8")
+    (workspace / ".env").write_text("API_KEY=secret", encoding="utf-8")
+    (workspace / "private.pem").write_text("private key", encoding="utf-8")
     destination = tmp_path / "snapshot"
     destination.mkdir()
 
@@ -18,6 +20,8 @@ def test_snapshot_copies_workspace_and_skips_excluded_dirs(tmp_path: Path):
 
     assert (destination / "sample.py").read_text(encoding="utf-8") == "print('hello')\n"
     assert not (destination / ".git").exists()
+    assert not (destination / ".env").exists()
+    assert not (destination / "private.pem").exists()
 
 
 def test_snapshot_rejects_symlinks(tmp_path: Path):

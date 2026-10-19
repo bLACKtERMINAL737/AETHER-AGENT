@@ -24,7 +24,7 @@ def make_engine(tmp_path: Path, answer: str):
 
 @pytest.mark.asyncio
 async def test_proposal_is_pending_and_does_not_change_files(tmp_path: Path):
-    answer = '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\n    return 2\n"}]}'
+    answer = '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
     engine, store, workspace, source = make_engine(tmp_path, answer)
     before = source.read_text(encoding="utf-8")
     proposal = await engine.propose("Change value to 2", ["sample.py"])
@@ -113,3 +113,69 @@ async def test_proposal_cannot_modify_unselected_file(tmp_path: Path):
     (workspace / "other.py").write_text("print(0)\n", encoding="utf-8")
     with pytest.raises(CodingError, match="unselected file"):
         await engine.propose("Change sample", ["sample.py"])
+
+
+@pytest.mark.asyncio
+async def test_iterative_loop_returns_pending_proposal_after_sandbox_pass(tmp_path: Path, monkeypatch):
+    first = '{"summary":"first attempt","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
+    second = '{"summary":"fixed attempt","changes":[{"path":"sample.py","content":"def value():\\n    return 3\\n"}]}'
+
+    class SequenceRouter:
+        def __init__(self):
+            self.answers = [first, second]
+            self.prompts = []
+        async def chat(self, message, task_type="general"):
+            self.prompts.append(message)
+            return {"answer": self.answers.pop(0), "route": "coding", "model": "fake", "fallback_used": False, "attempts": 1}
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = workspace / "sample.py"
+    original = "def value():\n    return 1\n"
+    source.write_text(original, encoding="utf-8")
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    router = SequenceRouter()
+    engine = CodingEngine(workspace, store, router, enable_test_runner=True)
+
+    results = iter([
+        {"passed": False, "returncode": 1, "stdout": "assert 2 == 3", "stderr": ""},
+        {"passed": True, "returncode": 0, "stdout": "2 passed", "stderr": ""},
+    ])
+    monkeypatch.setattr(CodingEngine, "run_tests", lambda self: next(results))
+
+    outcome = await engine.iterate_with_tests("Make value correct", ["sample.py"], max_rounds=2)
+
+    assert outcome["passed"] is True
+    assert len(outcome["rounds"]) == 2
+    assert outcome["proposal"]["status"] == "pending"
+    assert "return 3" in outcome["proposal"]["changes"][0]["content"]
+    assert source.read_text(encoding="utf-8") == original
+    proposals = store.list_proposals()
+    assert sum(p["status"] == "rejected" for p in proposals) == 2
+    assert any("PREVIOUS SANDBOX TEST FAILURE" in prompt for prompt in router.prompts)
+
+
+@pytest.mark.asyncio
+async def test_iterative_loop_never_proposes_failed_candidate(tmp_path: Path, monkeypatch):
+    answer = '{"summary":"bad attempt","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
+    engine, store, workspace, source = make_engine(tmp_path, answer)
+    engine.enable_test_runner = True
+    monkeypatch.setattr(CodingEngine, "run_tests", lambda self: {
+        "passed": False, "returncode": 1, "stdout": "", "stderr": "assertion failed"
+    })
+
+    outcome = await engine.iterate_with_tests("Try a change", ["sample.py"], max_rounds=1)
+
+    assert outcome["passed"] is False
+    assert outcome["proposal"] is None
+    assert source.read_text(encoding="utf-8") == "def value():\n    return 1\n"
+    assert all(p["status"] == "rejected" for p in store.list_proposals())
+
+
+def test_proposal_store_round_trip(tmp_path: Path):
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    created = store.create_proposal("summary", [{"path": "sample.py", "content": "print(1)"}])
+    assert created["status"] == "pending"
+    assert created["changes"][0]["path"] == "sample.py"
+    store.set_proposal_status(created["id"], "approved")
+    assert store.get_proposal(created["id"])["status"] == "approved"
