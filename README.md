@@ -163,7 +163,7 @@ Memory search is lexical keyword matching, not embeddings or semantic retrieval.
 pytest -q
 ```
 
-The test suite includes unit tests for workspace path restrictions, proposal approval, stale-file detection, and sandbox command configuration. GitHub Actions runs the test suite, but the latest CI result should be checked on the Actions page before treating a branch as verified.
+The test suite includes unit tests for workspace path restrictions, proposal approval, stale-file detection, sandbox command configuration, session persistence, and opt-in memory-aware provider context. GitHub Actions runs the test suite, but the latest CI result should be checked on the Actions page before treating a branch as verified.
 
 ## Next milestones
 
