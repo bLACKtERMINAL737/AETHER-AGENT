@@ -171,7 +171,19 @@ async def chat(request: ChatRequest):
             for item in recent
             if item["role"] in {"user", "assistant"}
         ][-12:]
-        memories = store.search_memories(request.message, limit=5) if request.use_saved_memories else []
+        memories = []
+        if request.use_saved_memories:
+            # Retrieve direct lexical matches first, then include user preferences
+            # because they can guide response style even when the prompt shares
+            # no literal words with the stored preference.
+            memories = store.search_memories(request.message, limit=5)
+            seen_memory_ids = {item["id"] for item in memories}
+            for item in store.list_memories(limit=100, category="preference"):
+                if item["id"] not in seen_memory_ids:
+                    memories.append(item)
+                    seen_memory_ids.add(item["id"])
+                if len(memories) >= 5:
+                    break
         result = await router.chat(
             request.message,
             request.task_type,
