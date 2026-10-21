@@ -121,6 +121,11 @@ class CodingEngine:
             if path in seen:
                 raise CodingError(f"Model returned duplicate change for: {path}")
             seen.add(path)
+
+            # Ignore entries that do not actually change the selected file.
+            if content == allowed[path]:
+                continue
+
             total += len(content.encode("utf-8"))
             if len(content.encode("utf-8")) > self.MAX_FILE_BYTES or total > self.MAX_TOTAL_BYTES:
                 raise CodingError("Proposed content exceeds size limits")
@@ -137,7 +142,7 @@ class CodingEngine:
                 "diff": diff,
             })
         if not normalized:
-            raise CodingError("Model returned no file changes")
+            raise CodingError("Proposal contains no actual changes")
         return self.store.create_proposal(parsed["summary"][:1000], normalized)
 
     def approve(self, proposal_id: str) -> dict[str, Any]:

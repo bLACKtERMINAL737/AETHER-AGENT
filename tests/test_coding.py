@@ -33,6 +33,22 @@ async def test_proposal_is_pending_and_does_not_change_files(tmp_path: Path):
     assert "return 2" in proposal["changes"][0]["diff"]
 
 
+
+@pytest.mark.asyncio
+async def test_proposal_rejects_unchanged_content(tmp_path: Path):
+    answer = (
+        '{"summary":"pretend change","changes":['
+        '{"path":"sample.py","content":"def value():\\n    return 1\\n"}]}'
+    )
+    engine, store, workspace, source = make_engine(tmp_path, answer)
+    before = source.read_text(encoding="utf-8")
+
+    with pytest.raises(CodingError, match="no actual changes"):
+        await engine.propose("Change value", ["sample.py"])
+
+    assert source.read_text(encoding="utf-8") == before
+    assert store.list_proposals() == []
+
 def test_cannot_apply_before_approval(tmp_path: Path):
     engine, store, workspace, source = make_engine(tmp_path, "{}")
     proposal = store.create_proposal("test", [{
