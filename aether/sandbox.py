@@ -19,7 +19,15 @@ class DockerTestSandbox:
     EXCLUDED_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data"}
     EXCLUDED_FILES = {".env", ".env.local", ".env.production", ".env.development",
                       "id_rsa", "id_ed25519", "credentials", "credentials.json"}
-    EXCLUDED_SUFFIXES = {".pem", ".key", ".p12", ".pfx"}
+    EXCLUDED_SUFFIXES = {
+        ".pem", ".key", ".p12", ".pfx", ".p7b", ".p7c",
+        ".p8", ".p10", ".p12", ".pfx", ".der", ".crt",
+    }
+    EXCLUDED_SECRET_NAMES = {
+        ".netrc", ".npmrc", ".pypirc", ".dockercfg",
+        "id_rsa", "id_ed25519", "known_hosts",
+        "credentials", "credentials.json",
+    }
 
     def __init__(self, workspace: Path, image: str = "aether-sandbox:latest",
                  timeout_seconds: int = 60, memory_limit: str = "512m",
@@ -47,7 +55,16 @@ class DockerTestSandbox:
                 source = root_path / name
                 if source.is_symlink():
                     raise SandboxError(f"Workspace contains a symlink; remove it before sandbox execution: {source.relative_to(self.workspace)}")
-                if name in self.EXCLUDED_FILES or name.startswith(".env.") or source.suffix.lower() in self.EXCLUDED_SUFFIXES:
+                lower_name = name.lower()
+                if (
+                    name in self.EXCLUDED_FILES
+                    or lower_name in self.EXCLUDED_SECRET_NAMES
+                    or lower_name == ".env"
+                    or lower_name.startswith(".env.")
+                    or source.suffix.lower() in self.EXCLUDED_SUFFIXES
+                    or "credential" in lower_name
+                    or "secret" in lower_name
+                ):
                     continue
                 if not source.is_file():
                     continue

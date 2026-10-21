@@ -24,9 +24,11 @@ class CodingEngine:
 
     def __init__(self, workspace: Path, store: TaskStore, router: ModelRouter,
                  enable_test_runner: bool = False, test_timeout_seconds: int = 60,
-                 sandbox_image: str = "aether-sandbox:latest"):
+                 sandbox_image: str = "aether-sandbox:latest",
+                 test_project: Path | None = None):
         self.workspace = workspace.resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
+        self.test_project = test_project.resolve() if test_project else None
         self.store = store
         self.router = router
         self.enable_test_runner = enable_test_runner
@@ -314,11 +316,14 @@ class CodingEngine:
     def run_tests(self) -> dict[str, Any]:
         if not self.enable_test_runner:
             raise CodingError("Sandbox test runner is disabled. Set AETHER_ENABLE_TEST_RUNNER=true to enable it.")
-        if not (self.workspace / "pyproject.toml").exists() and not (self.workspace / "tests").exists():
+        test_workspace = self.test_project or self.workspace
+        if not test_workspace.is_dir():
+            raise CodingError("Configured test project directory does not exist")
+        if not (test_workspace / "pyproject.toml").exists() and not (test_workspace / "tests").exists():
             raise CodingError("Test runner requires a project pyproject.toml or tests/ directory")
         try:
             sandbox = DockerTestSandbox(
-                self.workspace,
+                test_workspace,
                 image=self.sandbox_image,
                 timeout_seconds=self.test_timeout_seconds,
             )

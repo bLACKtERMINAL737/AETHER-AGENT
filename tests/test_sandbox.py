@@ -69,3 +69,21 @@ def test_test_runner_has_network_disabled_and_read_only_flags(tmp_path: Path, mo
     assert "--read-only" in captured["command"]
     assert "--cap-drop=ALL" in captured["command"]
     assert result["sandboxed"] is True
+
+
+def test_snapshot_skips_common_secret_files(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / ".netrc").write_text("secret", encoding="utf-8")
+    (workspace / "credentials.json").write_text('{"token":"secret"}', encoding="utf-8")
+    (workspace / "service-secret.txt").write_text("secret", encoding="utf-8")
+    (workspace / "config.py").write_text("SAFE = True", encoding="utf-8")
+    destination = tmp_path / "snapshot"
+    destination.mkdir()
+
+    DockerTestSandbox(workspace)._snapshot(destination)
+
+    assert not (destination / ".netrc").exists()
+    assert not (destination / "credentials.json").exists()
+    assert not (destination / "service-secret.txt").exists()
+    assert (destination / "config.py").exists()

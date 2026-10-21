@@ -30,6 +30,8 @@ coding = CodingEngine(
     enable_test_runner=os.getenv("AETHER_ENABLE_TEST_RUNNER", "").lower() == "true",
     test_timeout_seconds=int(os.getenv("AETHER_TEST_TIMEOUT_SECONDS", "60")),
     sandbox_image=os.getenv("AETHER_SANDBOX_IMAGE", "aether-sandbox:latest"),
+    test_project=Path(os.environ["AETHER_TEST_PROJECT"]).expanduser()
+    if os.getenv("AETHER_TEST_PROJECT") else None,
 )
 
 
