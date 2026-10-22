@@ -195,3 +195,21 @@ def test_proposal_store_round_trip(tmp_path: Path):
     assert created["changes"][0]["path"] == "sample.py"
     store.set_proposal_status(created["id"], "approved")
     assert store.get_proposal(created["id"])["status"] == "approved"
+
+@pytest.mark.asyncio
+
+@pytest.mark.asyncio
+async def test_proposal_rejects_duplicate_paths(tmp_path: Path):
+    answer = (
+        '{"summary":"duplicate change","changes":['
+        '{"path":"sample.py","content":"def value():\\n    return 2\\n"},'
+        '{"path":"sample.py","content":"def value():\\n    return 3\\n"}]}'
+    )
+    engine, store, workspace, source = make_engine(tmp_path, answer)
+    before = source.read_text(encoding="utf-8")
+
+    with pytest.raises(CodingError, match="duplicate change"):
+        await engine.propose("Change value", ["sample.py"])
+
+    assert source.read_text(encoding="utf-8") == before
+    assert store.list_proposals() == []
