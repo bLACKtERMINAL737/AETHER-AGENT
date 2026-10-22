@@ -158,6 +158,8 @@ class CodingEngine:
         proposal = self.store.get_proposal(proposal_id)
         if not proposal:
             raise KeyError("Proposal not found")
+        if proposal["status"] != "pending":
+            raise CodingError(f"Only pending proposals can be rejected (current status: {proposal['status']})")
         self.store.set_proposal_status(proposal_id, "rejected")
         return self.store.get_proposal(proposal_id)  # type: ignore[return-value]
 
