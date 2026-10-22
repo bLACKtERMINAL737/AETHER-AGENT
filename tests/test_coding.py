@@ -197,8 +197,6 @@ def test_proposal_store_round_trip(tmp_path: Path):
     assert store.get_proposal(created["id"])["status"] == "approved"
 
 @pytest.mark.asyncio
-
-@pytest.mark.asyncio
 async def test_proposal_rejects_duplicate_paths(tmp_path: Path):
     answer = (
         '{"summary":"duplicate change","changes":['
@@ -213,3 +211,32 @@ async def test_proposal_rejects_duplicate_paths(tmp_path: Path):
 
     assert source.read_text(encoding="utf-8") == before
     assert store.list_proposals() == []
+
+
+@pytest.mark.parametrize("status", ["approved", "rejected", "applied"])
+def test_reject_only_allows_pending_proposals(tmp_path: Path, status: str):
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    original = source.read_text(encoding="utf-8")
+    import hashlib
+    proposal = store.create_proposal("test", [{
+        "path": "sample.py",
+        "original_content": original,
+        "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+        "content": "def value():\n    return 2\n",
+        "diff": "",
+    }])
+    store.set_proposal_status(proposal["id"], status)
+
+    with pytest.raises(CodingError, match="Only pending proposals can be rejected"):
+        engine.reject(proposal["id"])
+
+    assert store.get_proposal(proposal["id"])["status"] == status
+
+
+def test_pending_proposal_can_be_rejected(tmp_path: Path):
+    engine, store, _, _ = make_engine(tmp_path, "{}")
+    proposal = store.create_proposal("test", [{"path": "sample.py", "content": "print(1)"}])
+
+    result = engine.reject(proposal["id"])
+
+    assert result["status"] == "rejected"
