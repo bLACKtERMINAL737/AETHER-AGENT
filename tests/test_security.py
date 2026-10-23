@@ -97,3 +97,34 @@ async def test_invalid_authorization_cannot_access_protected_route(monkeypatch, 
         response = await client.get("/private", headers={"Authorization": authorization})
 
     assert response.status_code == 401
+
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "",
+        "127.0.0.1:8000",
+        "http:///path",
+        "http://user@127.0.0.1:8000",
+        "http://127.0.0.1:8000/path",
+        "http://127.0.0.1:8000/?next=/private",
+        "http://127.0.0.1:8000/#fragment",
+        "http://127.0.0.1:invalid",
+        "null",
+    ],
+)
+def test_origin_validation_rejects_malformed_or_ambiguous_origins(origin):
+    assert not _origin_is_local(origin, "127.0.0.1:8000", "http")
+
+
+@pytest.mark.parametrize(
+    ("origin", "request_host", "scheme"),
+    [
+        ("https://localhost:8000", "localhost:8000", "http"),
+        ("http://localhost:8001", "localhost:8000", "http"),
+        ("http://127.0.0.1:8000", "localhost:8000", "http"),
+    ],
+)
+def test_origin_validation_requires_matching_scheme_host_and_port(origin, request_host, scheme):
+    assert not _origin_is_local(origin, request_host, scheme)
