@@ -1,4 +1,6 @@
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -80,3 +82,40 @@ def test_rejecting_non_pending_proposal_is_a_conflict(monkeypatch):
         app_module.reject_coding_proposal("proposal-123")
 
     assert exc_info.value.status_code == 409
+
+
+def test_concurrent_approve_and_reject_only_allow_one_transition(tmp_path: Path, monkeypatch):
+    engine, store, _source, proposal = make_proposal(tmp_path)
+    original_get_proposal = store.get_proposal
+    both_read_pending = threading.Barrier(2)
+    thread_state = threading.local()
+
+    def synchronized_get_proposal(proposal_id):
+        result = original_get_proposal(proposal_id)
+        # Force both operations to pass their initial pending-status check
+        # before either attempts the conditional SQL status transition.
+        if not getattr(thread_state, "initial_read_done", False):
+            thread_state.initial_read_done = True
+            if result is not None and result["status"] == "pending":
+                both_read_pending.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(store, "get_proposal", synchronized_get_proposal)
+
+    def decide(action):
+        try:
+            action(proposal["id"])
+            return "success"
+        except (CodingError, ValueError):
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        approve_future = executor.submit(decide, engine.approve)
+        reject_future = executor.submit(decide, engine.reject)
+        outcomes = [approve_future.result(timeout=10), reject_future.result(timeout=10)]
+
+    assert outcomes.count("success") == 1
+    assert outcomes.count("conflict") == 1
+    saved = original_get_proposal(proposal["id"])
+    assert saved is not None
+    assert saved["status"] in {"approved", "rejected"}
