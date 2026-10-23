@@ -50,3 +50,24 @@ def test_search_skips_symlinked_file_even_when_nested_in_workspace(tmp_path: Pat
     result = ToolRegistry(workspace).execute("workspace.search_text", {"query": "needle"})
 
     assert [match["file"] for match in result["matches"]] == ["actual.txt"]
+
+
+
+def test_list_files_skips_symlinked_file_and_directory(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "real.txt").write_text("safe", encoding="utf-8")
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("secret", encoding="utf-8")
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "secret.txt").write_text("secret", encoding="utf-8")
+    (workspace / "linked-file.txt").symlink_to(outside_file)
+    (workspace / "linked-dir").symlink_to(outside_dir, target_is_directory=True)
+
+    result = ToolRegistry(workspace).execute("workspace.list_files", {"path": "."})
+
+    names = {entry["name"] for entry in result["entries"]}
+    assert "real.txt" in names
+    assert "linked-file.txt" not in names
+    assert "linked-dir" not in names
