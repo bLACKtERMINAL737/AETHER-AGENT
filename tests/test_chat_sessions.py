@@ -33,7 +33,9 @@ async def test_follow_up_chat_receives_saved_session_history_and_appends_turn(tm
     result = await app_module.chat(
         app_module.ChatRequest(
             message="Please continue",
+            mode="manual",
             task_type="reasoning",
+            model_route="primary",
             session_id=session["id"],
         )
     )
