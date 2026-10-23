@@ -45,3 +45,55 @@ def test_origin_requires_same_local_host_and_port():
     assert not _origin_is_local('http://127.0.0.1:9000', '127.0.0.1:8000')
     assert not _origin_is_local('https://example.com', '127.0.0.1:8000')
     assert not _origin_is_local('https://127.0.0.1:8000', '127.0.0.1:8000', 'http')
+
+
+@pytest.mark.asyncio
+async def test_remote_client_requires_token_when_token_is_unconfigured(monkeypatch):
+    monkeypatch.delenv("AETHER_API_TOKEN", raising=False)
+    app = FastAPI()
+    app.add_middleware(LocalAPIProtection)
+
+    @app.get("/private")
+    def private():
+        return {"private": True}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("192.0.2.10", 12345)),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.get("/private")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Configure AETHER_API_TOKEN for non-loopback access"
+
+
+@pytest.mark.asyncio
+async def test_loopback_client_can_use_development_fallback_without_token(monkeypatch):
+    monkeypatch.delenv("AETHER_API_TOKEN", raising=False)
+    app = FastAPI()
+    app.add_middleware(LocalAPIProtection)
+
+    @app.get("/private")
+    def private():
+        return {"private": True}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("127.0.0.1", 12345)),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.get("/private")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("authorization", ["", "Basic test-token", "Bearer ", "Bearer wrong"])
+async def test_invalid_authorization_cannot_access_protected_route(monkeypatch, authorization):
+    app = make_app(monkeypatch)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.get("/private", headers={"Authorization": authorization})
+
+    assert response.status_code == 401
