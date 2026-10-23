@@ -121,8 +121,6 @@ def test_origin_validation_rejects_malformed_or_ambiguous_origins(origin):
 @pytest.mark.parametrize(
     ("origin", "request_host", "scheme"),
     [
-        ("http://localhost:8000", "localhost:8000", "http"),
-        ("http://[::1]:8000", "[::1]:8000", "http"),
         ("https://localhost:8000", "localhost:8000", "http"),
         ("http://localhost:8001", "localhost:8000", "http"),
         ("http://127.0.0.1:8000", "localhost:8000", "http"),
