@@ -135,6 +135,17 @@ def health():
     }
 
 
+@app.get("/health/db")
+def health_db():
+    """Check that the task database accepts a basic read query."""
+    try:
+        store.list_tasks(1)
+    except Exception as exc:
+        logger.error("Database connectivity check failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Database is not reachable.") from exc
+    return {"status": "ok", "database": "reachable"}
+
+
 @app.get("/models")
 def list_models():
     """Expose configured route names only; never return API keys or full credentials."""
