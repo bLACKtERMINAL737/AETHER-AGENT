@@ -66,16 +66,16 @@ class ToolRegistry:
         matches = []
         allowed = {".py", ".txt", ".md", ".json", ".toml", ".yaml", ".yml", ".js", ".ts", ".html", ".css", ".c", ".cpp", ".h"}
         for root, dirs, names in os.walk(target):
-            dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"}]
+            dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"} and not (Path(root) / d).is_symlink()]
             for name in names:
                 file_path = Path(root) / name
                 if file_path.suffix.lower() not in allowed:
                     continue
                 try:
-                    if file_path.stat().st_size > 1_000_000:
+                    # Never read through symlinks: they can point outside the workspace.\n                    if file_path.is_symlink():\n                        continue\n                    resolved_file = file_path.resolve()\n                    resolved_file.relative_to(self.workspace)\n                    if resolved_file.stat().st_size > 1_000_000:
                         continue
-                    lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
-                except OSError:
+                    lines = resolved_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                except (OSError, ValueError):
                     continue
                 for line_number, line in enumerate(lines, 1):
                     if query.casefold() in line.casefold():
