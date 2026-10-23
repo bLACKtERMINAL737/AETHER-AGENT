@@ -34,9 +34,9 @@ class ModelProvider:
                 "Provider is not configured. Set its base URL, API key, and model name."
             )
         system_prompt = {
-            "general": "You are Project Aether, a helpful assistant. Never claim a tool was run unless execution results confirm it.",
-            "coding": "You are Project Aether's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
-            "reasoning": "You are Project Aether's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
+            "general": "You are AETHER CLAW, a helpful assistant. Never claim a tool was run unless execution results confirm it.",
+            "coding": "You are AETHER CLAW's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
+            "reasoning": "You are AETHER CLAW's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         if memories:

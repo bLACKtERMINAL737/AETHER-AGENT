@@ -1,1 +1,1 @@
-"""Project Aether package."""
+"""AETHER CLAW agent package."""

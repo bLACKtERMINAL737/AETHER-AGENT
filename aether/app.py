@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Project Aether API", version="0.4.0",
+app = FastAPI(title="AETHER CLAW API", version="0.4.0",
               description="Local-first hybrid AI agent MVP. Bind to localhost only.", lifespan=lifespan)
 app.add_middleware(LocalAPIProtection)
 
