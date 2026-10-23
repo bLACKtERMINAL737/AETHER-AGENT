@@ -397,6 +397,29 @@ class TaskStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def search_session_messages(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        """Search message text across conversations, ranked by matching query terms."""
+        terms = list(dict.fromkeys(term.casefold() for term in query.split() if term.strip()))
+        if not terms:
+            return []
+        conditions = " OR ".join("instr(lower(m.content), lower(?)) > 0" for _ in terms)
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT m.id, m.session_id, s.title AS session_title, m.role, "
+                "m.content, m.created_at FROM session_messages AS m "
+                "JOIN sessions AS s ON s.id=m.session_id WHERE " + conditions,
+                terms,
+            ).fetchall()
+        ranked = []
+        for row in rows:
+            item = dict(row)
+            haystack = item["content"].casefold()
+            score = sum(1 for term in terms if term in haystack)
+            if score:
+                ranked.append((score, item["created_at"], item))
+        ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+        return [item for _, _, item in ranked[:limit]]
+
     def delete_session(self, session_id: str) -> bool:
         with self.connect() as con:
             cursor = con.execute("DELETE FROM sessions WHERE id=?", (session_id,))
