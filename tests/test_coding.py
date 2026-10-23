@@ -494,3 +494,64 @@ async def test_apply_reports_error_if_final_applied_status_update_fails(
     saved = store.get_proposal(proposal["id"])
     assert saved["status"] == "applying"
     assert "simulated database failure" in saved["error_text"]
+
+
+def test_concurrent_apply_requests_only_apply_proposal_once(tmp_path: Path):
+    """Two engine instances sharing one local DB must not apply a proposal twice."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    import hashlib
+
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    original = source.read_text(encoding="utf-8")
+    proposal = store.create_proposal("concurrent apply", [{
+        "path": "sample.py",
+        "original_content": original,
+        "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+        "content": "def value():\\n    return 2\\n",
+        "diff": "",
+    }])
+    engine.approve(proposal["id"])
+
+    # Use separate engine/store instances to exercise the cross-instance file lock.
+    second_engine = CodingEngine(
+        workspace, TaskStore(tmp_path / "aether.sqlite3"), FakeRouter("{}")
+    )
+    barrier = Barrier(2)
+
+    def apply(engine_instance):
+        barrier.wait(timeout=5)
+        try:
+            return engine_instance.apply(proposal["id"])
+        except CodingError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(apply, (engine, second_engine)))
+
+    successes = [result for result in results if isinstance(result, dict)]
+    failures = [result for result in results if isinstance(result, CodingError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert successes[0]["status"] == "applied"
+    assert source.read_text(encoding="utf-8") == "def value():\\n    return 2\\n"
+    assert store.get_proposal(proposal["id"])["status"] == "applied"
+
+
+def test_interrupted_apply_is_flagged_for_manual_review_after_restart(tmp_path: Path):
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    proposal = store.create_proposal("interrupted apply", [])
+    store.set_proposal_status(proposal["id"], "approved")
+    assert store.claim_proposal_for_apply(proposal["id"]) is True
+
+    # A fresh store simulates process restart against the same database.
+    restarted_store = TaskStore(tmp_path / "aether.sqlite3")
+    count = restarted_store.mark_interrupted_proposals_for_review()
+
+    saved = restarted_store.get_proposal(proposal["id"])
+    assert count == 1
+    assert saved["status"] == "applying"
+    assert "Process restarted while applying" in saved["error_text"]
+    # Recovery must never silently re-approve uncertain filesystem changes.
+    with pytest.raises(ValueError, match="Invalid proposal status transition"):
+        restarted_store.set_proposal_status(proposal["id"], "approved")
