@@ -164,6 +164,13 @@ class CodingEngine:
         return self.store.get_proposal(proposal_id)  # type: ignore[return-value]
 
     def apply(self, proposal_id: str) -> dict[str, Any]:
+        # Serialize filesystem changes with startup recovery across processes.
+        with self.store.coding_apply_lock() as acquired:
+            if not acquired:  # defensive; blocking locks should always acquire
+                raise CodingError("Could not acquire coding apply lock")
+            return self._apply_under_lock(proposal_id)
+
+    def _apply_under_lock(self, proposal_id: str) -> dict[str, Any]:
         proposal = self.store.get_proposal(proposal_id)
         if not proposal:
             raise KeyError("Proposal not found")
