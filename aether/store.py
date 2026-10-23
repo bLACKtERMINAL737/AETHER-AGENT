@@ -108,6 +108,28 @@ class TaskStore:
             rows = con.execute("SELECT * FROM tool_executions WHERE task_id=? ORDER BY created_at", (task_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    def mark_interrupted_proposals_for_review(self) -> int:
+        """Flag proposals left applying by a prior process for manual reconciliation.
+
+        File replacement and SQLite status persistence cannot be one atomic
+        transaction. Never reset these proposals to approved automatically.
+        """
+        now = utc_now()
+        with self.connect() as con:
+            cursor = con.execute(
+                """
+                UPDATE coding_proposals
+                SET updated_at=?,
+                    error_text=COALESCE(
+                        error_text,
+                        'Process restarted while applying. Inspect workspace files and proposal changes before any manual recovery.'
+                    )
+                WHERE status='applying'
+                """,
+                (now,),
+            )
+        return cursor.rowcount
+
     def mark_interrupted_as_unknown(self) -> int:
         now = utc_now()
         with self.connect() as con:

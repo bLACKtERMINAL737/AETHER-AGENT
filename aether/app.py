@@ -40,6 +40,12 @@ async def lifespan(app: FastAPI):
     changed = store.mark_interrupted_as_unknown()
     if changed:
         logger.warning("Marked %s interrupted records as unknown", changed)
+    proposals = store.mark_interrupted_proposals_for_review()
+    if proposals:
+        logger.warning(
+            "Found %s coding proposals interrupted during apply; manual workspace reconciliation is required",
+            proposals,
+        )
     yield
 
 

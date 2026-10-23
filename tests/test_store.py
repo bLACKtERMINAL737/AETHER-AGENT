@@ -210,3 +210,34 @@ def test_failed_proposal_migration_rolls_back_without_data_loss(
             "WHERE type='table' AND name='coding_proposals_new'"
         ).fetchone()
         assert leftover is None
+
+
+def test_interrupted_applying_proposals_are_flagged_for_manual_review(tmp_path: Path):
+    store = TaskStore(tmp_path / "test.sqlite3")
+    applying = store.create_proposal("interrupted", [{"path": "sample.py"}])
+    approved = store.create_proposal("not interrupted", [])
+    store.set_proposal_status(applying["id"], "approved")
+    assert store.claim_proposal_for_apply(applying["id"]) is True
+    store.set_proposal_status(approved["id"], "approved")
+
+    changed = store.mark_interrupted_proposals_for_review()
+
+    assert changed == 1
+    saved = store.get_proposal(applying["id"])
+    assert saved is not None
+    assert saved["status"] == "applying"
+    assert "Process restarted while applying" in saved["error_text"]
+    assert store.get_proposal(approved["id"])["status"] == "approved"
+
+
+def test_interrupted_proposal_review_preserves_existing_error(tmp_path: Path):
+    store = TaskStore(tmp_path / "test.sqlite3")
+    proposal = store.create_proposal("interrupted", [])
+    store.set_proposal_status(proposal["id"], "approved")
+    assert store.claim_proposal_for_apply(proposal["id"]) is True
+    store.set_proposal_status(proposal["id"], "applying", error="rollback failed")
+
+    assert store.mark_interrupted_proposals_for_review() == 1
+    saved = store.get_proposal(proposal["id"])
+    assert saved["status"] == "applying"
+    assert saved["error_text"] == "rollback failed"
