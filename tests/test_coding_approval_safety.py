@@ -16,7 +16,7 @@ def make_proposal(tmp_path: Path, status: str = "pending"):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     source = workspace / "sample.py"
-    original = "VALUE = 1\\n"
+    original = "VALUE = 1\n"
     source.write_text(original, encoding="utf-8")
     store = TaskStore(tmp_path / "aether.sqlite3")
     engine = CodingEngine(workspace, store, UnusedRouter())
@@ -26,7 +26,7 @@ def make_proposal(tmp_path: Path, status: str = "pending"):
             "path": "sample.py",
             "original_content": original,
             "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
-            "content": "VALUE = 2\\n",
+            "content": "VALUE = 2\n",
             "diff": "",
         }],
     )
@@ -56,7 +56,7 @@ def test_applied_proposal_cannot_be_applied_a_second_time(tmp_path: Path):
     first_result = engine.apply(proposal["id"])
     assert first_result["status"] == "applied"
     applied_content = source.read_text(encoding="utf-8")
-    assert applied_content == "VALUE = 2\\n"
+    assert applied_content == "VALUE = 2\n"
 
     with pytest.raises(CodingError, match="explicitly approved"):
         engine.apply(proposal["id"])
