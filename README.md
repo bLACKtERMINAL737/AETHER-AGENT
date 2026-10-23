@@ -25,7 +25,7 @@ AETHER CLAW is an evolving MVP, not a production-ready autonomous agent.
 - Keep the API bound to localhost. Do not expose the service or UI to a public network.
 - Set `AETHER_API_TOKEN` to require a shared token for API routes. Health, UI assets, and API schema/docs remain reachable without that token.
 - If no token is configured, API requests are restricted to loopback clients. This is a development fallback, not protection from other local processes.
-- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-AETHER CLAW-Token` header.
+- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-Aether-Token` header.
 - State-changing requests that include an `Origin` header must use the same loopback host and port. This is defense in depth, not a replacement for keeping the service local.
 - Coding proposals can modify only explicitly selected, existing files. Creating new files and arbitrary shell access are not supported by the coding workflow.
 - Proposal changes require review and explicit approval. Applying a proposal checks the original file state to detect stale files.
