@@ -10,7 +10,7 @@ class CapturingRouter:
         self.answer = answer
         self.calls = []
 
-    async def chat(self, message, task_type, *, history, memories):
+    async def chat(self, message, task_type, *, history, memories, model_route=None, allow_fallback=True):
         self.calls.append({
             "message": message,
             "task_type": task_type,
@@ -33,7 +33,9 @@ async def test_follow_up_chat_receives_saved_session_history_and_appends_turn(tm
     result = await app_module.chat(
         app_module.ChatRequest(
             message="Please continue",
+            mode="manual",
             task_type="reasoning",
+            model_route="primary",
             session_id=session["id"],
         )
     )

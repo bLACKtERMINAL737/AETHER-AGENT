@@ -27,7 +27,7 @@ class CapturingRouter:
     def __init__(self):
         self.memories = None
 
-    async def chat(self, message, task_type, *, history, memories):
+    async def chat(self, message, task_type, *, history, memories, model_route=None, allow_fallback=True):
         self.memories = memories
         return {"answer": "I will keep the explanation concise and in Bangla."}
 

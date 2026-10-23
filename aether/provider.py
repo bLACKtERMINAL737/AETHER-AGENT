@@ -7,6 +7,7 @@ import httpx
 
 logger = logging.getLogger("aether.provider")
 TaskType = Literal["general", "coding", "reasoning"]
+ModelRoute = Literal["primary", "coding", "fallback"]
 
 
 class ProviderNotConfigured(RuntimeError):
@@ -97,7 +98,32 @@ class ModelRouter:
         self.fallback = fallback
         self.max_attempts = max_attempts
 
-    def _route(self, task_type: TaskType) -> tuple[ModelProvider, str]:
+    def available_routes(self) -> list[dict[str, str | bool]]:
+        """Return configured routes without exposing credentials."""
+        routes = [
+            ("primary", self.primary),
+            ("coding", self.coding),
+            ("fallback", self.fallback),
+        ]
+        return [
+            {"id": name, "model": provider.model or "", "configured": bool(provider and provider.configured)}
+            for name, provider in routes if provider is not None
+        ]
+
+    def _route(
+        self, task_type: TaskType, model_route: ModelRoute | None = None
+    ) -> tuple[ModelProvider, str]:
+        if model_route is not None:
+            provider = {
+                "primary": self.primary,
+                "coding": self.coding,
+                "fallback": self.fallback,
+            }[model_route]
+            if provider is None or not provider.configured:
+                raise ProviderNotConfigured(
+                    f"The selected {model_route} model route is not configured."
+                )
+            return provider, model_route
         if task_type == "coding" and self.coding and self.coding.configured:
             return self.coding, "coding"
         return self.primary, "primary"
@@ -106,10 +132,12 @@ class ModelRouter:
         self, message: str, task_type: TaskType = "general",
         history: list[dict[str, str]] | None = None,
         memories: list[dict[str, object]] | None = None,
+        model_route: ModelRoute | None = None,
+        allow_fallback: bool = True,
     ) -> dict[str, str | bool | int]:
-        selected, route = self._route(task_type)
+        selected, route = self._route(task_type, model_route=model_route)
         candidates: list[tuple[ModelProvider, str]] = [(selected, route)]
-        if self.fallback and self.fallback.configured and self.fallback is not selected:
+        if allow_fallback and self.fallback and self.fallback.configured and self.fallback is not selected:
             candidates.append((self.fallback, "fallback"))
 
         last_error: Exception | None = None
