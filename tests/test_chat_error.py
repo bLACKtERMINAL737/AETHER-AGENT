@@ -11,7 +11,7 @@ class FailingRouter:
 
 
 @pytest.mark.asyncio
-async def test_chat_provider_failure_reports_turn_was_not_saved(tmp_path, monkeypatch):
+async def test_chat_provider_failure_warns_history_may_be_incomplete(tmp_path, monkeypatch):
     store = TaskStore(tmp_path / "chat-error.sqlite3")
     session = store.create_session("Existing conversation")
     store.add_session_message(session["id"], "user", "Earlier question")
@@ -28,7 +28,7 @@ async def test_chat_provider_failure_reports_turn_was_not_saved(tmp_path, monkey
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.detail == (
-        "Model provider request failed; this turn was not saved to session history"
+        "Chat request failed; session history may be incomplete; see local logs"
     )
     messages = store.list_session_messages(session["id"])
     assert [(item["role"], item["content"]) for item in messages] == [
