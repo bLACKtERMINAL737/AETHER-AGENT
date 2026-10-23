@@ -72,7 +72,12 @@ class ToolRegistry:
                 if file_path.suffix.lower() not in allowed:
                     continue
                 try:
-                    # Never read through symlinks: they can point outside the workspace.\n                    if file_path.is_symlink():\n                        continue\n                    resolved_file = file_path.resolve()\n                    resolved_file.relative_to(self.workspace)\n                    if resolved_file.stat().st_size > 1_000_000:
+                    # Never read through symlinks: they can point outside the workspace.
+                    if file_path.is_symlink():
+                        continue
+                    resolved_file = file_path.resolve()
+                    resolved_file.relative_to(self.workspace)
+                    if resolved_file.stat().st_size > 1_000_000:
                         continue
                     lines = resolved_file.read_text(encoding="utf-8", errors="replace").splitlines()
                 except (OSError, ValueError):
