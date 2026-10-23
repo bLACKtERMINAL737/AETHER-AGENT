@@ -145,6 +145,10 @@ def list_models():
 def configure_model(request: ModelConfigurationRequest):
     """Configure one route in memory for this running process; credentials are never persisted."""
     raw_url = request.base_url.strip()
+    model_name = request.model.strip()
+    secret = request.api_key.strip()
+    if not model_name or not secret:
+        raise HTTPException(status_code=422, detail="Model ID and provider key must not be blank.")
     try:
         parsed = urlsplit(raw_url)
         host = parsed.hostname
@@ -176,8 +180,8 @@ def configure_model(request: ModelConfigurationRequest):
     }
     provider = providers[request.route]
     provider.base_url = raw_url.rstrip("/")
-    provider.model = request.model.strip()
-    provider.api_key = request.api_key
+    provider.model = model_name
+    provider.api_key = secret
     logger.info("Configured model route %s in memory (credentials not logged)", request.route)
     return {
         "route": request.route,
