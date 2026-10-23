@@ -10,7 +10,7 @@ class CapturingRouter:
         self.answer = answer
         self.calls = []
 
-    async def chat(self, message, task_type, *, history, memories):
+    async def chat(self, message, task_type, *, history, memories, model_route=None, allow_fallback=True):
         self.calls.append({
             "message": message,
             "task_type": task_type,
