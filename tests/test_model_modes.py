@@ -83,3 +83,23 @@ def test_available_routes_do_not_expose_credentials():
     routes = router.available_routes()
     assert routes == [{"id": "primary", "model": "primary-model", "configured": True}]
     assert all("api_key" not in item and "key" not in item for item in routes)
+
+
+@pytest.mark.asyncio
+async def test_auto_reasoning_uses_reasoning_specialist_when_configured():
+    primary = FakeProvider("primary-model")
+    reasoning = FakeProvider("reasoning-model")
+    router = ModelRouter(primary, reasoning=reasoning)
+    result = await router.chat("compare these approaches", "reasoning")
+    assert result["route"] == "reasoning"
+    assert result["model"] == "reasoning-model"
+    assert reasoning.calls == 1
+    assert primary.calls == 0
+
+
+def test_reasoning_route_is_listed_without_credentials():
+    router = ModelRouter(FakeProvider("primary-model"), reasoning=FakeProvider("reasoning-model"))
+    assert router.available_routes() == [
+        {"id": "primary", "model": "primary-model", "configured": True},
+        {"id": "reasoning", "model": "reasoning-model", "configured": True},
+    ]
