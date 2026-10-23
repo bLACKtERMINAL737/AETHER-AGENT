@@ -15,7 +15,27 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
 <body>
 <main>
   <div class="top"><div><h1>Project Aether</h1><div class="muted">Local coding workspace · proposal-first edits</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
-  <div class="warning">Keep the API bound to 127.0.0.1. This UI does not add authentication. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
+  <div class="warning">Keep the API bound to 127.0.0.1. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
+  <section class="panel" style="margin-top:14px">
+    <label for="apiToken">Aether API token (optional unless AETHER_API_TOKEN is configured)</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="apiToken" type="password" autocomplete="off" placeholder="Paste local API token" aria-label="Aether API token"><button id="saveToken">Save for this tab</button><button id="clearToken">Clear</button></div>
+    <div class="muted small">Token is kept in this browser tab's session storage and sent only as an API header.</div>
+    <div id="tokenStatus" class="status" role="status"></div>
+  </section>
+  <section class="panel" style="margin-top:16px">
+    <h2>Chat · persistent sessions</h2>
+    <div class="muted small">Conversation history is stored locally. Saved memories are only sent to the model when you enable the checkbox below.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <select id="sessionSelect" aria-label="Conversation history" style="flex:1;min-width:220px"><option value="">New conversation</option></select>
+      <button id="newSession">New chat</button><button id="deleteSession">Delete chat</button>
+    </div>
+    <div id="chatMessages" class="files" style="max-height:360px;min-height:80px" aria-live="polite"><div class="muted">Start a conversation below.</div></div>
+    <label for="chatInput">Message</label>
+    <textarea id="chatInput" maxlength="20000" placeholder="Ask Aether something…"></textarea>
+    <label style="display:flex;align-items:center;gap:8px"><input id="useSavedMemories" type="checkbox" style="width:auto"> Allow relevant saved memories to be used for this message</label>
+    <div class="actions"><button class="primary" id="sendChat">Send message</button></div>
+    <div id="chatStatus" class="status" role="status"></div>
+  </section>
   <div class="grid">
     <section class="panel">
       <h2>1. Select existing files</h2>
@@ -50,17 +70,146 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     <div class="actions"><button class="primary" id="iterate">Try code → test → fix (max 3 rounds)</button><button id="runTests">Run sandboxed pytest</button></div>
     <div id="testStatus" class="status" role="status"></div><pre id="testOutput" style="display:none"></pre>
   </section>
+  <section class="panel" style="margin-top:16px">
+    <h2>4. Long-term memory</h2>
+    <div class="muted small">Memory is stored locally in SQLite. Aether does not automatically inject these records into model prompts; search and review them explicitly.</div>
+    <label for="memoryCategory">Category</label>
+    <input id="memoryCategory" maxlength="80" value="preference">
+    <label for="memoryContent">Memory content</label>
+    <textarea id="memoryContent" maxlength="4000" placeholder="A fact or preference you explicitly want Aether to remember"></textarea>
+    <label for="memoryTags">Tags (comma-separated)</label>
+    <input id="memoryTags" maxlength="300" placeholder="project, style">
+    <div class="actions"><button class="primary" id="saveMemory">Save memory</button></div>
+    <label for="memoryQuery">Search saved memory</label>
+    <div style="display:flex;gap:8px"><input id="memoryQuery" maxlength="300" placeholder="Search by keywords"><button id="searchMemory">Search</button><button id="listMemory">List all</button></div>
+    <div id="memoryStatus" class="status" role="status"></div>
+    <div id="memoryResults" class="files"></div>
+  </section>
 </main>
 <script>
 const $ = id => document.getElementById(id);
 let currentProposal = null;
 function setStatus(id, text, kind=""){const el=$(id);el.textContent=text;el.className="status "+kind;}
 async function api(url, options={}) {
-  const response = await fetch(url,{headers:{"Content-Type":"application/json"},...options});
+  const token = sessionStorage.getItem("aetherApiToken") || "";
+  const headers = {"Content-Type":"application/json", ...(token ? {"X-Aether-Token":token} : {}), ...(options.headers || {})};
+  const response = await fetch(url,{...options,headers});
   const body = await response.json().catch(()=>({detail:response.statusText}));
   if(!response.ok) throw new Error(body.detail || ("HTTP "+response.status));
   return body;
 }
+$("apiToken").value=sessionStorage.getItem("aetherApiToken") || "";
+$("saveToken").onclick=()=>{
+ const token=$("apiToken").value.trim();
+ if(token) sessionStorage.setItem("aetherApiToken",token); else sessionStorage.removeItem("aetherApiToken");
+ setStatus("tokenStatus",token?"Token saved for this tab.":"No token saved.","good");
+ refreshFiles();loadMemories();
+};
+$("clearToken").onclick=()=>{
+ sessionStorage.removeItem("aetherApiToken");$("apiToken").value="";
+ setStatus("tokenStatus","Token cleared from this tab.","good");
+};
+let currentSessionId = null;
+function renderChatMessages(messages){
+ const box=$("chatMessages");box.replaceChildren();
+ if(!messages.length){box.textContent="No messages yet.";return;}
+ for(const msg of messages){
+  const card=document.createElement("div");card.className="file";card.style.display="block";
+  const role=document.createElement("strong");role.textContent=msg.role==="user"?"You":msg.role==="assistant"?"Aether":"System";
+  const body=document.createElement("div");body.textContent=msg.content;body.style.whiteSpace="pre-wrap";body.style.marginTop="5px";
+  card.append(role,body);box.append(card);
+ }
+ box.scrollTop=box.scrollHeight;
+}
+async function refreshSessions(){
+ try{
+  const data=await api("/sessions?limit=100");
+  const select=$("sessionSelect");const old=currentSessionId;select.replaceChildren();
+  const blank=document.createElement("option");blank.value="";blank.textContent="New conversation";select.append(blank);
+  for(const s of data.sessions){
+   const option=document.createElement("option");option.value=s.id;
+   option.textContent=(s.title||"Conversation")+" ("+s.message_count+")";select.append(option);
+  }
+  if(old && data.sessions.some(s=>s.id===old)){select.value=old;} else if(!old){select.value="";}
+ }catch(e){setStatus("chatStatus",e.message,"bad");}
+}
+async function openSession(sessionId){
+ if(!sessionId){currentSessionId=null;renderChatMessages([]);return;}
+ try{
+  const session=await api("/sessions/"+encodeURIComponent(sessionId)+"?limit=200");
+  currentSessionId=session.id;renderChatMessages(session.messages||[]);
+  setStatus("chatStatus","Loaded saved conversation.","good");
+ }catch(e){setStatus("chatStatus",e.message,"bad");}
+}
+$("sessionSelect").onchange=()=>openSession($("sessionSelect").value);
+$("newSession").onclick=()=>{
+ currentSessionId=null;$("sessionSelect").value="";renderChatMessages([]);
+ setStatus("chatStatus","New conversation ready. It will be saved after you send a message.","good");
+ $("chatInput").focus();
+};
+$("deleteSession").onclick=async()=>{
+ if(!currentSessionId){setStatus("chatStatus","Choose a saved conversation first.","bad");return;}
+ if(!confirm("Delete this conversation and its stored messages?"))return;
+ try{
+  await api("/sessions/"+encodeURIComponent(currentSessionId),{method:"DELETE"});
+  currentSessionId=null;renderChatMessages([]);await refreshSessions();
+  setStatus("chatStatus","Conversation deleted.","good");
+ }catch(e){setStatus("chatStatus",e.message,"bad");}
+};
+async function sendChat(){
+ const message=$("chatInput").value.trim();
+ if(!message){setStatus("chatStatus","Enter a message first.","bad");return;}
+ $("sendChat").disabled=true;setStatus("chatStatus","Aether is thinking…");
+ try{
+  const result=await api("/chat",{method:"POST",body:JSON.stringify({
+   message,task_type:"general",session_id:currentSessionId,
+   use_saved_memories:$("useSavedMemories").checked
+  })});
+  currentSessionId=result.session_id;$("sessionSelect").value=currentSessionId;
+  $("chatInput").value="";
+  await openSession(currentSessionId);await refreshSessions();$("sessionSelect").value=currentSessionId;
+  setStatus("chatStatus","Reply received via "+result.route+" ("+result.model+"). Saved memory used: "+(result.memory_context_used?"yes":"no")+".","good");
+ }catch(e){setStatus("chatStatus",e.message,"bad");await refreshSessions();}
+ finally{$("sendChat").disabled=false;}
+}
+$("sendChat").onclick=sendChat;
+$("chatInput").addEventListener("keydown",event=>{
+ if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat();}
+});
+function renderMemories(items){
+ const container=$("memoryResults");container.replaceChildren();
+ if(!items.length){container.textContent="No matching memories.";return;}
+ for(const item of items){
+   const card=document.createElement("div");card.className="file";card.style.display="block";
+   const heading=document.createElement("div");heading.style.display="flex";heading.style.justifyContent="space-between";heading.style.gap="8px";
+   const title=document.createElement("strong");title.textContent=item.category;
+   const remove=document.createElement("button");remove.textContent="Delete";
+   remove.onclick=async()=>{try{await api("/memory/"+encodeURIComponent(item.id),{method:"DELETE"});await loadMemories();setStatus("memoryStatus","Memory deleted.","good");}catch(e){setStatus("memoryStatus",e.message,"bad");}};
+   heading.append(title,remove);
+   const body=document.createElement("div");body.textContent=item.content;body.style.marginTop="6px";
+   const meta=document.createElement("div");meta.className="muted small";meta.textContent=(item.tags||[]).join(", ")+(item.source?" · source: "+item.source:"");
+   card.append(heading,body,meta);container.append(card);
+ }
+}
+async function loadMemories(query=""){
+ try{
+  const data=query.trim()
+   ? await api("/memory/search",{method:"POST",body:JSON.stringify({query:query.trim(),limit:50})})
+   : await api("/memory?limit=100");
+  renderMemories(data.memories||[]);
+ }catch(e){setStatus("memoryStatus",e.message,"bad");}
+}
+$("saveMemory").onclick=async()=>{
+ const category=$("memoryCategory").value.trim(),content=$("memoryContent").value.trim();
+ if(!category||!content){setStatus("memoryStatus","Enter a category and memory content.","bad");return;}
+ try{
+  const tags=$("memoryTags").value.split(",").map(t=>t.trim()).filter(Boolean).slice(0,20);
+  await api("/memory",{method:"POST",body:JSON.stringify({category,content,source:"user",tags})});
+  $("memoryContent").value="";setStatus("memoryStatus","Memory saved locally.","good");await loadMemories();
+ }catch(e){setStatus("memoryStatus",e.message,"bad");}
+};
+$("searchMemory").onclick=()=>loadMemories($("memoryQuery").value);
+$("listMemory").onclick=()=>loadMemories();
 async function refreshFiles(){
   setStatus("leftStatus","Loading workspace…");
   try{
@@ -144,6 +293,8 @@ $("runTests").onclick=async()=>{
  finally{$("runTests").disabled=false;}
 };
 refreshFiles();
+loadMemories();
+refreshSessions();
 </script>
 </body>
 </html>
