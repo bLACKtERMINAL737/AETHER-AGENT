@@ -27,7 +27,7 @@ def client_and_providers(monkeypatch):
             reasoning=providers["reasoning"],
         ),
     )
-    with TestClient(app_module.app, base_url="http://127.0.0.1") as client:
+    with TestClient(app_module.app, base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1"}) as client:
         yield client, providers
 
 
