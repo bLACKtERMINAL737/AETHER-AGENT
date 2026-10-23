@@ -75,7 +75,10 @@ class ModelProvider:
 
 
 def _retryable(exc: Exception) -> bool:
-    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
+    # HTTPX transport failures include timeouts, connection/network errors,
+    # and remote protocol interruptions. These are transient candidates for
+    # bounded retries; HTTP 4xx responses remain non-retryable.
+    if isinstance(exc, httpx.TransportError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
         return 500 <= exc.response.status_code < 600
