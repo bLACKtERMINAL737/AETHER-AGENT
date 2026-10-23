@@ -1,4 +1,4 @@
-# Project Aether
+# AETHER CLAW
 
 A local-first, modular AI agent foundation focused on reliable task execution, explicit approval, and safe-by-default local development.
 
@@ -20,12 +20,12 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 
 ## Safety and scope
 
-Aether is an evolving MVP, not a production-ready autonomous agent.
+AETHER CLAW is an evolving MVP, not a production-ready autonomous agent.
 
 - Keep the API bound to localhost. Do not expose the service or UI to a public network.
 - Set `AETHER_API_TOKEN` to require a shared token for API routes. Health, UI assets, and API schema/docs remain reachable without that token.
 - If no token is configured, API requests are restricted to loopback clients. This is a development fallback, not protection from other local processes.
-- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-Aether-Token` header.
+- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-AETHER CLAW-Token` header.
 - State-changing requests that include an `Origin` header must use the same loopback host and port. This is defense in depth, not a replacement for keeping the service local.
 - Coding proposals can modify only explicitly selected, existing files. Creating new files and arbitrary shell access are not supported by the coding workflow.
 - Proposal changes require review and explicit approval. Applying a proposal checks the original file state to detect stale files.
@@ -102,7 +102,7 @@ If model-provider variables are absent, local health checks and tools can still 
 
 ## Build the optional Docker sandbox
 
-Build the image once from the repository root. At runtime, Aether uses `--pull=never`, so it will not pull images automatically.
+Build the image once from the repository root. At runtime, AETHER CLAW uses `--pull=never`, so it will not pull images automatically.
 
 ```bash
 docker build -f Dockerfile.sandbox -t aether-sandbox:latest .
@@ -189,7 +189,7 @@ Memory is explicit and local; the application does not silently infer or save me
 
 ### Model routing, retries, and fallback
 
-Aether selects a provider using the requested task type:
+AETHER CLAW selects a provider using the requested task type:
 
 - `coding` uses the configured coding-specialist provider when available.
 - Other tasks, and coding tasks without a configured coding provider, use the primary provider.
@@ -197,7 +197,7 @@ Aether selects a provider using the requested task type:
 
 Transient failures eligible for retry/fallback are network errors, timeouts, and HTTP 5xx responses. HTTP 4xx responses (for example, authentication or invalid-request errors) and other non-transient errors are surfaced without trying the fallback route.
 
-The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, Aether raises the last provider error.
+The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, AETHER CLAW raises the last provider error.
 
 Successful chat responses include `route`, `model`, `fallback_used`, and `attempts`. The attempt count includes calls made to both the selected and fallback providers. If no usable route is configured, the router raises a configuration error.
 
