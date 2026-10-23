@@ -1,4 +1,5 @@
 import os
+import stat
 from pathlib import Path
 from typing import Any, Callable
 from pydantic import BaseModel, Field, ValidationError
@@ -39,6 +40,37 @@ class ToolRegistry:
             raise ToolError("Path escapes the configured workspace") from exc
         return target
 
+    def _read_workspace_file(self, file_path: Path) -> list[str] | None:
+        """Read a workspace file without following symlinks in any path component."""
+        try:
+            relative = file_path.relative_to(self.workspace)
+            if not relative.parts:
+                return None
+            directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+            file_flags = os.O_RDONLY | os.O_NOFOLLOW
+            directory_fd = os.open(self.workspace, directory_flags)
+            try:
+                for part in relative.parts[:-1]:
+                    next_fd = os.open(part, directory_flags, dir_fd=directory_fd)
+                    os.close(directory_fd)
+                    directory_fd = next_fd
+                file_fd = os.open(relative.parts[-1], file_flags, dir_fd=directory_fd)
+            finally:
+                os.close(directory_fd)
+
+            try:
+                file_stat = os.fstat(file_fd)
+                if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_size > 1_000_000:
+                    return None
+                with os.fdopen(file_fd, "r", encoding="utf-8", errors="replace") as stream:
+                    file_fd = -1
+                    return stream.read().splitlines()
+            finally:
+                if file_fd >= 0:
+                    os.close(file_fd)
+        except (OSError, ValueError, NotImplementedError):
+            return None
+
     def execute(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
         if name not in self._tools:
             raise ToolError(f"Unknown tool: {name}")
@@ -65,17 +97,14 @@ class ToolRegistry:
             raise ToolError("Search path must be an existing directory")
         matches = []
         allowed = {".py", ".txt", ".md", ".json", ".toml", ".yaml", ".yml", ".js", ".ts", ".html", ".css", ".c", ".cpp", ".h"}
-        for root, dirs, names in os.walk(target):
-            dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"}]
+        for root, dirs, names in os.walk(target, followlinks=False):
+            dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"} and not (Path(root) / d).is_symlink()]
             for name in names:
                 file_path = Path(root) / name
                 if file_path.suffix.lower() not in allowed:
                     continue
-                try:
-                    if file_path.stat().st_size > 1_000_000:
-                        continue
-                    lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
-                except OSError:
+                lines = self._read_workspace_file(file_path)
+                if lines is None:
                     continue
                 for line_number, line in enumerate(lines, 1):
                     if query.casefold() in line.casefold():
