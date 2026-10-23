@@ -196,7 +196,7 @@ Run the suite locally:
 python -m pytest -q
 ```
 
-The latest local verification on the development branch reported **40 passed**. GitHub Actions is also configured; check the branch's Actions page for its current CI status.
+The latest local verification reported **56 passed** on the development branch. Treat this as a historical local result, not a guarantee for every commit. GitHub Actions is also configured; check the branch's Actions page for the current CI status.
 
 ## Current development priorities
 
