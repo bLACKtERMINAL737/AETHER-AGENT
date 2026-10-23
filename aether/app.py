@@ -3,6 +3,8 @@ import logging
 import os
 from typing import Literal
 from pathlib import Path
+from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -73,6 +75,13 @@ class ChatRequest(BaseModel):
     use_saved_memories: bool = False
 
 
+class ModelConfigurationRequest(BaseModel):
+    route: Literal["primary", "coding", "reasoning", "fallback"]
+    base_url: str = Field(min_length=1, max_length=500)
+    model: str = Field(min_length=1, max_length=200)
+    api_key: str = Field(min_length=1, max_length=2_000)
+
+
 class TaskRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     input: str = Field(min_length=1, max_length=20_000)
@@ -130,6 +139,56 @@ def health():
 def list_models():
     """Expose configured route names only; never return API keys or full credentials."""
     return {"routes": router.available_routes()}
+
+
+@app.post("/models/configure")
+def configure_model(request: ModelConfigurationRequest):
+    """Configure one route in memory for this running process; credentials are never persisted."""
+    raw_url = request.base_url.strip()
+    model_name = request.model.strip()
+    secret = request.api_key.strip()
+    if not model_name or not secret:
+        raise HTTPException(status_code=422, detail="Model ID and provider key must not be blank.")
+    try:
+        parsed = urlsplit(raw_url)
+        host = parsed.hostname
+        if parsed.scheme not in {"http", "https"} or not host or parsed.username or parsed.password:
+            raise ValueError
+        if parsed.query or parsed.fragment:
+            raise ValueError
+        is_loopback = host.lower() == "localhost"
+        if not is_loopback:
+            try:
+                is_loopback = ip_address(host).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed.scheme != "https" and not is_loopback:
+            raise ValueError
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Use an HTTPS provider URL, or HTTP only for localhost/loopback. URL credentials, query strings, and fragments are not allowed.",
+        ) from exc
+
+    providers = {
+        "primary": primary_provider,
+        "coding": coding_provider,
+        "reasoning": reasoning_provider,
+        "fallback": fallback_provider,
+    }
+    provider = providers[request.route]
+    provider.base_url = raw_url.rstrip("/")
+    provider.model = model_name
+    provider.api_key = secret
+    logger.info("Configured model route %s in memory (credentials not logged)", request.route)
+    return {
+        "route": request.route,
+        "model": provider.model,
+        "configured": provider.configured,
+        "persistence": "memory-only; configuration resets when the server restarts",
+    }
 
 
 def infer_task_type(message: str) -> Literal["general", "coding", "reasoning"]:
