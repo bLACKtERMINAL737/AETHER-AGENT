@@ -151,7 +151,11 @@ class CodingEngine:
             raise KeyError("Proposal not found")
         if proposal["status"] != "pending":
             raise CodingError(f"Only pending proposals can be approved (current status: {proposal['status']})")
-        self.store.set_proposal_status(proposal_id, "approved")
+        try:
+            self.store.set_proposal_status(proposal_id, "approved")
+        except ValueError as exc:
+            # The proposal may have changed after the initial status read.
+            raise CodingError(str(exc)) from exc
         return self.store.get_proposal(proposal_id)  # type: ignore[return-value]
 
     def reject(self, proposal_id: str) -> dict[str, Any]:
@@ -160,7 +164,11 @@ class CodingEngine:
             raise KeyError("Proposal not found")
         if proposal["status"] != "pending":
             raise CodingError(f"Only pending proposals can be rejected (current status: {proposal['status']})")
-        self.store.set_proposal_status(proposal_id, "rejected")
+        try:
+            self.store.set_proposal_status(proposal_id, "rejected")
+        except ValueError as exc:
+            # The proposal may have changed after the initial status read.
+            raise CodingError(str(exc)) from exc
         return self.store.get_proposal(proposal_id)  # type: ignore[return-value]
 
     def apply(self, proposal_id: str) -> dict[str, Any]:
