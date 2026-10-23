@@ -254,6 +254,8 @@ async def chat(request: ChatRequest):
         answer = str(result["answer"])
         # Persist the user/assistant pair in one transaction to avoid partial turns.
         store.add_session_turn(session_id, request.message, answer)
+    except HTTPException:
+        raise
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except KeyError as exc:
