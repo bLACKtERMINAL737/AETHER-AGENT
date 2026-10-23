@@ -216,7 +216,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=404, detail="Conversation session not found") from exc
     except Exception as exc:
         logger.exception("Model provider request failed")
-        raise HTTPException(status_code=502, detail="Model provider request failed; this turn was not saved to session history") from exc
+        raise HTTPException(status_code=502, detail="Chat request failed; session history may be incomplete; see local logs") from exc
     return {**result, "session_id": session_id, "memory_context_used": bool(request.use_saved_memories and memories)}
 
 
