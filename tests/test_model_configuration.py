@@ -2,7 +2,6 @@ import pytest
 from fastapi import HTTPException
 
 from aether import app as app_module
-from aether.config import Settings
 from aether.provider import ModelProvider
 from aether.app import ModelConfigurationRequest, configure_model
 
@@ -76,5 +75,6 @@ def test_configure_model_rejects_blank_credentials_and_model():
         {"route": "primary", "base_url": "https://api.example.com/v1", "model": " ", "api_key": "key"},
         {"route": "primary", "base_url": "https://api.example.com/v1", "model": "model", "api_key": " "},
     ]:
-        with pytest.raises(Exception):
-            ModelConfigurationRequest(**payload)
+        with pytest.raises(HTTPException) as error:
+            configure_model(ModelConfigurationRequest(**payload))
+        assert error.value.status_code == 422
