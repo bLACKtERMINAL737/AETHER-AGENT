@@ -89,3 +89,39 @@ async def test_chat_rejects_unknown_session_before_calling_router(tmp_path, monk
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Conversation session not found"
     assert router.calls == []
+
+
+
+def test_chat_turn_persistence_is_atomic_when_assistant_insert_fails(tmp_path):
+    import sqlite3
+
+    store = TaskStore(tmp_path / "atomic-chat-turn.sqlite3")
+    session = store.create_session("New conversation")
+    with store.connect() as con:
+        con.execute("""
+            CREATE TRIGGER fail_assistant_message
+            BEFORE INSERT ON session_messages
+            WHEN NEW.role = 'assistant'
+            BEGIN
+                SELECT RAISE(ABORT, 'forced assistant insert failure');
+            END
+        """)
+
+    with pytest.raises(sqlite3.IntegrityError, match="forced assistant insert failure"):
+        store.add_session_turn(session["id"], "user turn", "assistant turn")
+
+    assert store.list_session_messages(session["id"]) == []
+    assert store.get_session(session["id"])["title"] == "New conversation"
+
+
+def test_chat_turn_persistence_saves_both_messages_and_sets_title(tmp_path):
+    store = TaskStore(tmp_path / "atomic-chat-turn-success.sqlite3")
+    session = store.create_session("New conversation")
+
+    saved = store.add_session_turn(session["id"], "What is a workflow?", "A sequence of steps.")
+
+    assert [(item["role"], item["content"]) for item in saved] == [
+        ("user", "What is a workflow?"),
+        ("assistant", "A sequence of steps."),
+    ]
+    assert store.get_session(session["id"])["title"] == "What is a workflow?"

@@ -386,6 +386,35 @@ class TaskStore:
             row = con.execute("SELECT * FROM session_messages WHERE id=?", (message_id,)).fetchone()
         return dict(row)
 
+
+    def add_session_turn(self, session_id: str, user_content: str, assistant_content: str) -> list[dict[str, Any]]:
+        """Persist a successful user/assistant turn atomically."""
+        user_id, assistant_id = str(uuid4()), str(uuid4())
+        user_created_at, assistant_created_at = utc_now(), utc_now()
+        with self.connect() as con:
+            exists = con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if not exists:
+                raise KeyError("Session not found")
+            con.execute(
+                "INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
+                (user_id, session_id, "user", user_content, user_created_at),
+            )
+            con.execute(
+                "INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
+                (assistant_id, session_id, "assistant", assistant_content, assistant_created_at),
+            )
+            title = user_content.strip().replace("\\n", " ")[:80] or "New conversation"
+            con.execute(
+                "UPDATE sessions SET updated_at=?, title=CASE WHEN title='New conversation' THEN ? ELSE title END WHERE id=?",
+                (assistant_created_at, title, session_id),
+            )
+            rows = con.execute(
+                "SELECT * FROM session_messages WHERE id IN (?, ?) "
+                "ORDER BY CASE id WHEN ? THEN 0 ELSE 1 END",
+                (user_id, assistant_id, user_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_session_messages(self, session_id: str, limit: int = 100) -> list[dict[str, Any]]:
         # Use the declared primary key rather than SQLite rowid; the table may be
         # backed by a WITHOUT ROWID schema in an existing local database.
