@@ -183,10 +183,25 @@ Memory is explicit and local; the application does not silently infer or save me
 
 - SQLite WAL and transactions are used for local persistence.
 - Interrupted in-flight tasks and tool executions are marked `unknown` rather than replayed automatically.
-- Provider retries are bounded and limited to transient failures.
 - Coding proposal application verifies original file hashes before replacing files.
 - Proposal state transitions are checked to prevent invalid approval/rejection and duplicate application.
 - Sandbox tests run without network access and do not pull images at runtime.
+
+### Model routing, retries, and fallback
+
+Aether selects a provider using the requested task type:
+
+- `coding` uses the configured coding-specialist provider when available.
+- Other tasks, and coding tasks without a configured coding provider, use the primary provider.
+- The optional fallback provider is tried only after the selected provider fails with a transient error. It is not a general-purpose second choice when a request is rejected.
+
+Transient failures eligible for retry/fallback are network errors, timeouts, and HTTP 5xx responses. HTTP 4xx responses (for example, authentication or invalid-request errors) and other non-transient errors are surfaced without trying the fallback route.
+
+The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, Aether raises the last provider error.
+
+Successful chat responses include `route`, `model`, `fallback_used`, and `attempts`. The attempt count includes calls made to both the selected and fallback providers. If no usable route is configured, the router raises a configuration error.
+
+**Important:** a timeout or connection failure does not always prove that the remote provider stopped processing the request. A retry may therefore cause duplicate processing or billing, depending on the provider. Retries are bounded to limit this risk.
 
 ## Tests
 
