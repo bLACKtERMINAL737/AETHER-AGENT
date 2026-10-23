@@ -272,7 +272,7 @@ def reject_coding_proposal(proposal_id: str):
         return coding.reject(proposal_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
+    except CodingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

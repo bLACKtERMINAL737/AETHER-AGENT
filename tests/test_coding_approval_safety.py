@@ -63,3 +63,20 @@ def test_applied_proposal_cannot_be_applied_a_second_time(tmp_path: Path):
 
     assert source.read_text(encoding="utf-8") == applied_content
     assert store.get_proposal(proposal["id"])["status"] == "applied"
+
+
+
+def test_rejecting_non_pending_proposal_is_a_conflict(monkeypatch):
+    from fastapi import HTTPException
+    import aether.app as app_module
+
+    class AlreadyApprovedCoding:
+        def reject(self, proposal_id):
+            raise CodingError("only pending proposals can be rejected")
+
+    monkeypatch.setattr(app_module, "coding", AlreadyApprovedCoding())
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_module.reject_coding_proposal("proposal-123")
+
+    assert exc_info.value.status_code == 409
