@@ -133,3 +133,58 @@ async def test_unconfigured_primary_fails_cleanly():
     router = ModelRouter(ModelProvider(None, None, None))
     with pytest.raises(Exception, match="Provider is not configured"):
         await router.chat("hello")
+
+
+
+@pytest.mark.parametrize("max_attempts", [0, 4, -1])
+def test_router_rejects_attempt_limits_outside_supported_range(max_attempts):
+    with pytest.raises(ValueError, match="between 1 and 3"):
+        ModelRouter(FakeProvider("primary"), max_attempts=max_attempts)
+
+
+@pytest.mark.asyncio
+async def test_same_provider_as_primary_and_fallback_is_not_called_twice():
+    primary = FakeProvider(
+        "primary",
+        errors=[httpx.ConnectError("network down")],
+    )
+    router = ModelRouter(primary, fallback=primary, max_attempts=1)
+
+    with pytest.raises(httpx.ConnectError, match="network down"):
+        await router.chat("hello")
+
+    assert primary.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_coding_route_transient_failure_falls_back_without_calling_primary(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    primary = FakeProvider("primary")
+    coding = FakeProvider("coding", errors=[httpx.ConnectError("coding endpoint down")])
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(primary, coding=coding, fallback=fallback, max_attempts=1)
+
+    result = await router.chat("fix bug", "coding")
+
+    assert result["route"] == "fallback"
+    assert result["fallback_used"] is True
+    assert result["attempts"] == 2
+    assert coding.calls == 1
+    assert primary.calls == 0
+    assert fallback.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_error_does_not_retry_or_fall_back():
+    primary = FakeProvider("primary", errors=[status_error(429)])
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(primary, fallback=fallback, max_attempts=3)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await router.chat("hello")
+
+    assert primary.calls == 1
+    assert fallback.calls == 0
