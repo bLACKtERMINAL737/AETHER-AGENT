@@ -64,7 +64,10 @@ app.add_middleware(LocalAPIProtection)
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
-    task_type: Literal["general", "coding", "reasoning"] = "general"
+    mode: Literal["auto", "manual"] = "auto"
+    task_type: Literal["auto", "general", "coding", "reasoning"] = "auto"
+    model_route: Literal["primary", "coding", "fallback"] | None = None
+    allow_fallback: bool = True
     session_id: str | None = None
     use_saved_memories: bool = False
 
@@ -119,6 +122,31 @@ def health():
         "sandbox_image": coding.sandbox_image,
         "api_token_required": bool(os.getenv("AETHER_API_TOKEN", "").strip()),
     }
+
+
+@app.get("/models")
+def list_models():
+    """Expose configured route names only; never return API keys or full credentials."""
+    return {"routes": router.available_routes()}
+
+
+def infer_task_type(message: str) -> Literal["general", "coding", "reasoning"]:
+    """Conservative, local heuristic; it never sends a second request to classify a task."""
+    text = message.lower()
+    coding_terms = (
+        "code", "coding", "debug", "bug", "function", "class ", "python", "javascript",
+        "typescript", "rust", "java ", "c++", "pytest", "test failure", "stack trace",
+        "refactor", "implement", "repository", "git ", "api endpoint",
+    )
+    reasoning_terms = (
+        "prove", "derive", "analyze", "analyse", "compare", "trade-off", "tradeoff",
+        "step by step", "reasoning", "architecture", "design decision", "complex",
+    )
+    if any(term in text for term in coding_terms):
+        return "coding"
+    if any(term in text for term in reasoning_terms):
+        return "reasoning"
+    return "general"
 
 
 @app.get("/tools")
@@ -205,11 +233,23 @@ async def chat(request: ChatRequest):
                     seen_memory_ids.add(item["id"])
                 if len(memories) >= 5:
                     break
+        effective_task = (
+            infer_task_type(request.message)
+            if request.mode == "auto" or request.task_type == "auto"
+            else request.task_type
+        )
+        if request.mode == "manual" and request.model_route is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Manual mode requires an explicit model_route selection.",
+            )
         result = await router.chat(
             request.message,
-            request.task_type,
+            effective_task,
             history=history,
             memories=memories,
+            model_route=request.model_route if request.mode == "manual" else None,
+            allow_fallback=request.allow_fallback,
         )
         answer = str(result["answer"])
         # Persist the user/assistant pair in one transaction to avoid partial turns.
@@ -221,7 +261,13 @@ async def chat(request: ChatRequest):
     except Exception as exc:
         logger.exception("Model provider request failed")
         raise HTTPException(status_code=502, detail="Chat request failed; session history may be incomplete; see local logs") from exc
-    return {**result, "session_id": session_id, "memory_context_used": bool(request.use_saved_memories and memories)}
+    return {
+        **result,
+        "session_id": session_id,
+        "memory_context_used": bool(request.use_saved_memories and memories),
+        "mode": request.mode,
+        "task_type": effective_task,
+    }
 
 
 @app.post("/coding/proposals")
