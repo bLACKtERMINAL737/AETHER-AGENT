@@ -24,7 +24,25 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
   </section>
   <section class="panel" style="margin-top:16px">
     <h2>Chat · persistent sessions</h2>
-    <div class="muted small">Conversation history is stored locally. Saved memories are only sent to the model when you enable the checkbox below.</div>
+    <div class="muted small">Conversation history is stored locally. Auto mode classifies task intent locally; Manual mode uses the model route you select. Saved memories are only sent when enabled.</div>
+    <label for="modelMode">Model selection mode</label>
+    <select id="modelMode" aria-label="Model selection mode">
+      <option value="auto">Auto — choose route from task</option>
+      <option value="manual">Manual — I choose the route</option>
+    </select>
+    <div id="manualModelControls" style="display:none">
+      <label for="modelRoute">Model route</label>
+      <select id="modelRoute" aria-label="Manual model route"></select>
+      <label style="display:flex;align-items:center;gap:8px"><input id="allowFallback" type="checkbox" checked style="width:auto"> Allow fallback if selected model has a transient failure</label>
+    </div>
+    <label for="taskType">Task type</label>
+    <select id="taskType" aria-label="Task type">
+      <option value="auto">Auto-detect from message</option>
+      <option value="general">General chat</option>
+      <option value="coding">Coding</option>
+      <option value="reasoning">Reasoning</option>
+    </select>
+    <div id="modelStatus" class="muted small" role="status">Loading configured model routes…</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       <select id="sessionSelect" aria-label="Conversation history" style="flex:1;min-width:220px"><option value="">New conversation</option></select>
       <button id="newSession">New chat</button><button id="deleteSession">Delete chat</button>
@@ -103,13 +121,44 @@ $("saveToken").onclick=()=>{
  const token=$("apiToken").value.trim();
  if(token) sessionStorage.setItem("aetherApiToken",token); else sessionStorage.removeItem("aetherApiToken");
  setStatus("tokenStatus",token?"Token saved for this tab.":"No token saved.","good");
- refreshFiles();loadMemories();
+ refreshFiles();loadMemories();loadModelRoutes();
 };
 $("clearToken").onclick=()=>{
  sessionStorage.removeItem("aetherApiToken");$("apiToken").value="";
  setStatus("tokenStatus","Token cleared from this tab.","good");
 };
 let currentSessionId = null;
+let configuredModelRoutes = [];
+function updateModelControls(){
+ const manual = $("modelMode").value === "manual";
+ $("manualModelControls").style.display = manual ? "block" : "none";
+ $("taskType").disabled = false;
+ if(manual && !$("modelRoute").value){
+  const first = configuredModelRoutes.find(route => route.configured);
+  if(first) $("modelRoute").value = first.id;
+ }
+}
+async function loadModelRoutes(){
+ try{
+  const data = await api("/models");
+  configuredModelRoutes = data.routes || [];
+  const select = $("modelRoute");
+  select.replaceChildren();
+  for(const route of configuredModelRoutes){
+   const option = document.createElement("option");
+   option.value = route.id;
+   option.textContent = route.id + " · " + (route.model || "unnamed model") + (route.configured ? "" : " (not configured)");
+   option.disabled = !route.configured;
+   select.append(option);
+  }
+  const usable = configuredModelRoutes.some(route => route.configured);
+  $("modelStatus").textContent = usable
+   ? "Configured routes loaded. API keys are never returned by this endpoint."
+   : "No model routes configured. Configure provider environment variables first.";
+  updateModelControls();
+ }catch(e){$("modelStatus").textContent="Could not load routes: "+e.message;}
+}
+$("modelMode").onchange=updateModelControls;
 function renderChatMessages(messages){
  const box=$("chatMessages");box.replaceChildren();
  if(!messages.length){box.textContent="No messages yet.";return;}
@@ -162,13 +211,18 @@ async function sendChat(){
  $("sendChat").disabled=true;setStatus("chatStatus","AETHER CLAW is thinking…");
  try{
   const result=await api("/chat",{method:"POST",body:JSON.stringify({
-   message,task_type:"general",session_id:currentSessionId,
+   message,
+   mode:$("modelMode").value,
+   task_type:$("taskType").value,
+   model_route:$("modelMode").value === "manual" ? $("modelRoute").value : null,
+   allow_fallback:$("allowFallback").checked,
+   session_id:currentSessionId,
    use_saved_memories:$("useSavedMemories").checked
   })});
   currentSessionId=result.session_id;$("sessionSelect").value=currentSessionId;
   $("chatInput").value="";
   await openSession(currentSessionId);await refreshSessions();$("sessionSelect").value=currentSessionId;
-  setStatus("chatStatus","Reply received via "+result.route+" ("+result.model+"). Saved memory used: "+(result.memory_context_used?"yes":"no")+".","good");
+  setStatus("chatStatus",result.mode.toUpperCase()+" · "+result.task_type+" · "+result.route+" ("+result.model+"). Fallback used: "+(result.fallback_used?"yes":"no")+". Saved memory used: "+(result.memory_context_used?"yes":"no")+".","good");
  }catch(e){setStatus("chatStatus",e.message,"bad");await refreshSessions();}
  finally{$("sendChat").disabled=false;}
 }
@@ -294,6 +348,7 @@ $("runTests").onclick=async()=>{
 };
 refreshFiles();
 loadMemories();
+loadModelRoutes();
 refreshSessions();
 </script>
 </body>
