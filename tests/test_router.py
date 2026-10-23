@@ -111,7 +111,10 @@ async def test_fallback_failure_raises_last_error_and_counts_attempts(monkeypatc
         return None
 
     monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
-    primary = FakeProvider("primary", errors=[httpx.ConnectError("primary down")])
+    primary = FakeProvider(
+        "primary",
+        errors=[httpx.ConnectError("primary down"), httpx.ConnectError("primary still down")],
+    )
     fallback = FakeProvider(
         "fallback",
         errors=[httpx.ReadTimeout("fallback timed out"), httpx.ReadTimeout("fallback timed out again")],
