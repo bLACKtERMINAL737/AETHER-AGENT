@@ -24,7 +24,8 @@ tools = ToolRegistry(settings.workspace)
 primary_provider = ModelProvider(settings.model_base_url, settings.model_api_key, settings.model_name)
 coding_provider = ModelProvider(settings.coding_model_base_url, settings.coding_model_api_key, settings.coding_model_name)
 fallback_provider = ModelProvider(settings.fallback_model_base_url, settings.fallback_model_api_key, settings.fallback_model_name)
-router = ModelRouter(primary_provider, coding_provider, fallback_provider)
+reasoning_provider = ModelProvider(settings.reasoning_model_base_url, settings.reasoning_model_api_key, settings.reasoning_model_name)
+router = ModelRouter(primary_provider, coding_provider, fallback_provider, reasoning=reasoning_provider)
 coding = CodingEngine(
     settings.workspace, store, router,
     enable_test_runner=os.getenv("AETHER_ENABLE_TEST_RUNNER", "").lower() == "true",
@@ -66,7 +67,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     mode: Literal["auto", "manual"] = "auto"
     task_type: Literal["auto", "general", "coding", "reasoning"] = "auto"
-    model_route: Literal["primary", "coding", "fallback"] | None = None
+    model_route: Literal["primary", "coding", "reasoning", "fallback"] | None = None
     allow_fallback: bool = True
     session_id: str | None = None
     use_saved_memories: bool = False
@@ -118,6 +119,7 @@ def health():
         "provider_configured": primary_provider.configured,
         "coding_route_configured": coding_provider.configured,
         "fallback_route_configured": fallback_provider.configured,
+        "reasoning_route_configured": reasoning_provider.configured,
         "coding_test_runner_enabled": coding.enable_test_runner,
         "sandbox_image": coding.sandbox_image,
         "api_token_required": bool(os.getenv("AETHER_API_TOKEN", "").strip()),

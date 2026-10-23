@@ -10,7 +10,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Workspace tools** for listing files and searching text while preventing paths from escaping the configured workspace.
 - **Auto and Manual model modes**: Auto locally classifies task intent and selects a configured route; Manual lets the user explicitly select a configured route. Neither mode exposes credentials.
 - **Model route discovery** via `GET /models`, returning only route IDs, model IDs, and configured status.
-- **Model routing** for a default OpenAI-compatible provider, an optional coding specialist, and an optional fallback provider.
+- **Task-specific model routing** for primary, coding specialist, optional reasoning specialist, and fallback providers; each route can use a different OpenAI-compatible endpoint/model.
 - **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures.
 - **Coding proposals** that show file diffs and require explicit approval before changes are applied.
 - **Proposal state protection** so only valid pending proposals can be approved or rejected, and already-applied changes cannot be applied again.
@@ -34,7 +34,7 @@ AETHER CLAW is an evolving MVP, not a production-ready autonomous agent.
 - The Docker test runner is disabled by default. When enabled, it uses a prebuilt image, disables networking, drops Linux capabilities, runs as a non-root user, sets resource limits, uses a read-only container root, and tests a disposable workspace snapshot.
 - Docker is an additional isolation layer, not a perfect security boundary. Keep Docker and the host updated, and do not run hostile workloads on a sensitive machine.
 - Saved-memory retrieval is opt-in for each chat request. Retrieved records are passed as untrusted reference data, not instructions. Do not store secrets in chat or memory.
-- Model routing is rule-based; automatic benchmark-driven cost routing is not implemented.
+- Auto routing uses a local task-intent heuristic and configured task specialists; a reasoning specialist is optional. Automatic benchmark-driven cost/latency optimization and a dynamic provider catalog are not implemented yet.
 - Do not commit API keys, access tokens, or other secrets.
 
 ## Requirements
@@ -93,6 +93,9 @@ Set these environment variables for the routes you want to use:
 | `AETHER_FALLBACK_MODEL_BASE_URL` | Optional fallback API base URL |
 | `AETHER_FALLBACK_MODEL_API_KEY` | Optional fallback API key |
 | `AETHER_FALLBACK_MODEL_NAME` | Optional fallback model identifier |
+| `AETHER_REASONING_MODEL_BASE_URL` | Optional reasoning-specialist API base URL |
+| `AETHER_REASONING_MODEL_API_KEY` | Optional reasoning-specialist API key |
+| `AETHER_REASONING_MODEL_NAME` | Optional reasoning-specialist model identifier |
 | `AETHER_DB_PATH` | SQLite database path; default `./data/aether.sqlite3` |
 | `AETHER_WORKSPACE` | Workspace directory allowed for workspace tools; default `./workspace` |
 | `AETHER_ENABLE_TEST_RUNNER` | Set to `true` to enable Docker-backed pytest; default `false` |

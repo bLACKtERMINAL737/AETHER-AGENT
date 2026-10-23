@@ -7,7 +7,7 @@ import httpx
 
 logger = logging.getLogger("aether.provider")
 TaskType = Literal["general", "coding", "reasoning"]
-ModelRoute = Literal["primary", "coding", "fallback"]
+ModelRoute = Literal["primary", "coding", "reasoning", "fallback"]
 
 
 class ProviderNotConfigured(RuntimeError):
@@ -89,6 +89,7 @@ class ModelRouter:
         primary: ModelProvider,
         coding: ModelProvider | None = None,
         fallback: ModelProvider | None = None,
+        reasoning: ModelProvider | None = None,
         max_attempts: int = 2,
     ):
         if max_attempts < 1 or max_attempts > 3:
@@ -96,6 +97,7 @@ class ModelRouter:
         self.primary = primary
         self.coding = coding
         self.fallback = fallback
+        self.reasoning = reasoning
         self.max_attempts = max_attempts
 
     def available_routes(self) -> list[dict[str, str | bool]]:
@@ -103,6 +105,7 @@ class ModelRouter:
         routes = [
             ("primary", self.primary),
             ("coding", self.coding),
+            ("reasoning", self.reasoning),
             ("fallback", self.fallback),
         ]
         return [
@@ -117,6 +120,7 @@ class ModelRouter:
             provider = {
                 "primary": self.primary,
                 "coding": self.coding,
+                "reasoning": self.reasoning,
                 "fallback": self.fallback,
             }[model_route]
             if provider is None or not provider.configured:
@@ -126,6 +130,8 @@ class ModelRouter:
             return provider, model_route
         if task_type == "coding" and self.coding and self.coding.configured:
             return self.coding, "coding"
+        if task_type == "reasoning" and self.reasoning and self.reasoning.configured:
+            return self.reasoning, "reasoning"
         return self.primary, "primary"
 
     async def chat(

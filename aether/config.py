@@ -16,6 +16,9 @@ class Settings:
     fallback_model_base_url: str | None
     fallback_model_api_key: str | None
     fallback_model_name: str | None
+    reasoning_model_base_url: str | None
+    reasoning_model_api_key: str | None
+    reasoning_model_name: str | None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -31,4 +34,8 @@ class Settings:
             fallback_model_base_url=os.getenv("AETHER_FALLBACK_MODEL_BASE_URL") or None,
             fallback_model_api_key=os.getenv("AETHER_FALLBACK_MODEL_API_KEY") or None,
             fallback_model_name=os.getenv("AETHER_FALLBACK_MODEL_NAME") or None,
+            reasoning_model_base_url=os.getenv("AETHER_REASONING_MODEL_BASE_URL") or None,
+            reasoning_model_api_key=os.getenv("AETHER_REASONING_MODEL_API_KEY") or None,
+            reasoning_model_name=os.getenv("AETHER_REASONING_MODEL_NAME") or None,
         )
+    
