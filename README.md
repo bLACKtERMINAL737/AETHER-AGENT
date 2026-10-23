@@ -8,6 +8,8 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Local API protection** with an optional shared bearer-style token and same-origin checks for state-changing requests.
 - **Persistent task journal** backed by SQLite, including explicit tool-execution states and crash-safe handling of interrupted work.
 - **Workspace tools** for listing files and searching text while preventing paths from escaping the configured workspace.
+- **Auto and Manual model modes**: Auto locally classifies task intent and selects a configured route; Manual lets the user explicitly select a configured route. Neither mode exposes credentials.
+- **Model route discovery** via `GET /models`, returning only route IDs, model IDs, and configured status.
 - **Model routing** for a default OpenAI-compatible provider, an optional coding specialist, and an optional fallback provider.
 - **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures.
 - **Coding proposals** that show file diffs and require explicit approval before changes are applied.
@@ -196,6 +198,8 @@ AETHER CLAW selects a provider using the requested task type:
 - The optional fallback provider is tried only after the selected provider fails with a transient error. It is not a general-purpose second choice when a request is rejected.
 
 Transient failures eligible for retry/fallback are network errors, timeouts, and HTTP 5xx responses. HTTP 4xx responses (for example, authentication or invalid-request errors) and other non-transient errors are surfaced without trying the fallback route.
+
+The chat UI supports **Auto** and **Manual** model modes. Auto mode uses a local, deterministic task-intent heuristic (no extra model call) and routes coding tasks to the configured coding specialist; other task classes currently use the primary route unless explicitly configured otherwise. Manual mode requires an explicit configured route (`primary`, `coding`, or `fallback`). Fallback can be disabled per chat request; when enabled, fallback is used only for transient errors. `GET /models` lists configured routes without returning API credentials. This initial routing heuristic is intentionally conservative and should be evaluated against real tasks before claiming benchmark-driven optimization.
 
 The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, AETHER CLAW raises the last provider error.
 
