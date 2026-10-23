@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -35,6 +36,17 @@ class DockerTestSandbox:
         self.workspace = workspace.resolve()
         self.image = image
         self.timeout_seconds = max(5, min(timeout_seconds, 120))
+        if not isinstance(memory_limit, str) or not re.fullmatch(r"[1-9][0-9]*[bBkKmMgG]?", memory_limit):
+            raise SandboxError("Invalid sandbox memory limit")
+        if (
+            not isinstance(cpu_limit, str)
+            or cpu_limit.count(".") > 1
+            or not cpu_limit.replace(".", "", 1).isdigit()
+            or float(cpu_limit) <= 0
+        ):
+            raise SandboxError("Invalid sandbox CPU limit")
+        if isinstance(pids_limit, bool) or not isinstance(pids_limit, int):
+            raise SandboxError("Invalid sandbox PID limit")
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
         self.pids_limit = max(16, min(pids_limit, 256))
