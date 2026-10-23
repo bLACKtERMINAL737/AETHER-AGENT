@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Project Aether · Coding Workspace</title>
+<title>AETHER CLAW · Coding Workspace</title>
 <style>
 :root{color-scheme:dark;--bg:#0b1020;--panel:#121a2e;--line:#27334e;--text:#e9eefb;--muted:#9aa9c4;--accent:#9b8cff;--good:#6ee7b7;--bad:#fca5a5}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 450px at 20% -10%,#24305c 0,transparent 70%),var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
@@ -14,11 +14,11 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
 </head>
 <body>
 <main>
-  <div class="top"><div><h1>Project Aether</h1><div class="muted">Local coding workspace · proposal-first edits</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
+  <div class="top"><div><h1>AETHER CLAW</h1><div class="muted">Local coding workspace · proposal-first edits</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
   <div class="warning">Keep the API bound to 127.0.0.1. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
   <section class="panel" style="margin-top:14px">
-    <label for="apiToken">Aether API token (optional unless AETHER_API_TOKEN is configured)</label>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="apiToken" type="password" autocomplete="off" placeholder="Paste local API token" aria-label="Aether API token"><button id="saveToken">Save for this tab</button><button id="clearToken">Clear</button></div>
+    <label for="apiToken">AETHER CLAW API token (optional unless AETHER_API_TOKEN is configured)</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="apiToken" type="password" autocomplete="off" placeholder="Paste local API token" aria-label="AETHER CLAW API token"><button id="saveToken">Save for this tab</button><button id="clearToken">Clear</button></div>
     <div class="muted small">Token is kept in this browser tab's session storage and sent only as an API header.</div>
     <div id="tokenStatus" class="status" role="status"></div>
   </section>
@@ -31,7 +31,7 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     </div>
     <div id="chatMessages" class="files" style="max-height:360px;min-height:80px" aria-live="polite"><div class="muted">Start a conversation below.</div></div>
     <label for="chatInput">Message</label>
-    <textarea id="chatInput" maxlength="20000" placeholder="Ask Aether something…"></textarea>
+    <textarea id="chatInput" maxlength="20000" placeholder="Ask AETHER CLAW something…"></textarea>
     <label style="display:flex;align-items:center;gap:8px"><input id="useSavedMemories" type="checkbox" style="width:auto"> Allow relevant saved memories to be used for this message</label>
     <div class="actions"><button class="primary" id="sendChat">Send message</button></div>
     <div id="chatStatus" class="status" role="status"></div>
@@ -43,7 +43,7 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
       <label for="dir">Workspace folder</label>
       <div style="display:flex;gap:8px"><input id="dir" value="." aria-label="Workspace folder"><button id="refresh">Refresh</button></div>
       <div id="files" class="files">Loading workspace files…</div>
-      <label for="instruction">What should Aether change?</label>
+      <label for="instruction">What should AETHER CLAW change?</label>
       <textarea id="instruction" placeholder="Example: Find and fix the off-by-one bug. Keep the public API unchanged."></textarea>
       <div class="actions"><button class="primary" id="propose">Generate proposal</button><button id="health">Check API</button></div>
       <div id="leftStatus" class="status" role="status"></div>
@@ -66,17 +66,17 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
   </div>
   <section class="panel" style="margin-top:16px">
     <h2>3. Test and fix loop</h2>
-    <div class="muted small">Aether can make up to 3 attempts on a disposable copy, feed sandbox test failures into the next attempt, and stop when tests pass. The real workspace is not changed. A passing result creates a pending proposal that still requires your review and approval.</div>
+    <div class="muted small">AETHER CLAW can make up to 3 attempts on a disposable copy, feed sandbox test failures into the next attempt, and stop when tests pass. The real workspace is not changed. A passing result creates a pending proposal that still requires your review and approval.</div>
     <div class="actions"><button class="primary" id="iterate">Try code → test → fix (max 3 rounds)</button><button id="runTests">Run sandboxed pytest</button></div>
     <div id="testStatus" class="status" role="status"></div><pre id="testOutput" style="display:none"></pre>
   </section>
   <section class="panel" style="margin-top:16px">
     <h2>4. Long-term memory</h2>
-    <div class="muted small">Memory is stored locally in SQLite. Aether does not automatically inject these records into model prompts; search and review them explicitly.</div>
+    <div class="muted small">Memory is stored locally in SQLite. AETHER CLAW does not automatically inject these records into model prompts; search and review them explicitly.</div>
     <label for="memoryCategory">Category</label>
     <input id="memoryCategory" maxlength="80" value="preference">
     <label for="memoryContent">Memory content</label>
-    <textarea id="memoryContent" maxlength="4000" placeholder="A fact or preference you explicitly want Aether to remember"></textarea>
+    <textarea id="memoryContent" maxlength="4000" placeholder="A fact or preference you explicitly want AETHER CLAW to remember"></textarea>
     <label for="memoryTags">Tags (comma-separated)</label>
     <input id="memoryTags" maxlength="300" placeholder="project, style">
     <div class="actions"><button class="primary" id="saveMemory">Save memory</button></div>
@@ -115,7 +115,7 @@ function renderChatMessages(messages){
  if(!messages.length){box.textContent="No messages yet.";return;}
  for(const msg of messages){
   const card=document.createElement("div");card.className="file";card.style.display="block";
-  const role=document.createElement("strong");role.textContent=msg.role==="user"?"You":msg.role==="assistant"?"Aether":"System";
+  const role=document.createElement("strong");role.textContent=msg.role==="user"?"You":msg.role==="assistant"?"AETHER CLAW":"System";
   const body=document.createElement("div");body.textContent=msg.content;body.style.whiteSpace="pre-wrap";body.style.marginTop="5px";
   card.append(role,body);box.append(card);
  }
@@ -159,7 +159,7 @@ $("deleteSession").onclick=async()=>{
 async function sendChat(){
  const message=$("chatInput").value.trim();
  if(!message){setStatus("chatStatus","Enter a message first.","bad");return;}
- $("sendChat").disabled=true;setStatus("chatStatus","Aether is thinking…");
+ $("sendChat").disabled=true;setStatus("chatStatus","AETHER CLAW is thinking…");
  try{
   const result=await api("/chat",{method:"POST",body:JSON.stringify({
    message,task_type:"general",session_id:currentSessionId,
