@@ -48,11 +48,12 @@ async def test_follow_up_chat_receives_saved_session_history_and_appends_turn(tm
         ],
         "memories": [],
     }]
-    assert store.list_session_messages(session["id"]) == [
-        {"role": "user", "content": "Earlier question"},
-        {"role": "assistant", "content": "Earlier answer"},
-        {"role": "user", "content": "Please continue"},
-        {"role": "assistant", "content": "Follow-up answer"},
+    messages = store.list_session_messages(session["id"])
+    assert [(item["role"], item["content"]) for item in messages] == [
+        ("user", "Earlier question"),
+        ("assistant", "Earlier answer"),
+        ("user", "Please continue"),
+        ("assistant", "Follow-up answer"),
     ]
 
 
