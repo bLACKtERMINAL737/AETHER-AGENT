@@ -81,6 +81,108 @@ def test_approved_proposal_applies_atomically_and_marks_applied(tmp_path: Path):
     assert store.get_proposal(proposal["id"])["status"] == "applied"
 
 
+
+def test_apply_rolls_back_replaced_files_on_replace_failure(tmp_path: Path, monkeypatch):
+    import hashlib
+    import os
+
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    second = workspace / "second.py"
+    second.write_text("VALUE = 1\n", encoding="utf-8")
+
+    original_first = source.read_text(encoding="utf-8")
+    original_second = second.read_text(encoding="utf-8")
+
+    proposal = store.create_proposal("two-file change", [
+        {
+            "path": "sample.py",
+            "original_content": original_first,
+            "original_sha256": hashlib.sha256(original_first.encode("utf-8")).hexdigest(),
+            "content": "def value():\n    return 2\n",
+            "diff": "",
+        },
+        {
+            "path": "second.py",
+            "original_content": original_second,
+            "original_sha256": hashlib.sha256(original_second.encode("utf-8")).hexdigest(),
+            "content": "VALUE = 2\n",
+            "diff": "",
+        },
+    ])
+    engine.approve(proposal["id"])
+
+    real_replace = os.replace
+    calls = 0
+
+    def fail_second_replace(src, dst):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("aether.coding.os.replace", fail_second_replace)
+
+    with pytest.raises(CodingError, match="Apply failed"):
+        engine.apply(proposal["id"])
+
+    assert source.read_text(encoding="utf-8") == original_first
+    assert second.read_text(encoding="utf-8") == original_second
+    assert store.get_proposal(proposal["id"])["status"] == "approved"
+
+
+def test_apply_reports_rollback_failure_without_hiding_original_error(
+    tmp_path: Path, monkeypatch
+):
+    import hashlib
+    import os
+
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    second = workspace / "second.py"
+    second.write_text("VALUE = 1\n", encoding="utf-8")
+
+    original_first = source.read_text(encoding="utf-8")
+    original_second = second.read_text(encoding="utf-8")
+
+    proposal = store.create_proposal("two-file change", [
+        {
+            "path": "sample.py",
+            "original_content": original_first,
+            "original_sha256": hashlib.sha256(original_first.encode("utf-8")).hexdigest(),
+            "content": "def value():\n    return 2\n",
+            "diff": "",
+        },
+        {
+            "path": "second.py",
+            "original_content": original_second,
+            "original_sha256": hashlib.sha256(original_second.encode("utf-8")).hexdigest(),
+            "content": "VALUE = 2\n",
+            "diff": "",
+        },
+    ])
+    engine.approve(proposal["id"])
+
+    real_replace = os.replace
+    calls = 0
+
+    def fail_second_replace(src, dst):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated replacement failure")
+        if calls == 3:
+            raise OSError("simulated rollback failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("aether.coding.os.replace", fail_second_replace)
+
+    with pytest.raises(CodingError, match="Apply failed"):
+        engine.apply(proposal["id"])
+
+    saved = store.get_proposal(proposal["id"])
+    assert saved["status"] == "applying"
+    assert saved["error_text"]
+
 def test_apply_refuses_stale_proposal(tmp_path: Path):
     engine, store, workspace, source = make_engine(tmp_path, "{}")
     original = source.read_text(encoding="utf-8")
@@ -225,7 +327,14 @@ def test_reject_only_allows_pending_proposals(tmp_path: Path, status: str):
         "content": "def value():\n    return 2\n",
         "diff": "",
     }])
-    store.set_proposal_status(proposal["id"], status)
+    if status == "approved":
+        store.set_proposal_status(proposal["id"], "approved")
+    elif status == "rejected":
+        store.set_proposal_status(proposal["id"], "rejected")
+    else:
+        store.set_proposal_status(proposal["id"], "approved")
+        assert store.claim_proposal_for_apply(proposal["id"]) is True
+        store.set_proposal_status(proposal["id"], "applied")
 
     with pytest.raises(CodingError, match="Only pending proposals can be rejected"):
         engine.reject(proposal["id"])
@@ -240,3 +349,148 @@ def test_pending_proposal_can_be_rejected(tmp_path: Path):
     result = engine.reject(proposal["id"])
 
     assert result["status"] == "rejected"
+
+def test_applied_proposal_cannot_be_applied_twice(tmp_path: Path):
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    import hashlib
+
+    original = source.read_text(encoding="utf-8")
+    proposal = store.create_proposal("test", [{
+        "path": "sample.py",
+        "original_content": original,
+        "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+        "content": "def value():\n    return 2\n",
+        "diff": "",
+    }])
+
+    engine.approve(proposal["id"])
+    engine.apply(proposal["id"])
+    applied_content = source.read_text(encoding="utf-8")
+
+    with pytest.raises(CodingError, match="approved"):
+        engine.apply(proposal["id"])
+
+    assert source.read_text(encoding="utf-8") == applied_content
+    assert store.get_proposal(proposal["id"])["status"] == "applied"
+
+
+def test_rejected_proposal_cannot_be_approved(tmp_path: Path):
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    proposal = store.create_proposal("test", [{
+        "path": "sample.py",
+        "original_content": source.read_text(encoding="utf-8"),
+        "original_sha256": __import__("hashlib").sha256(
+            source.read_bytes()
+        ).hexdigest(),
+        "content": "def value():\n    return 2\n",
+        "diff": "",
+    }])
+
+    engine.reject(proposal["id"])
+
+    with pytest.raises(CodingError, match="Only pending proposals"):
+        engine.approve(proposal["id"])
+
+    assert store.get_proposal(proposal["id"])["status"] == "rejected"
+    assert "return 1" in source.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("initial", "target", "error"),
+    [
+        ("pending", "applied", None),
+        ("rejected", "approved", None),
+        ("applied", "rejected", None),
+        ("approved", "rejected", None),
+        ("approved", "approved", None),
+    ],
+)
+def test_store_rejects_invalid_proposal_transitions(
+    tmp_path: Path, initial: str, target: str, error: str | None
+):
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    proposal = store.create_proposal("transition test", [])
+
+    if initial == "approved":
+        store.set_proposal_status(proposal["id"], "approved")
+    elif initial == "rejected":
+        store.set_proposal_status(proposal["id"], "rejected")
+    elif initial == "applied":
+        store.set_proposal_status(proposal["id"], "approved")
+        assert store.claim_proposal_for_apply(proposal["id"]) is True
+        store.set_proposal_status(proposal["id"], "applied")
+
+    before = store.get_proposal(proposal["id"])["status"]
+
+    with pytest.raises(ValueError, match="Invalid proposal status transition"):
+        store.set_proposal_status(proposal["id"], target, error=error)
+
+    assert store.get_proposal(proposal["id"])["status"] == before
+
+
+def test_store_allows_recording_apply_failure_without_changing_status(tmp_path: Path):
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    proposal = store.create_proposal("apply failure", [])
+    store.set_proposal_status(proposal["id"], "approved")
+
+    store.set_proposal_status(
+        proposal["id"], "approved", error="Apply failed; inspect workspace"
+    )
+
+    saved = store.get_proposal(proposal["id"])
+    assert saved["status"] == "approved"
+    assert saved["error_text"] == "Apply failed; inspect workspace"
+
+
+
+
+def test_store_updates_apply_failure_error_text(tmp_path: Path):
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    proposal = store.create_proposal("apply failure", [])
+    store.set_proposal_status(proposal["id"], "approved")
+
+    store.set_proposal_status(
+        proposal["id"], "approved", error="first failure"
+    )
+    store.set_proposal_status(
+        proposal["id"], "approved", error="second failure"
+    )
+
+    saved = store.get_proposal(proposal["id"])
+    assert saved["status"] == "approved"
+    assert saved["error_text"] == "second failure"
+
+def test_store_rejects_unknown_proposal_id(tmp_path: Path):
+    store = TaskStore(tmp_path / "aether.sqlite3")
+
+    with pytest.raises(KeyError, match="Proposal not found"):
+        store.set_proposal_status("missing-proposal-id", "approved")
+
+
+@pytest.mark.asyncio
+async def test_apply_reports_error_if_final_applied_status_update_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    engine, store, workspace, source = make_engine(
+        tmp_path,
+        '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}',
+    )
+    proposal = await engine.propose("change value", ["sample.py"])
+    engine.approve(proposal["id"])
+
+    original_set_status = store.set_proposal_status
+
+    def fail_final_applied_update(proposal_id, status, error=None):
+        if status == "applied":
+            raise RuntimeError("simulated database failure")
+        return original_set_status(proposal_id, status, error=error)
+
+    monkeypatch.setattr(store, "set_proposal_status", fail_final_applied_update)
+
+    with pytest.raises(CodingError, match="final proposal status could not be saved"):
+        engine.apply(proposal["id"])
+
+    assert source.read_text(encoding="utf-8") == "def value():\n    return 2\n"
+    saved = store.get_proposal(proposal["id"])
+    assert saved["status"] == "applying"
+    assert "simulated database failure" in saved["error_text"]

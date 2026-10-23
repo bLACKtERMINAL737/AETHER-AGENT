@@ -169,8 +169,14 @@ class CodingEngine:
             raise KeyError("Proposal not found")
         if proposal["status"] != "approved":
             raise CodingError("Proposal must be explicitly approved before applying")
+
+        # Atomically claim the proposal so concurrent requests cannot apply it twice.
+        if not self.store.claim_proposal_for_apply(proposal_id):
+            raise CodingError("Proposal is already being applied or is no longer approved")
+
         changes = proposal["changes"]
         staged: list[tuple[Path, Path, str | None]] = []
+        rollback_incomplete = False
         try:
             # Validate every target and detect edits made since the proposal was generated.
             for change in changes:
@@ -190,9 +196,49 @@ class CodingEngine:
                 for target, temp_path, old_content in staged:
                     os.replace(temp_path, target)
                     replaced.append((target, old_content))
-            except Exception:
+            except Exception as apply_exc:
+                rollback_errors: list[str] = []
+
                 for target, old_content in reversed(replaced):
-                    target.write_text(old_content, encoding="utf-8")
+                    rollback_temp: Path | None = None
+                    try:
+                        fd, temp_name = tempfile.mkstemp(
+                            prefix=".aether-rollback-",
+                            dir=str(target.parent),
+                        )
+                        rollback_temp = Path(temp_name)
+
+                        with os.fdopen(
+                            fd, "w", encoding="utf-8", newline=""
+                        ) as handle:
+                            handle.write(old_content)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+
+                        os.replace(rollback_temp, target)
+                        rollback_temp = None
+
+                    except Exception as rollback_exc:
+                        rollback_errors.append(
+                            f"{target}: {type(rollback_exc).__name__}: "
+                            f"{rollback_exc}"
+                        )
+                    finally:
+                        if rollback_temp is not None:
+                            try:
+                                rollback_temp.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+
+                if rollback_errors:
+                    rollback_incomplete = True
+                    details = "; ".join(rollback_errors)
+                    raise CodingError(
+                        f"Apply failed: replacement failure: "
+                        f"{type(apply_exc).__name__}: {apply_exc}; "
+                        f"rollback failure: {details}"
+                    ) from apply_exc
+
                 raise
         except Exception as exc:
             for _, temp_path, _ in staged:
@@ -200,13 +246,51 @@ class CodingEngine:
                     temp_path.unlink(missing_ok=True)
                 except OSError:
                     pass
+            # Keep the proposal applying if rollback failed; record the error.
+            if rollback_incomplete:
+                try:
+                    self.store.set_proposal_status(
+                        proposal_id, "applying", error=str(exc)
+                    )
+                except Exception:
+                    pass
+                raise
+
             if isinstance(exc, CodingError):
                 self.store.set_proposal_status(proposal_id, "approved", error=str(exc))
                 raise
-            self.store.set_proposal_status(proposal_id, "approved", error="Apply failed; inspect workspace before retrying")
+            self.store.set_proposal_status(
+                proposal_id, "approved",
+                error="Apply failed; inspect workspace before retrying",
+            )
             raise CodingError("Apply failed; inspect workspace before retrying") from exc
-        self.store.set_proposal_status(proposal_id, "applied")
-        return {"proposal_id": proposal_id, "status": "applied", "changed_files": [item["path"] for item in changes]}
+        try:
+            self.store.set_proposal_status(proposal_id, "applied")
+        except Exception as exc:
+            # Files have already been replaced. Do not claim rollback or retry
+            # automatically; retain the applying state and record the uncertainty.
+            try:
+                self.store.set_proposal_status(
+                    proposal_id,
+                    "applying",
+                    error=(
+                        "Workspace files were updated, but saving the applied "
+                        f"status failed: {type(exc).__name__}: {exc}. "
+                        "Inspect the workspace and database before retrying."
+                    ),
+                )
+            except Exception:
+                pass
+            raise CodingError(
+                "Workspace files were updated, but the final proposal status "
+                "could not be saved. Inspect the workspace and proposal status."
+            ) from exc
+
+        return {
+            "proposal_id": proposal_id,
+            "status": "applied",
+            "changed_files": [item["path"] for item in changes],
+        }
 
     async def iterate_with_tests(self, instruction: str, paths: list[str], max_rounds: int = 3) -> dict[str, Any]:
         """Try code changes on a disposable copy, run sandbox tests, and return a pending proposal.

@@ -18,6 +18,7 @@ class TaskStore:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self._migrate_coding_proposals()
 
     def connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path, timeout=10)
@@ -140,17 +141,103 @@ class TaskStore:
             rows = con.execute("SELECT id FROM coding_proposals ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [proposal for row in rows if (proposal := self.get_proposal(row["id"])) is not None]
 
-    def set_proposal_status(self, proposal_id: str, status: str, error: str | None = None) -> None:
-        if status not in {"pending", "approved", "rejected", "applied"}:
-            raise ValueError("Invalid coding proposal status")
+    def _migrate_coding_proposals(self) -> None:
+        """Add the applying state while preserving all existing proposals."""
+        con = self.connect()
+        try:
+            row = con.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='coding_proposals'"
+            ).fetchone()
+            if row is None:
+                return
+
+            schema = row["sql"] or ""
+            if "'applying'" in schema:
+                return
+
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("""
+                CREATE TABLE coding_proposals_new (
+                    id TEXT PRIMARY KEY,
+                    summary TEXT NOT NULL,
+                    changes_json TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(
+                        status IN ('pending','approved','applying','rejected','applied')
+                    ),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    error_text TEXT
+                )
+            """)
+            con.execute("""
+                INSERT INTO coding_proposals_new
+                    (id, summary, changes_json, status, created_at, updated_at, error_text)
+                SELECT id, summary, changes_json, status, created_at, updated_at, error_text
+                FROM coding_proposals
+            """)
+            con.execute("DROP TABLE coding_proposals")
+            con.execute("ALTER TABLE coding_proposals_new RENAME TO coding_proposals")
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def claim_proposal_for_apply(self, proposal_id: str) -> bool:
+        """Atomically claim an approved proposal; only one caller can win."""
         with self.connect() as con:
             cursor = con.execute(
-                "UPDATE coding_proposals SET status=?,updated_at=?,error_text=? WHERE id=?",
-                (status, utc_now(), error, proposal_id),
+                """
+                UPDATE coding_proposals
+                SET status='applying', updated_at=?, error_text=NULL
+                WHERE id=? AND status='approved'
+                """,
+                (utc_now(), proposal_id),
+            )
+            if cursor.rowcount == 1:
+                return True
+
+            row = con.execute(
+                "SELECT id FROM coding_proposals WHERE id=?",
+                (proposal_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Proposal not found")
+            return False
+
+    def set_proposal_status(self, proposal_id: str, status: str, error: str | None = None) -> None:
+        if status not in {"pending", "approved", "applying", "rejected", "applied"}:
+            raise ValueError("Invalid coding proposal status")
+
+        with self.connect() as con:
+            cursor = con.execute(
+                """
+                UPDATE coding_proposals
+                SET status=?, updated_at=?, error_text=?
+                WHERE id=? AND (
+                    (status='pending' AND ? IN ('approved', 'rejected'))
+                    OR (status='applying' AND ?='applied')
+                    OR (status='applying' AND ?='approved' AND ? IS NOT NULL)
+                    OR (status='applying' AND ?='applying' AND ? IS NOT NULL)
+                    OR (status='approved' AND ?='approved' AND ? IS NOT NULL)
+                )
+                """,
+                (
+                    status, utc_now(), error, proposal_id,
+                    status, status, status, error, status, error, status, error,
+                ),
             )
             if cursor.rowcount == 0:
-                raise KeyError("Proposal not found")
-
+                row = con.execute(
+                    "SELECT status FROM coding_proposals WHERE id=?",
+                    (proposal_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError("Proposal not found")
+                raise ValueError(
+                    f"Invalid proposal status transition: {row['status']} -> {status}"
+                )
 
     def add_memory(self, category: str, content: str, source: str = "user",
                    tags: list[str] | None = None) -> dict[str, Any]:
