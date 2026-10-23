@@ -87,8 +87,11 @@ class ToolRegistry:
             raise ToolError("Path does not exist")
         if not target.is_dir():
             raise ToolError("Path must be a directory")
+        # Keep listings consistent with search: never expose symlink entries as
+        # workspace files/directories, since their targets may be outside the workspace.
         entries = [{"name": p.name, "type": "directory" if p.is_dir() else "file"}
-                   for p in sorted(target.iterdir(), key=lambda p: p.name.casefold())]
+                   for p in sorted(target.iterdir(), key=lambda p: p.name.casefold())
+                   if not p.is_symlink()]
         return {"path": str(target.relative_to(self.workspace)), "entries": entries[:500]}
 
     def search_text(self, query: str, path: str = ".", max_results: int = 50) -> dict[str, Any]:
