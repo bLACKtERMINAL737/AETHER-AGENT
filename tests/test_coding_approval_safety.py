@@ -1,4 +1,6 @@
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -101,3 +103,44 @@ def test_status_transition_race_is_reported_as_coding_conflict(
         getattr(engine, action)(proposal["id"])
 
     assert store.get_proposal(proposal["id"])["status"] == "pending"
+
+
+
+def test_concurrent_approve_and_reject_only_allow_one_transition(
+    tmp_path: Path, monkeypatch
+):
+    engine, store, _source, proposal = make_proposal(tmp_path)
+    original_get_proposal = store.get_proposal
+    both_read_pending = threading.Barrier(2)
+    thread_state = threading.local()
+
+    def synchronized_get_proposal(proposal_id: str):
+        result = original_get_proposal(proposal_id)
+        # Ensure both operations pass their initial status check before either
+        # attempts the atomic database transition.
+        if not getattr(thread_state, "initial_read_done", False):
+            thread_state.initial_read_done = True
+            if result is not None and result["status"] == "pending":
+                both_read_pending.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(store, "get_proposal", synchronized_get_proposal)
+
+    def decide(action):
+        try:
+            action(proposal["id"])
+            return "success"
+        except CodingError:
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        approve_future = executor.submit(decide, engine.approve)
+        reject_future = executor.submit(decide, engine.reject)
+        outcomes = [
+            approve_future.result(timeout=10),
+            reject_future.result(timeout=10),
+        ]
+
+    assert outcomes.count("success") == 1
+    assert outcomes.count("conflict") == 1
+    assert store.get_proposal(proposal["id"])["status"] in {"approved", "rejected"}
