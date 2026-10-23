@@ -188,3 +188,28 @@ async def test_rate_limit_error_does_not_retry_or_fall_back():
 
     assert primary.calls == 1
     assert fallback.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_remote_protocol_error_retries_before_fallback(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    primary = FakeProvider(
+        "primary",
+        errors=[
+            httpx.RemoteProtocolError("server closed connection unexpectedly"),
+            httpx.RemoteProtocolError("connection interrupted again"),
+        ],
+    )
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(primary, fallback=fallback, max_attempts=2)
+
+    result = await router.chat("hello")
+
+    assert result["route"] == "fallback"
+    assert result["fallback_used"] is True
+    assert result["attempts"] == 3
+    assert primary.calls == 2
+    assert fallback.calls == 1
