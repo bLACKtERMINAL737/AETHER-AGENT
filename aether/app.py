@@ -212,9 +212,8 @@ async def chat(request: ChatRequest):
             memories=memories,
         )
         answer = str(result["answer"])
-        # Persist only successful turns so failed provider calls do not create orphan user messages.
-        store.add_session_message(session_id, "user", request.message)
-        store.add_session_message(session_id, "assistant", answer)
+        # Persist the user/assistant pair in one transaction to avoid partial turns.
+        store.add_session_turn(session_id, request.message, answer)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except KeyError as exc:
