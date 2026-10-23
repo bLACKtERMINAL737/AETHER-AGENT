@@ -40,12 +40,20 @@ async def lifespan(app: FastAPI):
     changed = store.mark_interrupted_as_unknown()
     if changed:
         logger.warning("Marked %s interrupted records as unknown", changed)
-    proposals = store.mark_interrupted_proposals_for_review()
-    if proposals:
-        logger.warning(
-            "Found %s coding proposals interrupted during apply; manual workspace reconciliation is required",
-            proposals,
-        )
+    # Do not mislabel another local server process's live apply operation as
+    # interrupted. If the lock is busy, that process owns the apply lifecycle.
+    with store.coding_apply_lock(blocking=False) as acquired:
+        if acquired:
+            proposals = store.mark_interrupted_proposals_for_review()
+            if proposals:
+                logger.warning(
+                    "Found %s coding proposals interrupted during apply; manual workspace reconciliation is required",
+                    proposals,
+                )
+        else:
+            logger.info(
+                "Skipped coding proposal startup recovery because another process holds the apply lock"
+            )
     yield
 
 

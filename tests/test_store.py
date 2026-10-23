@@ -241,3 +241,17 @@ def test_interrupted_proposal_review_preserves_existing_error(tmp_path: Path):
     saved = store.get_proposal(proposal["id"])
     assert saved["status"] == "applying"
     assert saved["error_text"] == "rollback failed"
+
+
+def test_coding_apply_lock_excludes_other_store_instances(tmp_path: Path):
+    db_path = tmp_path / "shared.sqlite3"
+    first = TaskStore(db_path)
+    second = TaskStore(db_path)
+
+    with first.coding_apply_lock() as acquired:
+        assert acquired is True
+        with second.coding_apply_lock(blocking=False) as acquired_elsewhere:
+            assert acquired_elsewhere is False
+
+    with second.coding_apply_lock(blocking=False) as acquired_after_release:
+        assert acquired_after_release is True
