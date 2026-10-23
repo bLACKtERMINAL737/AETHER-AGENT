@@ -1,5 +1,8 @@
 import json
+import os
 import sqlite3
+import fcntl
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,6 +22,32 @@ class TaskStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
         self._migrate_coding_proposals()
+
+    @contextmanager
+    def coding_apply_lock(self, blocking: bool = True):
+        """Coordinate coding apply and startup recovery across local OS processes.
+
+        The lock is released by the OS if a process exits or crashes. This lock
+        is intentionally local-filesystem/POSIX scoped, matching the local Mac
+        deployment; do not place the database on a network filesystem.
+        """
+        lock_path = self.db_path.with_name(self.db_path.name + ".coding-apply.lock")
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            flags = fcntl.LOCK_EX
+            if not blocking:
+                flags |= fcntl.LOCK_NB
+            try:
+                fcntl.flock(fd, flags)
+            except BlockingIOError:
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
     def connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path, timeout=10)
