@@ -80,3 +80,24 @@ def test_rejecting_non_pending_proposal_is_a_conflict(monkeypatch):
         app_module.reject_coding_proposal("proposal-123")
 
     assert exc_info.value.status_code == 409
+
+
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_status_transition_race_is_reported_as_coding_conflict(
+    tmp_path: Path, monkeypatch, action: str
+):
+    engine, store, _source, proposal = make_proposal(tmp_path)
+
+    def competing_transition(proposal_id: str, status: str, error=None):
+        # Simulate another request winning the atomic DB transition after
+        # this request's initial pending-status check.
+        raise ValueError(
+            f"Invalid proposal status transition: approved -> {status}"
+        )
+
+    monkeypatch.setattr(store, "set_proposal_status", competing_transition)
+
+    with pytest.raises(CodingError, match="Invalid proposal status transition"):
+        getattr(engine, action)(proposal["id"])
+
+    assert store.get_proposal(proposal["id"])["status"] == "pending"
