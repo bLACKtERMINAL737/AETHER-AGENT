@@ -45,6 +45,26 @@ def test_snapshot_rejects_file_symlinks(tmp_path: Path):
         DockerTestSandbox(workspace)._snapshot(snapshot)
 
 
+def test_snapshot_rejects_directory_symlinks(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    real_dir = workspace / "real"
+    real_dir.mkdir()
+    (real_dir / "test_example.py").write_text(
+        "def test_ok():\n    assert True\n", encoding="utf-8"
+    )
+    linked = workspace / "linked"
+    try:
+        linked.symlink_to(real_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Directory symlinks are unavailable in this environment")
+
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    with pytest.raises(SandboxError, match="symlink directory"):
+        DockerTestSandbox(workspace)._snapshot(snapshot)
+
+
 def test_run_pytest_timeout_is_reported_as_failure(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
