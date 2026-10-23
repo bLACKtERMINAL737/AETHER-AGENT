@@ -409,8 +409,9 @@ class TaskStore:
                 (assistant_created_at, title, session_id),
             )
             rows = con.execute(
-                "SELECT * FROM session_messages WHERE id IN (?, ?) ORDER BY created_at, id",
-                (user_id, assistant_id),
+                "SELECT * FROM session_messages WHERE id IN (?, ?) "
+                "ORDER BY CASE id WHEN ? THEN 0 ELSE 1 END",
+                (user_id, assistant_id, user_id),
             ).fetchall()
         return [dict(row) for row in rows]
 
