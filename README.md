@@ -1,110 +1,206 @@
-# Project Aether — MVP
+# Project Aether
 
-A local-first, modular AI agent foundation focused on reliable task execution.
+A local-first, modular AI agent foundation focused on reliable task execution, explicit approval, and safe-by-default local development.
 
-## Included
+## Features
 
-- FastAPI local API
-- SQLite task journal with durable tool execution records
-- Tool registry with Pydantic input validation
-- Workspace-confined file listing and text search
-- Optional OpenAI-compatible chat provider adapter
-- Explicit approval boundary for write/execute tools (not implemented in this MVP)
-- Tests for persistence, workspace boundaries, and tool validation
+- **Local FastAPI service** with OpenAPI documentation and a lightweight review UI.
+- **Local API protection** with an optional shared bearer-style token and same-origin checks for state-changing requests.
+- **Persistent task journal** backed by SQLite, including explicit tool-execution states and crash-safe handling of interrupted work.
+- **Workspace tools** for listing files and searching text while preventing paths from escaping the configured workspace.
+- **Model routing** for a default OpenAI-compatible provider, an optional coding specialist, and an optional fallback provider.
+- **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures.
+- **Coding proposals** that show file diffs and require explicit approval before changes are applied.
+- **Proposal state protection** so only valid pending proposals can be approved or rejected, and already-applied changes cannot be applied again.
+- **Test-and-fix workflow** with up to three rounds on a disposable workspace copy; only a passing candidate becomes a proposal.
+- **Optional Docker test sandbox** for running pytest against a disposable snapshot.
+- **Persistent chat sessions** with message history and optional, per-request saved-memory retrieval.
+- **Explicit local memory** with category/tag metadata, keyword search, listing, and deletion.
+- **Automated tests** and a GitHub Actions test workflow.
 
-## Not included yet
+## Safety and scope
 
-This is a foundation, not a production-ready autonomous agent. It does not yet run shell commands, edit files, send messages, schedule tasks, or autonomously retry uncertain external actions. Those features should be added only with sandboxing and approval policies.
+Aether is an evolving MVP, not a production-ready autonomous agent.
 
-## Setup
+- Keep the API bound to localhost. Do not expose the service or UI to a public network.
+- Set `AETHER_API_TOKEN` to require a shared token for API routes. Health, UI assets, and API schema/docs remain reachable without that token.
+- If no token is configured, API requests are restricted to loopback clients. This is a development fallback, not protection from other local processes.
+- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-Aether-Token` header.
+- State-changing requests that include an `Origin` header must use the same loopback host and port. This is defense in depth, not a replacement for keeping the service local.
+- Coding proposals can modify only explicitly selected, existing files. Creating new files and arbitrary shell access are not supported by the coding workflow.
+- Proposal changes require review and explicit approval. Applying a proposal checks the original file state to detect stale files.
+- The Docker test runner is disabled by default. When enabled, it uses a prebuilt image, disables networking, drops Linux capabilities, runs as a non-root user, sets resource limits, uses a read-only container root, and tests a disposable workspace snapshot.
+- Docker is an additional isolation layer, not a perfect security boundary. Keep Docker and the host updated, and do not run hostile workloads on a sensitive machine.
+- Saved-memory retrieval is opt-in for each chat request. Retrieved records are passed as untrusted reference data, not instructions. Do not store secrets in chat or memory.
+- Model routing is rule-based; automatic benchmark-driven cost routing is not implemented.
+- Do not commit API keys, access tokens, or other secrets.
 
-Python 3.11+ recommended.
+## Requirements
+
+- Python 3.11 or newer
+- Docker is optional, but required for the Docker-backed test runner
+
+## Installation
+
+From the repository root:
 
 ```bash
 python -m venv .venv
-# macOS/Linux:
+
+# macOS / Linux
 source .venv/bin/activate
-# Windows PowerShell:
-# .venv\Scripts\Activate.ps1
+
+# Windows PowerShell
+# .venv\\Scripts\\Activate.ps1
 
 pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-Set `AETHER_MODEL_BASE_URL`, `AETHER_MODEL_API_KEY`, and `AETHER_MODEL_NAME` in `.env` if you want to connect an OpenAI-compatible provider. If these are absent, the API still works for health checks and tools; `/chat` returns a clear configuration error.
+Configuration is read from the process environment. This MVP does **not** load `.env` automatically; export values with your preferred local environment manager.
 
-## Run
+### Configure API protection
+
+Generate a local token:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+export AETHER_API_TOKEN='paste-generated-token-here'
+```
+
+On PowerShell:
+
+```powershell
+$env:AETHER_API_TOKEN="paste-generated-token-here"
+```
+
+Start the server after setting the variable, then enter the same token in the local UI. Never commit the token.
+
+### Configure model providers
+
+Set these environment variables for the routes you want to use:
+
+| Variable | Purpose |
+| --- | --- |
+| `AETHER_MODEL_BASE_URL` | Base URL for the default OpenAI-compatible API |
+| `AETHER_MODEL_API_KEY` | API key for the default route |
+| `AETHER_MODEL_NAME` | Model identifier for the default route |
+| `AETHER_CODING_MODEL_BASE_URL` | Optional coding-specialist API base URL |
+| `AETHER_CODING_MODEL_API_KEY` | Optional coding-specialist API key |
+| `AETHER_CODING_MODEL_NAME` | Optional coding-specialist model identifier |
+| `AETHER_FALLBACK_MODEL_BASE_URL` | Optional fallback API base URL |
+| `AETHER_FALLBACK_MODEL_API_KEY` | Optional fallback API key |
+| `AETHER_FALLBACK_MODEL_NAME` | Optional fallback model identifier |
+| `AETHER_DB_PATH` | SQLite database path; default `./data/aether.sqlite3` |
+| `AETHER_WORKSPACE` | Workspace directory allowed for workspace tools; default `./workspace` |
+| `AETHER_ENABLE_TEST_RUNNER` | Set to `true` to enable Docker-backed pytest; default `false` |
+| `AETHER_TEST_TIMEOUT_SECONDS` | Test timeout in seconds, clamped to 5–120 |
+| `AETHER_SANDBOX_IMAGE` | Local sandbox image name; default `aether-sandbox:latest` |
+| `AETHER_TEST_PROJECT` | Optional project path to test instead of the configured workspace |
+
+If model-provider variables are absent, local health checks and tools can still work, but chat/coding requests that need a model will return a configuration error.
+
+## Build the optional Docker sandbox
+
+Build the image once from the repository root. At runtime, Aether uses `--pull=never`, so it will not pull images automatically.
+
+```bash
+docker build -f Dockerfile.sandbox -t aether-sandbox:latest .
+export AETHER_ENABLE_TEST_RUNNER=true
+export AETHER_SANDBOX_IMAGE=aether-sandbox:latest
+```
+
+PowerShell:
+
+```powershell
+$env:AETHER_ENABLE_TEST_RUNNER="true"
+$env:AETHER_SANDBOX_IMAGE="aether-sandbox:latest"
+```
+
+The test runner works on a temporary copy. Its Docker configuration disables network access, uses a read-only root filesystem, drops capabilities, enables `no-new-privileges`, runs as a non-root UID, and applies PID, memory, CPU, and timeout limits. Test changes to the snapshot are discarded.
+
+## Run the API and UI
 
 ```bash
 uvicorn aether.app:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/docs`.
+Open these local URLs:
 
-The server binds to localhost by default. Do not expose it to a network without adding authentication.
+- UI: http://127.0.0.1:8000/ui/
+- API documentation: http://127.0.0.1:8000/docs
+- Health check: http://127.0.0.1:8000/health
 
-## API examples
+## Coding workflow
 
-Health:
+1. Place the project you want to work on inside the configured workspace.
+2. Open the local UI and select existing files.
+3. Describe the change and generate a proposal (or use the iterative test-and-fix workflow).
+4. Review the proposed diff.
+5. Approve the proposal explicitly.
+6. Apply the approved proposal.
+7. If configured, run tests in the disposable Docker sandbox.
 
-```bash
-curl http://127.0.0.1:8000/health
-```
+Relevant API endpoints:
 
-List workspace files:
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/coding/proposals` | Generate a coding proposal |
+| `POST` | `/coding/iterate` | Run the bounded test-and-fix workflow |
+| `GET` | `/coding/proposals/{proposal_id}` | Inspect a proposal |
+| `POST` | `/coding/proposals/{proposal_id}/approve` | Approve a pending proposal |
+| `POST` | `/coding/proposals/{proposal_id}/reject` | Reject a pending proposal |
+| `POST` | `/coding/proposals/{proposal_id}/apply` | Apply an approved proposal |
+| `GET` | `/coding/files?path=.` | List workspace entries |
+| `POST` | `/coding/run-tests` | Run tests if the sandbox is enabled |
 
-```bash
-curl -X POST http://127.0.0.1:8000/tools/workspace.list_files \
-  -H 'Content-Type: application/json' \
-  -d '{"path":"."}'
-```
+The iterative endpoint accepts `instruction`, `paths`, and optional `max_rounds` (1–3).
 
-Create a task journal entry:
+## Chat sessions and saved memory
 
-```bash
-curl -X POST http://127.0.0.1:8000/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Inspect project","input":"List the files and summarize the structure"}'
-```
+Chat sessions and messages are persisted in SQLite. Follow-up requests can include up to 12 recent user/assistant messages. The UI supports creating, reopening, and deleting conversations.
 
-Chat (requires provider environment variables):
+Saved-memory retrieval is **off by default for every request**. Enable it explicitly when sending a chat message to retrieve up to five relevant records. Retrieval uses local lexical keyword matching, not embeddings or semantic search.
 
-```bash
-curl -X POST http://127.0.0.1:8000/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Explain what a Python virtual environment is"}'
-```
+Session endpoints:
 
-## Configuration
+- `POST /sessions` — create a session
+- `GET /sessions` — list sessions
+- `GET /sessions/{session_id}` — retrieve a session and its messages
+- `DELETE /sessions/{session_id}` — delete a session and its messages
+- `POST /chat` — chat with optional `session_id`, `task_type`, and `use_saved_memories` (default `false`)
 
-Environment variables are read from the process environment. Copy `.env.example` to `.env`, then export values in your shell; automatic `.env` loading is intentionally not included in this minimal version.
+Memory endpoints:
 
-- `AETHER_DB_PATH`: SQLite database location, default `./data/aether.sqlite3`
-- `AETHER_WORKSPACE`: directory allowed for workspace tools, default `./workspace`
-- `AETHER_MODEL_BASE_URL`: base URL for an OpenAI-compatible API
-- `AETHER_MODEL_API_KEY`: API key
-- `AETHER_MODEL_NAME`: model identifier
+- `POST /memory` — save a memory with a category, content, optional tags, and source
+- `GET /memory?limit=100&category=preference` — list memories
+- `POST /memory/search` — search saved records by keywords
+- `DELETE /memory/{memory_id}` — delete a saved record
 
-## Reliability design
+Memory is explicit and local; the application does not silently infer or save memories from chats.
 
-- Task state and tool execution records are stored separately from conversation context.
-- SQLite uses WAL mode and transactions for local persistence.
-- Tool execution records use explicit states.
-- This MVP does not automatically replay a `running` tool after restart. It marks the outcome as `unknown`, because replaying an action without checking its effects can create duplicates.
-- Tool input is validated before dispatch.
-- Workspace paths are resolved and checked to prevent escaping the configured workspace.
+## Reliability notes
+
+- SQLite WAL and transactions are used for local persistence.
+- Interrupted in-flight tasks and tool executions are marked `unknown` rather than replayed automatically.
+- Provider retries are bounded and limited to transient failures.
+- Coding proposal application verifies original file hashes before replacing files.
+- Proposal state transitions are checked to prevent invalid approval/rejection and duplicate application.
+- Sandbox tests run without network access and do not pull images at runtime.
 
 ## Tests
 
+Run the suite locally:
+
 ```bash
-pytest
+python -m pytest -q
 ```
 
-## Next milestones
+The latest local verification on the development branch reported **40 passed**. GitHub Actions is also configured; check the branch's Actions page for its current CI status.
 
-1. Add authentication and a user approval workflow.
-2. Add a sandboxed coding executor (Docker or a similarly isolated backend).
-3. Add provider-aware error classification and bounded retries.
-4. Add session history and controlled memory retrieval.
-5. Add crash-injection tests and performance benchmarks.
-6. Add one messaging adapter only after core reliability tests pass.
+## Current development priorities
+
+- Expand security tests around concurrent approval/apply requests and crash scenarios.
+- Improve provider error classification and reliability measurements.
+- Benchmark latency, reliability, and cost before introducing automatic cost-based routing.
+- Continue hardening the local review and coding workflow.
