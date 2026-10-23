@@ -37,6 +37,8 @@ async def test_provider_sends_history_and_only_passed_memories(monkeypatch):
     assert answer == 'Context-aware answer'
     assert messages[1]['role'] == 'system'
     assert 'untrusted reference data' in messages[1]['content']
+    assert '\\n- [preference]' not in messages[1]['content']
+    assert '\n- [preference]' in messages[1]['content']
     assert 'Explain in Bangla' in messages[1]['content']
     assert messages[2] == {'role': 'user', 'content': 'Help me with Python'}
     assert messages[3] == {'role': 'user', 'content': 'What did I ask earlier?'}
