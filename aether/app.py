@@ -278,15 +278,13 @@ def get_task(task_id: str):
 @app.post("/chat")
 async def chat(request: ChatRequest):
     session_id = request.session_id
-    if session_id:
-        if not store.get_session(session_id):
-            raise HTTPException(status_code=404, detail="Conversation session not found")
-    else:
-        session = store.create_session(request.message[:80] or "New conversation")
-        session_id = session["id"]
+    if session_id and not store.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Conversation session not found")
 
     try:
-        recent = store.list_session_messages(session_id, limit=12)
+        # New sessions are created only after the model succeeds, so failed
+        # provider requests do not leave empty conversations in the history.
+        recent = store.list_session_messages(session_id, limit=12) if session_id else []
         history = [
             {"role": item["role"], "content": item["content"]}
             for item in recent
@@ -324,7 +322,11 @@ async def chat(request: ChatRequest):
             allow_fallback=request.allow_fallback,
         )
         answer = str(result["answer"])
-        # Persist the user/assistant pair in one transaction to avoid partial turns.
+        # Create a new session only after a successful model response. Persist
+        # the user/assistant pair atomically to avoid empty or partial turns.
+        if not session_id:
+            session = store.create_session(request.message[:80] or "New conversation")
+            session_id = session["id"]
         store.add_session_turn(session_id, request.message, answer)
     except HTTPException:
         raise
