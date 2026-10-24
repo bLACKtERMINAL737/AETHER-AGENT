@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import asyncio
 import logging
 from typing import Literal
@@ -34,11 +35,23 @@ class ModelProvider:
             raise ProviderNotConfigured(
                 "Provider is not configured. Set its base URL, API key, and model name."
             )
+        current_date = datetime.now(timezone.utc).date().isoformat()
+        date_guidance = (
+            f"Current date (UTC): {current_date}. Use this as today's date, not as evidence "
+            "that you know current events. Your training-data knowledge cutoff is not provided "
+            "to you by this application: never invent a specific cutoff date or claim your "
+            "knowledge is updated through a particular month/year unless verified model metadata "
+            "is explicitly available. Distinguish trained knowledge from live-verified information. "
+            "If asked about recent/current events and no search or live-data tool was actually used, "
+            "say you cannot verify the latest information in this chat; do not pretend to have searched. "
+            "Never claim a tool was run unless execution results confirm it."
+        )
         system_prompt = {
-            "general": "You are AETHER CLAW, a helpful assistant. Never claim a tool was run unless execution results confirm it.",
+            "general": "You are AETHER CLAW, a helpful assistant.",
             "coding": "You are AETHER CLAW's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
             "reasoning": "You are AETHER CLAW's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
+        system_prompt = f"{system_prompt}\\n\\n{date_guidance}"
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         if memories:
             # Stored text is reference data, never higher-priority instructions.
