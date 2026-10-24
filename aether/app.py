@@ -222,6 +222,54 @@ def extract_explicit_memory_request(message: str) -> str | None:
                 return content
     return None
 
+def _memory_recall_answer(message: str, memories: list[dict]) -> str | None:
+    """Return a saved fact for clear recall questions; never synthesize missing facts."""
+    text = message.casefold()
+    recall_intent = re.search(
+        r"\b(?:what|which|tell me|remind me|do you remember|what's|what is|who|when|where)\b|"
+        r"(?:মনে আছে|কি মনে|কী মনে|বলেছিলাম|বলেছিলে|নাম কী|নাম কি)",
+        text,
+    )
+    memory_intent = re.search(
+        r"\b(?:remember|remembered|saved|save|told you|asked you|my project|project name|my preference|"
+        r"prefer|favorite|favourite|code)\b|(?:মনে|বলেছিলাম|নাম)",
+        text,
+    )
+    if not (recall_intent and memory_intent):
+        return None
+
+    # Only recall explicit user-provided facts; rank by meaningful word overlap.
+    stop_words = {
+        "what", "which", "is", "the", "a", "an", "do", "you", "i", "me", "my",
+        "did", "to", "ask", "asked", "tell", "remember", "remembered", "save",
+        "saved", "about", "please", "that", "and", "or", "of", "for", "in",
+        "বলেছিলাম", "বলেছিলে", "মনে", "আছে", "কি", "কী", "আমার", "নাম",
+    }
+    terms = {
+        term for term in re.findall(r"[a-z0-9_+-]+|[\u0980-\u09ff]+", text)
+        if len(term) > 1 and term not in stop_words
+    }
+    if not terms:
+        return None
+    candidates = []
+    for item in memories:
+        if item.get("source") != "explicit_chat_request":
+            continue
+        content = str(item.get("content", "")).strip()
+        words = set(re.findall(r"[a-z0-9_+-]+|[\u0980-\u09ff]+", content.casefold()))
+        overlap = terms & words
+        if overlap:
+            candidates.append((len(overlap), len(words), content))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    best_score = candidates[0][0]
+    best = [item for item in candidates if item[0] == best_score]
+    if len(best) != 1:
+        return None
+    return best[0][2]
+
+
 def infer_task_type(message: str) -> Literal["general", "coding", "reasoning"]:
     """Conservative, local heuristic; it never sends a second request to classify a task."""
     text = message.lower()
@@ -366,6 +414,10 @@ async def chat(request: ChatRequest):
                 ]
             if saved_codes:
                 answer = str(saved_codes[0]["content"]).strip()
+        if request.use_saved_memories and not code_recall:
+            recalled = _memory_recall_answer(request.message, memories)
+            if recalled is not None:
+                answer = recalled
         memory_to_save = extract_explicit_memory_request(request.message)
         if memory_to_save:
             saved_memory = store.add_memory(
