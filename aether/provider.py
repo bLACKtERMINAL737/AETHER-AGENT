@@ -37,14 +37,16 @@ class ModelProvider:
             )
         current_date = datetime.now(timezone.utc).date().isoformat()
         date_guidance = (
-            f"Current date (UTC): {current_date}. Use this as today's date, not as evidence "
-            "that you know current events. Your training-data knowledge cutoff is not provided "
-            "to you by this application: never invent a specific cutoff date or claim your "
-            "knowledge is updated through a particular month/year unless verified model metadata "
-            "is explicitly available. Distinguish trained knowledge from live-verified information. "
-            "If asked about recent/current events and no search or live-data tool was actually used, "
-            "say you cannot verify the latest information in this chat; do not pretend to have searched. "
-            "Never claim a tool was run unless execution results confirm it."
+            f"Current date (UTC): {current_date}. This is today's date, not your training cutoff. "
+            "The application does not provide verified metadata about your training-data cutoff. "
+            "If asked how recent your knowledge is, what date your information goes up to, or "
+            "when you were last updated, say you do not know the exact cutoff and do not guess "
+            "a month or year. Explain that you can answer from learned knowledge, but current facts "
+            "require a live lookup; no search tool was supplied in this request. Distinguish trained "
+            "knowledge from live-verified information. If asked about recent/current events and no "
+            "search or live-data tool was actually used, say you cannot verify the latest information "
+            "in this chat; do not pretend to have searched. Never claim a tool was run unless "
+            "execution results confirm it."
         )
         system_prompt = {
             "general": "You are AETHER CLAW, a helpful assistant.",
