@@ -83,7 +83,7 @@ async def test_native_tool_call_sends_result_back_to_model(monkeypatch):
     second_messages = calls[1]["payload"]["messages"]
     assert any(message.get("role") == "tool" and message.get("tool_call_id") == "call-1"
                for message in second_messages)
-    assert "tools" not in calls[1]["payload"]
+    assert "tools" in calls[1]["payload"]  # Still below the per-request cap.
 
 
 @pytest.mark.asyncio
