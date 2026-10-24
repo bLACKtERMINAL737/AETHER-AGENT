@@ -1,6 +1,6 @@
 # OpenJiuwen Proposal Submission — AETHER CLAW
 
-> Working draft for the 30 October 2026 deadline. Check against the final recorded demo before submission.
+> Working draft for the 30 October 2026 deadline. Re-check every item against the final recorded demo before submission.
 
 ## Project name
 **AETHER CLAW — a local-first AI agent for controlled, verifiable task execution**
@@ -9,6 +9,16 @@
 AETHER CLAW is a modular AI-agent foundation designed to make AI-assisted work safer to inspect and recover. Instead of silently changing a project, it separates proposal from execution, records task and tool states in SQLite, and requires explicit user approval for code changes. It supports configurable OpenAI-compatible model routes, optional local-model fallback, workspace-scoped file tools, persistent chat sessions and explicit memory, and an optional Docker-based test runner.
 
 This is an evolving MVP, not a production-ready autonomous agent. The submission focuses on a demonstrable developer workflow: propose a code change, validate it in an isolated disposable copy, review the diff, then decide whether to apply it.
+
+## October 23–24 engineering task review
+
+The three requested coding-safety tasks are implemented on the repository's current default branch and have regression tests:
+
+- [x] **Schema migration:** legacy `coding_proposals` schemas gain the `applying` status while existing proposal records and metadata are preserved.
+- [x] **Atomic apply protection:** proposals are claimed through a conditional database transition, and a local OS file lock coordinates concurrent apply operations and startup recovery.
+- [x] **Failure and rollback tests:** tests cover migration rollback/data preservation, replacement failure with rollback, rollback failure reporting, interrupted applies, concurrent apply requests, and failure to persist the final `applied` status.
+
+The relevant test workflow has a successful GitHub Actions run on commit `fc09e6b`, which was subsequently merged as `8fe2125`. This is evidence of a passing CI run, but it does **not** replace a full test run on the exact final submission commit. Filesystem replacement and SQLite status updates cannot be one transaction; an interrupted or incomplete rollback remains flagged for manual reconciliation rather than being silently retried.
 
 ## Problem and target scenario
 AI coding assistants can produce plausible edits, but developers still need to know what changed, whether tests pass, whether the intended files were touched, and what happens if execution is interrupted.
@@ -44,34 +54,19 @@ AI coding assistants can produce plausible edits, but developers still need to k
 - The project does not yet implement every feature of a fully autonomous agent: general browser automation, mobile nodes, a full multi-step workflow engine, a knowledge graph, and autonomous reinforcement learning are not completed features.
 - Keep the service local; do not expose it to a public network.
 
-## Engineering checkpoint — 24 October 2026
+## Updated release plan — October 25–30, 2026
 
-The three 23–24 October hardening tasks are **implemented on the default branch and have regression coverage**:
-
-- **SQLite schema migration:** the legacy coding-proposal table is migrated transactionally to support the `applying` state while preserving existing proposal data. A forced migration failure is tested to confirm rollback leaves the legacy schema and rows intact.
-- **Atomic apply protection:** proposal claiming uses a conditional database transition from `approved` to `applying`, and a local OS file lock serializes apply/recovery across processes. Regression tests cover single-claim behavior and concurrent apply attempts.
-- **Failure and rollback tests:** tests cover a multi-file replacement failure restoring prior file contents, an unsuccessful rollback remaining flagged for manual review, and failure to persist the final `applied` status without pretending the operation was rolled back.
-
-Relevant regression coverage is in `tests/test_store.py`, `tests/test_coding.py`, and `tests/test_coding_approval_safety.py`.
-
-**Validation evidence:** GitHub Actions “Tests” run **#413** completed successfully for commit `fc09e6b`, which was subsequently merged to the default branch as `8fe2125`. This is useful evidence for the current implementation, but it does **not** replace running the complete test suite on the exact final submission commit. The final-commit test run remains a release gate.
-
-## Updated plan to the 30 October 2026 deadline
-
-| Date | Priority | Exit criterion |
+| Date | Priority | Deliverable / exit condition |
 |---|---|---|
-| **24 Oct** | Close the schema-migration, atomic-apply, and failure/rollback hardening tasks; record evidence. | **Complete:** implementation and regression tests are present; the referenced CI run passed. |
-| **25 Oct** | Review open PRs and recent changes; address only reproducible correctness/security defects. Avoid new feature scope. | No unreviewed change is required for the core demo; all PRs intended for submission have an explicit decision. |
-| **26 Oct** | Verify setup from a clean checkout and review configuration, API-token handling, workspace boundaries, and README claims. | Fresh setup instructions work without exposing secrets; limitations are documented accurately. |
-| **27 Oct** | Run the full test suite on a release-candidate commit. Build and exercise the Docker sandbox if the demo will claim sandbox execution. | Save the exact commit SHA, command, complete result, and sandbox result (or omit the sandbox claim). |
-| **28 Oct** | Record the demo from the actual application and review the export. | Demo is at most 3 minutes, uses non-sensitive data, contains no visible credentials, and every shown result is real. |
-| **29 Oct** | Freeze scope, fill final metadata, upload the materials, and target submission. | Repository link, tested commit, test result, demo URL, and portal confirmation are recorded. |
-| **30 Oct** | Deadline contingency only: fix a submission-blocking defect, rerun affected tests, and submit. | Submission completed before the deadline; do not add optional features. |
+| **Oct 25** | Confirm safety work | Review the schema migration, apply lock/claim, and failure/rollback regression coverage; preserve manual-review behavior for uncertain applies. No feature expansion needed for these tasks. |
+| **Oct 26** | Reproducible verification | Pull the intended release branch into a clean checkout; run `python -m pytest -q` on the exact candidate commit and save the result. Investigate and fix any failure before proceeding. |
+| **Oct 27** | Sandbox and demo rehearsal | Build the Docker image and run the sandbox against a disposable test project. Verify the real workspace stays unchanged until explicit approval. Do not claim sandbox execution if it has not been verified. |
+| **Oct 28** | Submission quality review | Check setup instructions, scope/limitations, route configuration, secret redaction, and all demo claims against the running build. Freeze nonessential features. |
+| **Oct 29** | Record and prepare | Record the actual application in a maximum 3-minute demo; review playback, duration, and visible secrets. Fill in final commit, test result, video URL, and required metadata. Target submission today to preserve a buffer. |
+| **Oct 30** | Deadline | Submit before the deadline, verify the portal confirmation, and retain the final commit/test/video references. Avoid risky last-minute feature changes. |
 
-The remaining work is **release verification and submission preparation**, not implementation of the three hardening tasks. If a test or demo step fails, fix the root cause and re-run the relevant checks rather than lowering coverage or making unsupported claims.
-
-## Demo plan (maximum 3 minutes)
-The recording must show behavior that works on the final submission commit. Use a disposable test project and non-sensitive sample data. Never show API keys or tokens.
+### Demo plan (maximum 3 minutes)
+Use a disposable test project and non-sensitive sample data. Never show API keys or tokens.
 
 | Time | Show | Proof / narration |
 |---|---|---|
