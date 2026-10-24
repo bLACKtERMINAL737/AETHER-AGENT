@@ -342,6 +342,30 @@ async def chat(request: ChatRequest):
             allow_fallback=request.allow_fallback,
         )
         answer = str(result["answer"])
+        # For explicit requests to recall a remembered code, return the saved
+        # value directly rather than a verbose model paraphrase. Only use
+        # explicitly user-saved memories; never infer a code from unrelated notes.
+        code_recall = re.search(
+            r"\\b(?:what|which)\\s+(?:is\\s+)?(?:the\\s+)?code\\b.*\\b(?:remember|remembered|save|saved|ask you to remember)\\b",
+            request.message,
+            flags=re.IGNORECASE,
+        )
+        if request.use_saved_memories and code_recall:
+            saved_codes = [
+                item for item in memories
+                if item.get("source") == "explicit_chat_request"
+                and re.search(r"\\bcode\\b", str(item.get("content", "")), flags=re.IGNORECASE)
+            ]
+            # A code may be saved as just the value (e.g. CLAW-7391), so also
+            # allow concise alphanumeric/hyphen values from explicit remember requests.
+            if not saved_codes:
+                saved_codes = [
+                    item for item in memories
+                    if item.get("source") == "explicit_chat_request"
+                    and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{2,80}", str(item.get("content", "")).strip())
+                ]
+            if saved_codes:
+                answer = str(saved_codes[0]["content"]).strip()
         memory_to_save = extract_explicit_memory_request(request.message)
         if memory_to_save:
             saved_memory = store.add_memory(
