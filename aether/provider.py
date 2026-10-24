@@ -53,7 +53,7 @@ class ModelProvider:
             "coding": "You are AETHER CLAW's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
             "reasoning": "You are AETHER CLAW's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
-        system_prompt = f"{system_prompt}\\n\\n{date_guidance}"
+        system_prompt = f"{system_prompt}\n\n{date_guidance}"
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
         if memories:
             # Stored text is reference data, never higher-priority instructions.
