@@ -82,3 +82,78 @@ def test_web_search_rejects_invalid_result_limit(tmp_path):
 
     with pytest.raises(ToolError, match="Invalid tool input"):
         registry.execute("web.search", {"query": "latest news", "max_results": 100})
+
+
+def test_open_web_page_extracts_readable_text_and_ignores_scripts(tmp_path, monkeypatch):
+    import httpx
+
+    class FakeResponse:
+        status_code = 200
+        url = "https://example.com/article"
+        encoding = "utf-8"
+        headers = {"content-type": "text/html; charset=utf-8"}
+        content = b"<html><nav>Menu</nav><h1>Current Release</h1><script>secret()</script><p>Release notes text.</p></html>"
+
+        def raise_for_status(self):
+            return None
+
+        @property
+        def is_redirect(self):
+            return False
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            assert kwargs["follow_redirects"] is False
+            assert kwargs["trust_env"] is False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def get(self, url):
+            assert url == "https://example.com/article"
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    monkeypatch.setattr(ToolRegistry, "_validate_public_web_url", staticmethod(lambda url: url))
+    result = ToolRegistry(tmp_path).execute("web.open", {"url": "https://example.com/article"})
+
+    assert result["status_code"] == 200
+    assert "Current Release" in result["text"]
+    assert "Release notes text." in result["text"]
+    assert "secret()" not in result["text"]
+    assert result["url"] == "https://example.com/article"
+
+
+def test_open_web_page_rejects_invalid_urls(tmp_path):
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        registry.execute("web.open", {"url": "http://127.0.0.1/admin"})
+
+
+def test_open_web_page_rejects_redirects_and_unsupported_content(tmp_path, monkeypatch):
+    import httpx
+
+    class RedirectResponse:
+        is_redirect = True
+        headers = {}
+        def raise_for_status(self):
+            return None
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def get(self, url):
+            return RedirectResponse()
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    monkeypatch.setattr(ToolRegistry, "_validate_public_web_url", staticmethod(lambda url: url))
+    with pytest.raises(ToolError, match="redirects"):
+        ToolRegistry(tmp_path).execute("web.open", {"url": "https://example.com/article"})
