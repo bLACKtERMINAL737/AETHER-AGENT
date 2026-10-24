@@ -94,6 +94,15 @@ def test_open_web_page_extracts_readable_text_and_ignores_scripts(tmp_path, monk
         headers = {"content-type": "text/html; charset=utf-8"}
         content = b"<html><nav>Menu</nav><h1>Current Release</h1><script>secret()</script><p>Release notes text.</p></html>"
 
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def iter_bytes(self):
+            yield self.content
+
         def raise_for_status(self):
             return None
 
@@ -112,7 +121,8 @@ def test_open_web_page_extracts_readable_text_and_ignores_scripts(tmp_path, monk
         def __exit__(self, *args):
             return False
 
-        def get(self, url):
+        def stream(self, method, url):
+            assert method == "GET"
             assert url == "https://example.com/article"
             return FakeResponse()
 
@@ -150,7 +160,7 @@ def test_open_web_page_rejects_redirects_and_unsupported_content(tmp_path, monke
             return self
         def __exit__(self, *args):
             return False
-        def get(self, url):
+        def stream(self, method, url):
             return RedirectResponse()
 
     monkeypatch.setattr(httpx, "Client", FakeClient)
