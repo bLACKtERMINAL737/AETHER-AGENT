@@ -7,6 +7,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Local FastAPI service** with OpenAPI documentation and a lightweight review UI.
 - **Local API protection** with an optional shared bearer-style token and same-origin checks for state-changing requests.
 - **Persistent task journal** backed by SQLite, including explicit tool-execution states and crash-safe handling of interrupted work.
+- **Task Journal UI panel** to create local task records, review statuses, and inspect recorded tool-execution details using the existing task API. Creating a record does not automatically execute the task.
 - **Workspace tools** for listing files and searching text while preventing paths from escaping the configured workspace.
 - **Auto and Manual model modes**: Auto locally classifies task intent and selects a configured route; Manual lets the user explicitly select a configured route. Neither mode exposes credentials.
 - **Model route discovery** via `GET /models`, returning only route IDs, model IDs, and configured status.
