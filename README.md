@@ -173,6 +173,7 @@ Session endpoints:
 - `POST /sessions` — create a session
 - `GET /sessions` — list sessions
 - `GET /sessions/{session_id}` — retrieve a session and its messages
+- `GET /sessions/export?limit=100` — export up to 1,000 recent sessions with up to 10,000 messages per session in a versioned JSON archive (`aether-conversation-export`, version 1). Treat exported files as private conversation data.
 - `DELETE /sessions/{session_id}` — delete a session and its messages
 - `POST /chat` — chat with optional `session_id`, `task_type`, and `use_saved_memories` (default `false`)
 

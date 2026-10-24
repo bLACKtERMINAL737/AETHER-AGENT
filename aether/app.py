@@ -721,6 +721,26 @@ def list_sessions(limit: int = 50):
     return {"sessions": store.list_sessions(limit=limit)}
 
 
+@app.get("/sessions/export")
+def export_sessions(limit: int = 100):
+    """Export local conversation sessions and their messages as versioned JSON."""
+    if not 1 <= limit <= 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    sessions = store.list_sessions(limit=limit)
+    archive = []
+    for session in sessions:
+        session_data = store.get_session(session["id"])
+        if session_data is None:
+            continue
+        session_data["messages"] = store.list_session_messages(session["id"], limit=10000)
+        archive.append(session_data)
+    return {
+        "format": "aether-conversation-export",
+        "version": 1,
+        "sessions": archive,
+    }
+
+
 @app.get("/sessions/{session_id}")
 def get_session(session_id: str, limit: int = 100):
     if not 1 <= limit <= 200:
