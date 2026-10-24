@@ -315,24 +315,111 @@ async def chat(request: ChatRequest):
                 status_code=422,
                 detail="Manual mode requires an explicit model_route selection.",
             )
-        result = await router.chat(
-            request.message,
-            effective_task,
-            history=history,
-            memories=memories,
-            model_route=request.model_route if request.mode == "manual" else None,
-            allow_fallback=request.allow_fallback,
-        )
+        tool_task = {"id": None, "count": 0, "attempts": 0, "failed": False, "uncertain": False}
+
+        async def execute_chat_tool(name, arguments):
+            if tool_task["id"] is None:
+                task = store.create_task("Chat tool use", request.message[:2000])
+                tool_task["id"] = task["id"]
+                store.set_task_status(task["id"], "running")
+            task_id = tool_task["id"]
+            tool_task["attempts"] += 1
+            execution_id = store.begin_tool(task_id, str(name), arguments)
+            try:
+                result = tools.execute(name, arguments)
+                store.finish_tool(execution_id, "succeeded", result=result)
+                tool_task["count"] += 1
+                return result
+            except ToolError as exc:
+                tool_task["failed"] = True
+                store.finish_tool(execution_id, "failed", error=str(exc)[:500])
+                raise
+            except Exception as exc:
+                tool_task["failed"] = True
+                tool_task["uncertain"] = True
+                logger.exception("Unexpected native chat tool failure")
+                store.finish_tool(
+                    execution_id,
+                    "unknown",
+                    error="Unexpected execution error; inspect local logs before retrying",
+                )
+                raise ToolError("Tool execution outcome may be uncertain") from exc
+
+        if callable(getattr(router, "chat_with_tools", None)):
+            tool_specs = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": item["name"],
+                        "description": item["description"],
+                        "parameters": item["input_schema"],
+                    },
+                }
+                for item in tools.describe()
+            ]
+            result = await router.chat_with_tools(
+                request.message,
+                effective_task,
+                history=history,
+                memories=memories,
+                model_route=request.model_route if request.mode == "manual" else None,
+                allow_fallback=request.allow_fallback,
+                tool_specs=tool_specs,
+                execute_tool=execute_chat_tool,
+                execution_counter=lambda: tool_task["attempts"] > 0,
+                max_tool_calls=5,
+            )
+            if tool_task["id"] is not None:
+                status = "unknown" if tool_task["uncertain"] else ("failed" if tool_task["failed"] else "succeeded")
+                store.set_task_status(
+                    tool_task["id"],
+                    status,
+                    result={"tool_calls": tool_task["count"], "tool_attempts": tool_task["attempts"]},
+                    error="One or more tool executions failed" if tool_task["failed"] else None,
+                )
+                result["task_id"] = tool_task["id"]
+                result["tool_calls"] = tool_task["count"]
+        else:
+            # Compatibility with test adapters and older router implementations.
+            result = await router.chat(
+                request.message,
+                effective_task,
+                history=history,
+                memories=memories,
+                model_route=request.model_route if request.mode == "manual" else None,
+                allow_fallback=request.allow_fallback,
+            )
         answer = str(result["answer"])
         # Persist the user/assistant pair in one transaction to avoid partial turns.
         store.add_session_turn(session_id, request.message, answer)
     except HTTPException:
         raise
     except ProviderNotConfigured as exc:
+        if "tool_task" in locals() and tool_task["id"] is not None:
+            status = "unknown" if tool_task["uncertain"] else "failed"
+            store.set_task_status(
+                tool_task["id"], status,
+                result={"tool_calls": tool_task["count"], "tool_attempts": tool_task["attempts"]},
+                error="Model request failed after tool execution began",
+            )
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except KeyError as exc:
+        if "tool_task" in locals() and tool_task["id"] is not None:
+            status = "unknown" if tool_task["uncertain"] else "failed"
+            store.set_task_status(
+                tool_task["id"], status,
+                result={"tool_calls": tool_task["count"], "tool_attempts": tool_task["attempts"]},
+                error="Chat request failed after tool execution began",
+            )
         raise HTTPException(status_code=404, detail="Conversation session not found") from exc
     except Exception as exc:
+        if "tool_task" in locals() and tool_task["id"] is not None:
+            status = "unknown" if tool_task["uncertain"] else "failed"
+            store.set_task_status(
+                tool_task["id"], status,
+                result={"tool_calls": tool_task["count"], "tool_attempts": tool_task["attempts"]},
+                error="Chat request failed after tool execution began",
+            )
         logger.exception("Model provider request failed")
         raise HTTPException(status_code=502, detail="Chat request failed; session history may be incomplete; see local logs") from exc
     return {
