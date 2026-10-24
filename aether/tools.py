@@ -175,15 +175,27 @@ class ToolRegistry:
                 trust_env=False,
                 headers={"User-Agent": "AETHER-CLAW-WebReader/1.0"},
             ) as client:
-                response = client.get(safe_url)
-                if response.is_redirect:
-                    raise ToolError("This page redirects; use a direct public URL from search results.")
-                response.raise_for_status()
-                content_type = response.headers.get("content-type", "").lower()
-                if "text/html" not in content_type and "text/plain" not in content_type:
-                    raise ToolError("This URL does not return supported HTML or plain text.")
-                raw = response.content[:1_000_000]
-                page_source = raw.decode(response.encoding or "utf-8", errors="replace")
+                with client.stream("GET", safe_url) as response:
+                    if response.is_redirect:
+                        raise ToolError("This page redirects; use a direct public URL from search results.")
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "").lower()
+                    if "text/html" not in content_type and "text/plain" not in content_type:
+                        raise ToolError("This URL does not return supported HTML or plain text.")
+                    chunks = []
+                    size = 0
+                    for chunk in response.iter_bytes():
+                        remaining = 1_000_000 - size
+                        if remaining <= 0:
+                            break
+                        chunks.append(chunk[:remaining])
+                        size += min(len(chunk), remaining)
+                        if len(chunk) > remaining:
+                            break
+                    raw = b"".join(chunks)
+                    encoding = response.encoding or "utf-8"
+                    page_source = raw.decode(encoding, errors="replace")
+                    final_url = str(response.url)
         except ToolError:
             raise
         except Exception as exc:
@@ -215,7 +227,7 @@ class ToolRegistry:
         parser.feed(page_source)
         extracted = " ".join(" ".join(parser.parts).split())
         return {
-            "url": str(response.url),
+            "url": final_url,
             "status_code": response.status_code,
             "text": extracted[:16000],
             "truncated": len(extracted) > 16000,
