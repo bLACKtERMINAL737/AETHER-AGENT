@@ -10,6 +10,8 @@
 main{max-width:1100px;margin:auto;padding:28px 18px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h1{font-size:clamp(25px,4vw,38px);margin:0}h2{font-size:17px;margin:0 0 12px}.muted{color:var(--muted)}.pill{border:1px solid var(--line);padding:5px 10px;border-radius:99px;color:var(--muted);font-size:12px}
 .grid{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;margin-top:20px}.panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:18px;min-width:0;box-shadow:0 12px 40px #0002}
 label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,textarea,select{width:100%;background:#0a1020;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit}textarea{min-height:115px;resize:vertical}button{border:1px solid var(--line);background:#202b45;color:var(--text);padding:10px 13px;border-radius:10px;cursor:pointer;font:inherit}button.primary{background:var(--accent);border-color:var(--accent);color:#100d27;font-weight:700}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.files{display:grid;gap:7px;margin-top:10px;max-height:310px;overflow:auto}.file{display:flex;align-items:flex-start;gap:9px;padding:9px;border:1px solid var(--line);border-radius:9px;overflow-wrap:anywhere}.file input{width:auto;margin-top:5px}.status{margin-top:12px;min-height:22px;color:var(--muted)}.status.good{color:var(--good)}.status.bad{color:var(--bad)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;border:1px solid var(--line);padding:13px;border-radius:10px;max-height:520px;overflow:auto;font-size:12px}.proposal{display:none}.warning{margin-top:16px;border:1px solid #725c2d;background:#382c153d;border-radius:12px;padding:12px;color:#f3d89a;font-size:13px}.small{font-size:12px}@media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:20px 12px 40px}}
+
+.task-list{display:grid;gap:8px;margin-top:12px}.task-item{border:1px solid var(--line);border-radius:12px;padding:12px;background:#0b1223;cursor:pointer}.task-item:hover{border-color:var(--accent)}.task-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.task-state{font-size:11px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:99px;padding:3px 8px;color:var(--muted)}.task-state.succeeded{color:var(--good)}.task-state.failed{color:var(--bad)}.task-state.running{color:var(--accent)}.task-detail{white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;border:1px solid var(--line);padding:12px;border-radius:10px;max-height:280px;overflow:auto;font:12px/1.5 ui-monospace,monospace}.task-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}@media(max-width:760px){.task-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -102,6 +104,26 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     <div style="display:flex;gap:8px"><input id="memoryQuery" maxlength="300" placeholder="Search by keywords"><button id="searchMemory">Search</button><button id="listMemory">List all</button></div>
     <div id="memoryStatus" class="status" role="status"></div>
     <div id="memoryResults" class="files"></div>
+  </section>
+
+  <section class="panel" style="margin-top:16px" aria-labelledby="tasksHeading">
+    <div class="top"><div><h2 id="tasksHeading">Task Journal</h2><div class="muted">Review durable task records and tool execution outcomes.</div></div><button id="refreshTasks">Refresh tasks</button></div>
+    <div class="task-grid">
+      <div>
+        <label for="taskTitle">Task title</label>
+        <input id="taskTitle" maxlength="200" placeholder="e.g. Review coding proposal workflow">
+        <label for="taskInput">Task description</label>
+        <textarea id="taskInput" maxlength="20000" placeholder="Describe the task to record in the local journal"></textarea>
+        <div class="actions"><button class="primary" id="createTask">Create task record</button></div>
+        <div id="taskStatus" class="status" role="status"></div>
+        <div id="taskList" class="task-list"></div>
+      </div>
+      <div>
+        <h2>Selected task details</h2>
+        <div id="taskDetailHint" class="muted">Select a task to inspect its recorded status and tool executions.</div>
+        <pre id="taskDetail" class="task-detail" hidden></pre>
+      </div>
+    </div>
   </section>
 </main>
 <script>
@@ -358,6 +380,50 @@ $("runTests").onclick=async()=>{
  catch(e){setStatus("testStatus",e.message,"bad");}
  finally{$("runTests").disabled=false;}
 };
+
+async function refreshTasks(){
+  const list=$("taskList");
+  list.textContent="Loading tasks…";
+  try{
+    const data=await api("/tasks?limit=100");
+    const tasks=data.tasks||[];
+    list.replaceChildren();
+    if(!tasks.length){list.textContent="No task records yet.";return;}
+    for(const task of tasks){
+      const item=document.createElement("button");
+      item.type="button";item.className="task-item";item.style.textAlign="left";
+      const head=document.createElement("div");head.className="task-head";
+      const title=document.createElement("strong");title.textContent=task.title||"Untitled task";
+      const state=document.createElement("span");state.className="task-state "+String(task.status||"unknown");state.textContent=task.status||"unknown";
+      const meta=document.createElement("div");meta.className="muted";meta.style.marginTop="6px";meta.textContent=(task.created_at||"")+(task.updated_at?" · Updated "+task.updated_at:"");
+      head.append(title,state);item.append(head,meta);
+      item.onclick=()=>loadTaskDetail(task.id);
+      list.append(item);
+    }
+    setStatus("taskStatus",tasks.length+" task record(s) loaded.","good");
+  }catch(e){list.textContent="Could not load task records.";setStatus("taskStatus",e.message,"bad");}
+}
+async function loadTaskDetail(id){
+  try{
+    const task=await api("/tasks/"+encodeURIComponent(id));
+    $("taskDetail").hidden=false;$("taskDetailHint").textContent="Task ID: "+task.id;
+    $("taskDetail").textContent=JSON.stringify(task,null,2);
+  }catch(e){setStatus("taskStatus",e.message,"bad");}
+}
+$("refreshTasks").onclick=refreshTasks;
+$("createTask").onclick=async()=>{
+  const title=$("taskTitle").value.trim(),input=$("taskInput").value.trim();
+  if(!title||!input){setStatus("taskStatus","Enter both a title and task description.","bad");return;}
+  $("createTask").disabled=true;
+  try{
+    const task=await api("/tasks",{method:"POST",body:JSON.stringify({title,input})});
+    $("taskTitle").value="";$("taskInput").value="";
+    setStatus("taskStatus","Task record created. Creating a record does not execute the task.","good");
+    await refreshTasks();await loadTaskDetail(task.id);
+  }catch(e){setStatus("taskStatus",e.message,"bad");}
+  finally{$("createTask").disabled=false;}
+};
+
 refreshFiles();
 loadMemories();
 loadModelRoutes();
