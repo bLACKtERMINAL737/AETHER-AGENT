@@ -206,18 +206,18 @@ def configure_model(request: ModelConfigurationRequest):
 def extract_explicit_memory_request(message: str) -> str | None:
     """Return content only for an unambiguous, user-authored remember request."""
     patterns = (
-        r"^(?:please\\s+)?remember\\s+this(?:\\s+[a-z][a-z -]{0,30})?\\s*[:：]\\s*(.+)$",
-        r"^(?:please\\s+)?remember\\s+(?:that\\s+)?(.+)$",
-        r"^মনে রাখো\\s*[:：-]?\\s*(.+)$",
-        r"^মনে রেখো\\s*[:：-]?\\s*(.+)$",
-        r"^মনে রাখবে\\s*[:：-]?\\s*(.+)$",
+        r"^(?:please\s+)?remember\s+this(?:\s+[a-z][a-z -]{0,30})?\s*[:：]\s*(.+)$",
+        r"^(?:please\s+)?remember\s+(?:that\s+)?(.+)$",
+        r"^মনে রাখো\s*[:：-]?\s*(.+)$",
+        r"^মনে রেখো\s*[:：-]?\s*(.+)$",
+        r"^মনে রাখবে\s*[:：-]?\s*(.+)$",
     )
     text = message.strip()
     for pattern in patterns:
         match = re.match(pattern, text, flags=re.IGNORECASE | re.DOTALL)
         if match:
             content = match.group(1).strip().strip('"“”‘’')
-            content = re.sub(r"\\s+", " ", content).strip(" .!。")
+            content = re.sub(r"\s+", " ", content).strip(" .!。")
             if content and len(content) <= 4_000:
                 return content
     return None
