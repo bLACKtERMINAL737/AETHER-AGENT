@@ -467,10 +467,30 @@ async def chat(request: ChatRequest):
             flags=re.IGNORECASE,
         )
         if cutoff_question:
+            # Report only configuration/capability facts we can actually observe.
+            # A configured model ID is not authoritative metadata for its training cutoff.
+            active_model = str(result.get("model") or "নির্দিষ্ট করা যায়নি")
+            registered_tools = tools.describe()
+            live_search_available = any(
+                re.search(r"(?:^|[._-])(web|browser|search)(?:$|[._-])", str(item.get("name", "")), re.I)
+                for item in registered_tools
+            )
+            if live_search_available:
+                live_search_note = (
+                    "এই অ্যাপে একটি search-সম্পর্কিত tool নিবন্ধিত আছে; সাম্প্রতিক তথ্য "
+                    "যাচাই করতে হলে সেটি সত্যিই চালিয়ে ফলাফল পরীক্ষা করতে হবে।"
+                )
+            else:
+                live_search_note = (
+                    "এই অ্যাপে বর্তমানে কোনো live web-search tool নিবন্ধিত নেই, তাই এই চ্যাটে "
+                    "ওয়েব থেকে সাম্প্রতিক তথ্য যাচাই করতে পারি না।"
+                )
             answer = (
-                "আমার training data-এর সঠিক শেষ তারিখ যাচাই করা নেই, তাই নির্দিষ্ট মাস বা বছর "
-                "দাবি করব না। আমি শেখা তথ্যের ভিত্তিতে উত্তর দিতে পারি, তবে সাম্প্রতিক তথ্য "
-                "লাইভভাবে যাচাই করা হয়নি।"
+                "আমার training data-এর সঠিক শেষ তারিখ provider থেকে যাচাই করা metadata হিসেবে "
+                "পাওয়া যায়নি, তাই নির্দিষ্ট মাস বা বছর দাবি করব না। "
+                f"এই উত্তরে ব্যবহৃত model ID: {active_model}. "
+                "Model ID থেকে একা training cutoff নিশ্চিত করা যায় না। "
+                + live_search_note
             )
         # For explicit requests to recall a remembered code, return the saved
         # value directly rather than a verbose model paraphrase. Only use
