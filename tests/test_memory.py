@@ -135,3 +135,53 @@ def test_memory_recall_question_prioritizes_explicitly_saved_memory(tmp_path):
 
     assert results
     assert results[0]["id"] == saved["id"]
+
+@pytest.mark.asyncio
+async def test_chat_returns_only_saved_code_for_explicit_code_recall(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "concise-recall.sqlite3")
+    store.add_memory(
+        "note",
+        "AETHER CLAW",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    store.add_memory(
+        "note",
+        "CLAW-7391",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message="What code did I ask you to remember?",
+            use_saved_memories=True,
+        )
+    )
+
+    assert result["answer"] == "CLAW-7391"
+
+
+@pytest.mark.asyncio
+async def test_chat_does_not_force_code_recall_without_memory_opt_in(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "recall-opt-out.sqlite3")
+    store.add_memory(
+        "note",
+        "CLAW-7391",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    router = CapturingRouter()
+    monkeypatch.setattr(app_module, "router", router)
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message="What code did I ask you to remember?",
+            use_saved_memories=False,
+        )
+    )
+
+    assert result["answer"] == "I will keep the explanation concise and in Bangla."
