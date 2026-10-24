@@ -16,7 +16,7 @@ from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .security import LocalAPIProtection
-from .tools import ToolRegistry, ToolError
+from .tools import ToolRegistry, ToolError, provider_tool_name
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aether")
@@ -382,6 +382,10 @@ async def chat(request: ChatRequest):
                 detail="Manual mode requires an explicit model_route selection.",
             )
         tool_task = {"id": None, "count": 0, "attempts": 0, "failed": False, "uncertain": False}
+        tool_name_map = {
+            provider_tool_name(item["name"]): item["name"]
+            for item in tools.describe()
+        }
 
         async def execute_chat_tool(name, arguments):
             if tool_task["id"] is None:
@@ -390,9 +394,10 @@ async def chat(request: ChatRequest):
                 store.set_task_status(task["id"], "running")
             task_id = tool_task["id"]
             tool_task["attempts"] += 1
-            execution_id = store.begin_tool(task_id, str(name), arguments)
+            internal_name = tool_name_map.get(str(name), str(name))
+            execution_id = store.begin_tool(task_id, internal_name, arguments)
             try:
-                result = tools.execute(name, arguments)
+                result = tools.execute(internal_name, arguments)
                 store.finish_tool(execution_id, "succeeded", result=result)
                 tool_task["count"] += 1
                 return result
@@ -416,7 +421,7 @@ async def chat(request: ChatRequest):
                 {
                     "type": "function",
                     "function": {
-                        "name": item["name"],
+                        "name": provider_tool_name(item["name"]),
                         "description": item["description"],
                         "parameters": item["input_schema"],
                     },

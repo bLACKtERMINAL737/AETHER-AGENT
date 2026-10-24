@@ -36,6 +36,11 @@ class ToolError(Exception):
     pass
 
 
+def provider_tool_name(name: str) -> str:
+    """Convert internal dotted tool names to provider-compatible function names."""
+    return name.replace(".", "__")
+
+
 class ToolRegistry:
     def __init__(self, workspace: Path):
         self.workspace = workspace.resolve()
