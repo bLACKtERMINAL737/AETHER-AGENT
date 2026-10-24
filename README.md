@@ -183,6 +183,7 @@ Memory endpoints:
 - `GET /memory?limit=100&category=preference` — list memories
 - `POST /memory/search` — search saved records by keywords
 - `DELETE /memory/{memory_id}` — delete a saved record
+- `GET /memory/export` — export saved records as a versioned JSON document (`format: aether-memory-export`, `version: 1`) for local backup or migration. The export contains memory content and metadata; keep the downloaded file private.
 
 Memory is explicit and local; the application does not silently infer or save memories from chats.
 
