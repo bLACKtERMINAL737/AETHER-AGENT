@@ -138,46 +138,6 @@ function updateModelControls(){
   if(first) $("modelRoute").value = first.id;
  }
 }
-function renderProviderRoutes(routes){
- const container=$("providerRoutes");container.replaceChildren();
- for(const route of routes){
-  const card=document.createElement("div");card.className="file";card.style.display="block";
-  const title=document.createElement("strong");title.textContent=route.id+" · "+(route.model||"model not set");
-  const status=document.createElement("div");status.className=route.configured?"status good":"status";status.textContent=route.configured?"Configured":"Not configured";
-  card.append(title,status);container.append(card);
- }
- if(!routes.length)container.textContent="No model routes returned by the API.";
-}
-async function refreshProviderRoutes(){
- try{
-  const [models,health]=await Promise.all([api("/models"),api("/health")]);
-  renderProviderRoutes(models.routes||[]);
-  setStatus("providerStatus","Live status loaded. API keys are never returned by this endpoint.","good");
-  configuredModelRoutes=models.routes||[];
-  const select=$("modelRoute"),previous=select.value;select.replaceChildren();
-  for(const route of configuredModelRoutes){
-   const option=document.createElement("option");option.value=route.id;
-   option.textContent=route.id+" · "+(route.model||"unnamed model")+(route.configured?"":" (not configured)");
-   option.disabled=!route.configured;select.append(option);
-  }
-  if(configuredModelRoutes.some(r=>r.id===previous&&r.configured))select.value=previous;
-  updateModelControls();
-  return health;
- }catch(e){setStatus("providerStatus",e.message,"bad");}
-}
-$("refreshRoutes").onclick=refreshProviderRoutes;
-$("configureRoute").onclick=async()=>{
- const route=$("configRoute").value,model=$("configModel").value.trim(),base_url=$("configBaseUrl").value.trim(),api_key=$("configApiKey").value;
- if(!model||!base_url||!api_key){setStatus("providerStatus","Enter model ID, base URL, and API key.","bad");return;}
- $("configureRoute").disabled=true;
- try{
-  const result=await api("/models/configure",{method:"POST",body:JSON.stringify({route,model,base_url,api_key})});
-  $("configApiKey").value="";
-  setStatus("providerStatus","Configured "+result.route+" · "+result.model+". This is temporary and resets on server restart.","good");
-  await loadModelRoutes();await refreshProviderRoutes();
- }catch(e){setStatus("providerStatus",e.message,"bad");}
- finally{$("configureRoute").disabled=false;}
-};
 async function loadModelRoutes(){
  try{
   const data = await api("/models");
@@ -310,16 +270,28 @@ async function refreshFiles(){
     const folder=$("dir").value.trim()||".";
     const data=await api("/coding/files?path="+encodeURIComponent(folder));
     $("files").replaceChildren();
-    const entries=data.entries.filter(e=>e.type==="file" && e.name!=="");
-    if(!entries.length){$("files").textContent="No files in this folder.";setStatus("leftStatus","");return;}
+    const entries=data.entries.filter(e=>e.name!=="");
+    if(!entries.length){$("files").textContent="No files or folders in this directory.";setStatus("leftStatus","");return;}
     for(const entry of entries){
       const label=document.createElement("label");label.className="file";
-      const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.value=entry.path;
-      checkbox.setAttribute("aria-label","Select "+entry.path);
-      const text=document.createElement("span");text.textContent=entry.path;
-      label.append(checkbox,text);$("files").append(label);
+      if(entry.type==="directory"){
+        const open=document.createElement("button");
+        open.type="button";
+        open.textContent="📁 "+entry.name+"/";
+        open.setAttribute("aria-label","Open folder "+entry.path);
+        open.onclick=()=>{$("dir").value=entry.path;refreshFiles();};
+        label.append(open);
+      }else{
+        const checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.value=entry.path;
+        checkbox.setAttribute("aria-label","Select "+entry.path);
+        const name=document.createElement("span");name.textContent="📄 "+entry.path;
+        label.append(checkbox,name);
+      }
+      $("files").append(label);
     }
-    setStatus("leftStatus",entries.length+" file(s) available.");
+    const fileCount=entries.filter(e=>e.type==="file").length;
+    const folderCount=entries.filter(e=>e.type==="directory").length;
+    setStatus("leftStatus",fileCount+" file(s), "+folderCount+" folder(s).");
   }catch(e){$("files").textContent="Could not load files.";setStatus("leftStatus",e.message,"bad");}
 }
 $("refresh").onclick=refreshFiles;
