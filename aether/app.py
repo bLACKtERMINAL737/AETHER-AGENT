@@ -346,7 +346,7 @@ async def chat(request: ChatRequest):
         # value directly rather than a verbose model paraphrase. Only use
         # explicitly user-saved memories; never infer a code from unrelated notes.
         code_recall = re.search(
-            r"\\b(?:what|which)\\s+(?:is\\s+)?(?:the\\s+)?code\\b.*\\b(?:remember|remembered|save|saved|ask you to remember)\\b",
+            r"\b(?:what|which)\s+(?:is\s+)?(?:the\s+)?code\b.*\b(?:remember|remembered|save|saved|ask you to remember)\b",
             request.message,
             flags=re.IGNORECASE,
         )
@@ -354,7 +354,7 @@ async def chat(request: ChatRequest):
             saved_codes = [
                 item for item in memories
                 if item.get("source") == "explicit_chat_request"
-                and re.search(r"\\bcode\\b", str(item.get("content", "")), flags=re.IGNORECASE)
+                and re.search(r"\bcode\b", str(item.get("content", "")), flags=re.IGNORECASE)
             ]
             # A code may be saved as just the value (e.g. CLAW-7391), so also
             # allow concise alphanumeric/hyphen values from explicit remember requests.
