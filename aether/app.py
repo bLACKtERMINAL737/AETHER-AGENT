@@ -423,18 +423,35 @@ async def chat(request: ChatRequest):
                 }
                 for item in tools.describe()
             ]
-            result = await router.chat_with_tools(
-                request.message,
-                effective_task,
-                history=history,
-                memories=memories,
-                model_route=request.model_route if request.mode == "manual" else None,
-                allow_fallback=request.allow_fallback,
-                tool_specs=tool_specs,
-                execute_tool=execute_chat_tool,
-                execution_counter=lambda: tool_task["attempts"] > 0,
-                max_tool_calls=5,
-            )
+            try:
+                result = await router.chat_with_tools(
+                    request.message,
+                    effective_task,
+                    history=history,
+                    memories=memories,
+                    model_route=request.model_route if request.mode == "manual" else None,
+                    allow_fallback=request.allow_fallback,
+                    tool_specs=tool_specs,
+                    execute_tool=execute_chat_tool,
+                    execution_counter=lambda: tool_task["attempts"] > 0,
+                    max_tool_calls=5,
+                )
+            except Exception:
+                # The tool journal records each tool's own outcome. If the model
+                # fails after a tool ran, mark the parent chat-tool task as failed
+                # without rewriting a successful child execution as uncertain.
+                if tool_task["id"] is not None:
+                    status = "unknown" if tool_task["uncertain"] else "failed"
+                    store.set_task_status(
+                        tool_task["id"],
+                        status,
+                        error=(
+                            "Tool execution outcome may be uncertain; inspect tool records."
+                            if status == "unknown"
+                            else "Chat request failed after tool execution; inspect local logs."
+                        ),
+                    )
+                raise
             if tool_task["id"] is not None:
                 status = "unknown" if tool_task["uncertain"] else ("failed" if tool_task["failed"] else "succeeded")
                 store.set_task_status(
