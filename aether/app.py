@@ -573,6 +573,16 @@ def list_memory(limit: int = 100, category: str | None = None):
     return {"memories": store.list_memories(limit=limit, category=category)}
 
 
+@app.get("/memory/export")
+def export_memories():
+    """Export saved local memories as a portable, versioned JSON document."""
+    return {
+        "format": "aether-memory-export",
+        "version": 1,
+        "memories": store.list_memories(limit=10000),
+    }
+
+
 @app.post("/memory/search")
 def search_memory(request: MemorySearchRequest):
     return {"memories": store.search_memories(request.query, limit=request.limit)}
