@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 import os
+import re
 from typing import Literal
 from pathlib import Path
 from ipaddress import ip_address
@@ -202,6 +203,26 @@ def configure_model(request: ModelConfigurationRequest):
     }
 
 
+def extract_explicit_memory_request(message: str) -> str | None:
+    """Return content only for an unambiguous, user-authored remember request."""
+    patterns = (
+        r"^(?:please\\s+)?remember\\s+(?:that\\s+)?(.+)$",
+        r"^(?:please\\s+)?remember this\\s*:\\s*(.+)$",
+        r"^মনে রাখো\\s*[:：-]?\\s*(.+)$",
+        r"^মনে রেখো\\s*[:：-]?\\s*(.+)$",
+        r"^মনে রাখবে\\s*[:：-]?\\s*(.+)$",
+    )
+    text = message.strip()
+    for pattern in patterns:
+        match = re.match(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            content = match.group(1).strip().strip('"“”‘’')
+            content = re.sub(r"\\s+", " ", content).strip(" .!。")
+            if content and len(content) <= 4_000:
+                return content
+    return None
+
+
 def infer_task_type(message: str) -> Literal["general", "coding", "reasoning"]:
     """Conservative, local heuristic; it never sends a second request to classify a task."""
     text = message.lower()
@@ -322,6 +343,15 @@ async def chat(request: ChatRequest):
             allow_fallback=request.allow_fallback,
         )
         answer = str(result["answer"])
+        memory_to_save = extract_explicit_memory_request(request.message)
+        if memory_to_save:
+            saved_memory = store.add_memory(
+                "note",
+                memory_to_save,
+                source="explicit_chat_request",
+                tags=["chat", "user-requested"],
+            )
+            answer = f'I saved this to long-term memory: {saved_memory["content"]}'
         # Create a new session only after a successful model response. Persist
         # the user/assistant pair atomically to avoid empty or partial turns.
         if not session_id:
