@@ -390,6 +390,22 @@ async def chat(request: ChatRequest):
             allow_fallback=request.allow_fallback,
         )
         answer = str(result["answer"])
+        # Answer knowledge-cutoff questions deterministically: prompt guidance alone
+        # cannot prevent a model from repeating a memorized, unsupported date.
+        cutoff_question = re.search(
+            r"(?:শেষ\s*কবে\s*পর্যন্ত\s*তথ্য|তথ্য\s*দিতে\s*পারো|কত\s*সাল\s*পর্যন্ত|"
+            r"last\s*kobe\s*(?:porjonto\s*)?(?:info|information|tothyo)|"
+            r"info\s*dite\s*paro|how\s*recent\s*(?:is\s*)?your\s*knowledge|"
+            r"knowledge\s*cutoff|what\s*(?:date|year)\s*(?:does\s*)?your\s*(?:knowledge|information))",
+            request.message,
+            flags=re.IGNORECASE,
+        )
+        if cutoff_question:
+            answer = (
+                "আমার training data-এর সঠিক শেষ তারিখ যাচাই করা নেই, তাই নির্দিষ্ট মাস বা বছর "
+                "দাবি করব না। আমি শেখা তথ্যের ভিত্তিতে উত্তর দিতে পারি, তবে সাম্প্রতিক তথ্য "
+                "লাইভভাবে যাচাই করা হয়নি।"
+            )
         # For explicit requests to recall a remembered code, return the saved
         # value directly rather than a verbose model paraphrase. Only use
         # explicitly user-saved memories; never infer a code from unrelated notes.
