@@ -127,3 +127,44 @@ def test_chat_turn_persistence_saves_both_messages_and_sets_title(tmp_path):
         ("assistant", "A sequence of steps."),
     ]
     assert store.get_session(session["id"])["title"] == "What is a workflow?"
+
+
+
+@pytest.mark.asyncio
+async def test_native_tool_task_is_failed_when_model_request_fails_after_tool(tmp_path, monkeypatch):
+    import httpx
+
+    store = TaskStore(tmp_path / "native-tool-model-failure.sqlite3")
+
+    class ToolRouter:
+        async def chat_with_tools(self, message, task_type, **kwargs):
+            await kwargs["execute_tool"]("workspace.list_files", {"path": "."})
+            raise httpx.ConnectError("provider disconnected after tool result")
+
+    class ReadOnlyTools:
+        def describe(self):
+            return [{
+                "name": "workspace.list_files",
+                "description": "List workspace files",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }]
+
+        def execute(self, name, arguments):
+            assert name == "workspace.list_files"
+            return {"entries": [{"name": "example.py", "type": "file"}]}
+
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", ToolRouter())
+    monkeypatch.setattr(app_module, "tools", ReadOnlyTools())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await app_module.chat(app_module.ChatRequest(message="List files"))
+
+    assert exc_info.value.status_code == 502
+    tasks = store.list_tasks()
+    assert len(tasks) == 1
+    task = store.get_task(tasks[0]["id"])
+    assert task["status"] == "failed"
+    executions = store.list_tool_executions(task["id"])
+    assert len(executions) == 1
+    assert executions[0]["status"] == "succeeded"
