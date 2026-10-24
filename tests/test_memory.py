@@ -59,3 +59,60 @@ async def test_chat_opt_in_memory_reaches_router_and_persists_turn(tmp_path, mon
         ("user", "Explain this topic"),
         ("assistant", "I will keep the explanation concise and in Bangla."),
     ]
+
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Remember this code: CLAW-7391", "CLAW-7391"),
+        ("Please remember that I prefer short answers", "I prefer short answers"),
+        ("মনে রাখো: AETHER CLAW", "AETHER CLAW"),
+        ("মনে রেখো আমার প্রজেক্টের নাম AETHER", "আমার প্রজেক্টের নাম AETHER"),
+    ],
+)
+def test_extract_explicit_memory_request(message, expected):
+    assert app_module.extract_explicit_memory_request(message) == expected
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "What code did I ask you to remember?",
+        "I remember the code CLAW-7391",
+        "Can you explain how memory works?",
+        "Please remember",
+    ],
+)
+def test_extract_explicit_memory_request_ignores_non_requests(message):
+    assert app_module.extract_explicit_memory_request(message) is None
+
+
+@pytest.mark.asyncio
+async def test_chat_explicit_remember_request_saves_memory_and_confirms(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "explicit-memory.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    result = await app_module.chat(
+        app_module.ChatRequest(message="Remember this code: CLAW-7391")
+    )
+
+    saved = store.list_memories(limit=10)
+    assert len(saved) == 1
+    assert saved[0]["content"] == "CLAW-7391"
+    assert saved[0]["source"] == "explicit_chat_request"
+    assert "CLAW-7391" in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_chat_question_about_memory_does_not_save_anything(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "no-auto-memory.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    await app_module.chat(
+        app_module.ChatRequest(message="What code did I ask you to remember?")
+    )
+
+    assert store.list_memories(limit=10) == []
