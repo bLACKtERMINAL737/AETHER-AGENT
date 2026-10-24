@@ -150,6 +150,10 @@ def test_open_web_page_rejects_redirects_and_unsupported_content(tmp_path, monke
     class RedirectResponse:
         is_redirect = True
         headers = {}
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
         def raise_for_status(self):
             return None
 
