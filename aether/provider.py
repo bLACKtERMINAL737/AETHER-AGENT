@@ -55,6 +55,21 @@ class ModelProvider:
             "metadata about your training-data cutoff. Do not guess an exact cutoff. "
             "Distinguish learned knowledge from live-verified information."
         )
+        available_web_tools = {
+            spec.get("function", {}).get("name")
+            for spec in (tool_specs or [])
+            if isinstance(spec, dict) and isinstance(spec.get("function"), dict)
+        }
+        if "web.search" in available_web_tools:
+            date_guidance += (
+                "\nLive-search response standard: when the question is current, recent, "
+                "or unfamiliar, call web.search first. Open the most relevant results with "
+                "web.open when available and when page details matter. Synthesize the evidence "
+                "into a clear answer, compare sources where useful, and include clickable "
+                "Markdown links using exact returned URLs near the claims they support. Explain "
+                "what the sources establish, flag uncertainty or conflicting evidence, and "
+                "never claim you opened a page or verified a fact unless tool results confirm it."
+            )
         messages: list[dict[str, object]] = [
             {"role": "system", "content": f"{system_prompt}\n\n{date_guidance}"}
         ]
