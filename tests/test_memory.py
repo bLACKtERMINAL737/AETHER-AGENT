@@ -185,3 +185,48 @@ async def test_chat_does_not_force_code_recall_without_memory_opt_in(tmp_path, m
     )
 
     assert result["answer"] == "I will keep the explanation concise and in Bangla."
+
+
+@pytest.mark.asyncio
+async def test_chat_general_recall_returns_explicitly_saved_project_fact(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "general-recall.sqlite3")
+    store.add_memory(
+        "note",
+        "My project name is AETHER CLAW",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message="What did I ask you to remember about my project?",
+            use_saved_memories=True,
+        )
+    )
+
+    assert result["answer"] == "My project name is AETHER CLAW"
+
+
+@pytest.mark.asyncio
+async def test_chat_general_recall_does_not_invent_missing_facts(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "general-recall-empty.sqlite3")
+    store.add_memory(
+        "note",
+        "My project name is AETHER CLAW",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    router = CapturingRouter()
+    monkeypatch.setattr(app_module, "router", router)
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message="What city did I ask you to remember?",
+            use_saved_memories=True,
+        )
+    )
+
+    assert result["answer"] == "I will keep the explanation concise and in Bangla."
