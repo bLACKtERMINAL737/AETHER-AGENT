@@ -158,7 +158,13 @@ class ModelProvider:
                     "tool_call_id": call_id,
                     "content": json.dumps(result, ensure_ascii=False, default=str)[:12000],
                 })
-            if executions >= max_tool_calls or rounds >= max_tool_calls + 1:
+            if rounds >= max_tool_calls + 1:
+                # Do not loop forever if a provider ignores the no-tools follow-up.
+                return {
+                    "answer": content or "Tool-call round limit reached; no further tools were executed.",
+                    "tool_calls": executions,
+                }
+            if executions >= max_tool_calls:
                 # Request one final answer with no tool definitions after the cap.
                 specs = []
 
