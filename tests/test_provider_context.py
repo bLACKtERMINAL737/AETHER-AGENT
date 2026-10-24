@@ -52,3 +52,18 @@ async def test_provider_does_not_add_memory_context_when_not_supplied(monkeypatc
     messages = FakeAsyncClient.last_request['json']['messages']
     assert len(messages) == 2
     assert messages[-1] == {'role': 'user', 'content': 'Hi'}
+
+
+@pytest.mark.asyncio
+async def test_provider_prompt_says_unknown_training_cutoff_and_uses_real_newlines(monkeypatch):
+    monkeypatch.setattr(provider_module.httpx, 'AsyncClient', FakeAsyncClient)
+    provider = ModelProvider('https://example.test/v1', 'test-key', 'test-model')
+
+    await provider.chat('How recent is your knowledge?')
+
+    system_prompt = FakeAsyncClient.last_request['json']['messages'][0]['content']
+    assert 'do not guess' in system_prompt
+    assert 'training-data cutoff' in system_prompt
+    assert 'say you do not know the exact cutoff' in system_prompt
+    assert '\n\nCurrent date (UTC):' in system_prompt
+    assert '\\n\\nCurrent date (UTC):' not in system_prompt
