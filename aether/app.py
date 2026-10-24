@@ -368,6 +368,7 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=502, detail="Chat request failed; session history may be incomplete; see local logs") from exc
     return {
         **result,
+        "answer": answer,
         "session_id": session_id,
         "memory_context_used": bool(request.use_saved_memories and memories),
         "mode": request.mode,
