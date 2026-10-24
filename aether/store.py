@@ -322,15 +322,35 @@ class TaskStore:
         return [item for row in rows if (item := self.get_memory(row["id"])) is not None]
 
     def search_memories(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        terms = [term.casefold() for term in query.split() if term.strip()]
-        if not terms:
+        import re
+
+        stop_words = {
+            "what", "which", "did", "do", "does", "i", "you", "my", "me",
+            "the", "a", "an", "is", "was", "were", "to", "of", "for",
+            "in", "on", "that", "this", "please", "ask", "asked",
+        }
+        terms = [
+            term.casefold()
+            for term in re.findall(r"[\w-]+", query, flags=re.UNICODE)
+            if term.casefold() not in stop_words
+        ]
+        if limit <= 0:
             return []
-        # Keep retrieval local and deterministic; this is lexical search, not semantic ranking.
         candidates = self.list_memories(limit=500)
+        recall_intent = bool(
+            re.search(r"\b(remember|recall|memorized|saved)\b", query, re.IGNORECASE)
+            and re.search(r"\b(what|which|code|thing|information|detail)\b", query, re.IGNORECASE)
+        )
         ranked = []
         for item in candidates:
-            haystack = (item["category"] + " " + item["content"] + " " + " ".join(item["tags"])).casefold()
+            haystack = (
+                item["category"] + " " + item["content"] + " " + " ".join(item["tags"])
+            ).casefold()
             score = sum(1 for term in terms if term in haystack)
+            # Natural-language recall questions may not contain the saved value.
+            # Give explicit user-requested memories a modest boost for those queries.
+            if recall_intent and item.get("source") == "explicit_chat_request":
+                score += 3
             if score:
                 ranked.append((score, item["updated_at"], item))
         ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
