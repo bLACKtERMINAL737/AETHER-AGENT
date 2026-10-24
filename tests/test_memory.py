@@ -116,3 +116,22 @@ async def test_chat_question_about_memory_does_not_save_anything(tmp_path, monke
     )
 
     assert store.list_memories(limit=10) == []
+
+def test_memory_recall_question_prioritizes_explicitly_saved_memory(tmp_path):
+    store = TaskStore(tmp_path / "recall.sqlite3")
+    store.add_memory(
+        "preference",
+        "Aether could refer to a few things—please clarify what you mean.",
+        source="user",
+    )
+    saved = store.add_memory(
+        "note",
+        "CLAW-7391",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+
+    results = store.search_memories("What code did I ask you to remember?", limit=5)
+
+    assert results
+    assert results[0]["id"] == saved["id"]
