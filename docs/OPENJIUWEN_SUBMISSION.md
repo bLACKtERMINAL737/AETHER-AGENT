@@ -1,6 +1,6 @@
 # OpenJiuwen Proposal Submission — AETHER CLAW
 
-> Working draft for the 30 October 2026 deadline. Check against the final recorded demo before submission.
+> Working draft for the 30 October 2026 deadline. Re-check every item against the final recorded demo before submission.
 
 ## Project name
 **AETHER CLAW — a local-first AI agent for controlled, verifiable task execution**
@@ -9,6 +9,16 @@
 AETHER CLAW is a modular AI-agent foundation designed to make AI-assisted work safer to inspect and recover. Instead of silently changing a project, it separates proposal from execution, records task and tool states in SQLite, and requires explicit user approval for code changes. It supports configurable OpenAI-compatible model routes, optional local-model fallback, workspace-scoped file tools, persistent chat sessions and explicit memory, and an optional Docker-based test runner.
 
 This is an evolving MVP, not a production-ready autonomous agent. The submission focuses on a demonstrable developer workflow: propose a code change, validate it in an isolated disposable copy, review the diff, then decide whether to apply it.
+
+## October 23–24 engineering task review
+
+The three requested coding-safety tasks are implemented on the repository's current default branch and have regression tests:
+
+- [x] **Schema migration:** legacy `coding_proposals` schemas gain the `applying` status while existing proposal records and metadata are preserved.
+- [x] **Atomic apply protection:** proposals are claimed through a conditional database transition, and a local OS file lock coordinates concurrent apply operations and startup recovery.
+- [x] **Failure and rollback tests:** tests cover migration rollback/data preservation, replacement failure with rollback, rollback failure reporting, interrupted applies, concurrent apply requests, and failure to persist the final `applied` status.
+
+The relevant test workflow has a successful GitHub Actions run on commit `fc09e6b`, which was subsequently merged as `8fe2125`. This is evidence of a passing CI run, but it does **not** replace a full test run on the exact final submission commit. Filesystem replacement and SQLite status updates cannot be one transaction; an interrupted or incomplete rollback remains flagged for manual reconciliation rather than being silently retried.
 
 ## Problem and target scenario
 AI coding assistants can produce plausible edits, but developers still need to know what changed, whether tests pass, whether the intended files were touched, and what happens if execution is interrupted.
@@ -44,8 +54,19 @@ AI coding assistants can produce plausible edits, but developers still need to k
 - The project does not yet implement every feature of a fully autonomous agent: general browser automation, mobile nodes, a full multi-step workflow engine, a knowledge graph, and autonomous reinforcement learning are not completed features.
 - Keep the service local; do not expose it to a public network.
 
-## Demo plan (maximum 3 minutes)
-The recording must show behavior that works on the final submission commit. Use a disposable test project and non-sensitive sample data. Never show API keys or tokens.
+## Updated release plan — October 25–30, 2026
+
+| Date | Priority | Deliverable / exit condition |
+|---|---|---|
+| **Oct 25** | Confirm safety work | Review the schema migration, apply lock/claim, and failure/rollback regression coverage; preserve manual-review behavior for uncertain applies. No feature expansion needed for these tasks. |
+| **Oct 26** | Reproducible verification | Pull the intended release branch into a clean checkout; run `python -m pytest -q` on the exact candidate commit and save the result. Investigate and fix any failure before proceeding. |
+| **Oct 27** | Sandbox and demo rehearsal | Build the Docker image and run the sandbox against a disposable test project. Verify the real workspace stays unchanged until explicit approval. Do not claim sandbox execution if it has not been verified. |
+| **Oct 28** | Submission quality review | Check setup instructions, scope/limitations, route configuration, secret redaction, and all demo claims against the running build. Freeze nonessential features. |
+| **Oct 29** | Record and prepare | Record the actual application in a maximum 3-minute demo; review playback, duration, and visible secrets. Fill in final commit, test result, video URL, and required metadata. Target submission today to preserve a buffer. |
+| **Oct 30** | Deadline | Submit before the deadline, verify the portal confirmation, and retain the final commit/test/video references. Avoid risky last-minute feature changes. |
+
+### Demo plan (maximum 3 minutes)
+Use a disposable test project and non-sensitive sample data. Never show API keys or tokens.
 
 | Time | Show | Proof / narration |
 |---|---|---|
