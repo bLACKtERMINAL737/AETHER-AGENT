@@ -106,7 +106,7 @@ class ModelProvider:
             if not isinstance(name, str) or not name:
                 continue
             internal_name = name.replace("__", ".")
-            if re.search(rf"(?<![\\w]){re.escape(internal_name)}(?![\\w])", message):
+            if re.search(rf"(?<![\w]){re.escape(internal_name)}(?![\w])", message):
                 forced_tool_name = name
                 break
 
