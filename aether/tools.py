@@ -17,6 +17,13 @@ class ListFilesInput(BaseModel):
     path: str = Field(default=".", description="Relative path inside configured workspace")
 
 
+class ReadFileInput(BaseModel):
+    path: str = Field(min_length=1, max_length=1000,
+                      description="Relative file path inside the approved workspace")
+    start_line: int = Field(default=1, ge=1)
+    max_lines: int = Field(default=200, ge=1, le=500)
+
+
 class SearchTextInput(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     path: str = Field(default=".", description="Relative directory inside configured workspace")
@@ -48,6 +55,12 @@ class ToolRegistry:
         self._tools: dict[str, tuple[type[BaseModel], Callable[..., Any], str]] = {
             "workspace.list_files": (ListFilesInput, self.list_files, "List files within the approved workspace."),
             "workspace.search_text": (SearchTextInput, self.search_text, "Search text files within the approved workspace."),
+            "workspace.read_file": (
+                ReadFileInput,
+                self.read_file,
+                "Read a bounded range of lines from a text file inside the approved workspace. "
+                "Use this tool when asked to inspect actual file contents; never invent file contents.",
+            ),
             "web.search": (
                 WebSearchInput,
                 self.search_web,
@@ -125,6 +138,31 @@ class ToolRegistry:
                    for p in sorted(target.iterdir(), key=lambda p: p.name.casefold())
                    if not p.is_symlink()]
         return {"path": str(target.relative_to(self.workspace)), "entries": entries[:500]}
+
+    def read_file(
+        self, path: str, start_line: int = 1, max_lines: int = 200
+    ) -> dict[str, Any]:
+        target = self._safe_path(path)
+        if not target.exists():
+            raise ToolError("File does not exist")
+        if not target.is_file():
+            raise ToolError("Path must be a file")
+
+        lines = self._read_workspace_file(target)
+        if lines is None:
+            raise ToolError(
+                "File could not be safely read; it may be a symlink, non-text file, "
+                "or larger than the 1 MB limit."
+            )
+
+        selected = lines[start_line - 1 : start_line - 1 + max_lines]
+        return {
+            "path": str(target.relative_to(self.workspace)),
+            "start_line": start_line,
+            "total_lines": len(lines),
+            "content": "\n".join(selected),
+            "truncated": start_line - 1 + len(selected) < len(lines),
+        }
 
     def search_text(self, query: str, path: str = ".", max_results: int = 50) -> dict[str, Any]:
         target = self._safe_path(path)
