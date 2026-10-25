@@ -110,9 +110,9 @@ class ModelProvider:
             # A tool mentioned only as something not to use must not win
             # merely because its spec appears before the requested tool.
             selection_message = re.sub(
-                rf"\b(?:do\s+not|don't|never|avoid)\s+"
-                rf"(?:use|call|invoke)\s+|"
-                rf"\b(?:avoid)\s+(?:using|calling|invoking)\s+"
+                rf"\b(?:do\s+not|don't|never)\s+"
+                rf"(?:use|call|invoke)\s+{tool_pattern}\b|"
+                rf"\bavoid\s+(?:using|calling|invoking)\s+"
                 rf"[\x60'\"]?{tool_pattern}[\x60'\"]?\b",
                 "",
                 message,
