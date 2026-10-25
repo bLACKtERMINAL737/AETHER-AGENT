@@ -53,13 +53,26 @@ class ToolRegistry:
         self.workspace = workspace.resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self._tools: dict[str, tuple[type[BaseModel], Callable[..., Any], str]] = {
-            "workspace.list_files": (ListFilesInput, self.list_files, "List files within the approved workspace."),
-            "workspace.search_text": (SearchTextInput, self.search_text, "Search text files within the approved workspace."),
+            "workspace.list_files": (
+                ListFilesInput, self.list_files,
+                "List directory entries in the approved workspace. Use only when the user asks "
+                "for a directory listing or you need to discover an unknown path. The path must "
+                "be a directory; do not use this tool to read a file's contents.",
+            ),
+            "workspace.search_text": (
+                SearchTextInput, self.search_text,
+                "Find occurrences of a non-empty text query within files under an existing "
+                "workspace directory. Use for searching across files, not for reading a known "
+                "file. The path must be a directory, never a file path.",
+            ),
             "workspace.read_file": (
                 ReadFileInput,
                 self.read_file,
-                "Read a bounded range of lines from a text file inside the approved workspace. "
-                "Use this tool when asked to inspect actual file contents; never invent file contents.",
+                "READ A SPECIFIC FILE: when the user asks what a named file contains, asks to "
+                "read/inspect/summarize/quote a file, or requests its lines, call this tool with "
+                "the file's relative path. This returns the actual file contents. Do not substitute "
+                "workspace.list_files or workspace.search_text for reading a known file, and never "
+                "guess contents. If the read fails, report the error.",
             ),
             "web.search": (
                 WebSearchInput,
