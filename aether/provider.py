@@ -106,7 +106,16 @@ class ModelProvider:
             if not isinstance(name, str) or not name:
                 continue
             internal_name = name.replace("__", ".")
-            if re.search(rf"(?<![\w]){re.escape(internal_name)}(?![\w])", message):
+            tool_pattern = re.escape(internal_name)
+            # A tool mentioned only as something not to use must not win
+            # merely because its spec appears before the requested tool.
+            selection_message = re.sub(
+                rf"\\b(?:do not|don't|never)\\s+(?:use|call|invoke)\\s+{tool_pattern}\\b",
+                "",
+                message,
+                flags=re.IGNORECASE,
+            )
+            if re.search(rf"(?<![\\w]){tool_pattern}(?![\\w])", selection_message):
                 forced_tool_name = name
                 break
 
