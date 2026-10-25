@@ -176,8 +176,13 @@ async def test_explicitly_named_tool_is_forced_for_first_request(monkeypatch):
     assert calls[1]["payload"]["tool_choice"] == "auto"
 
 
+@pytest.mark.parametrize("message", [
+    "Don't use workspace.search_text; use workspace.read_file to read notes.txt.",
+    "Avoid calling `workspace.search_text`; use workspace.read_file to read notes.txt.",
+    "Never invoke workspace.search_text. Use workspace.read_file to read notes.txt.",
+])
 @pytest.mark.asyncio
-async def test_negated_tool_mention_does_not_override_requested_tool(monkeypatch):
+async def test_negated_tool_mention_does_not_override_requested_tool(monkeypatch, message):
     calls = []
     responses = [
         completion(tool_calls=[tool_call(
@@ -204,7 +209,7 @@ async def test_negated_tool_mention_does_not_override_requested_tool(monkeypatch
         {"type": "function", "function": {"name": "workspace__list_files", "parameters": {"type": "object"}}},
     ]
     result = await provider.chat_with_tools(
-        "Don't use workspace.search_text; use workspace.read_file to read notes.txt.",
+        message,
         tool_specs=specs, execute_tool=execute,
     )
 
