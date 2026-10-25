@@ -174,3 +174,47 @@ async def test_explicitly_named_tool_is_forced_for_first_request(monkeypatch):
     assert executed == [("workspace__read_file", {"path": ".claw-live-test.txt"})]
     assert result["tool_calls"] == 1
     assert calls[1]["payload"]["tool_choice"] == "auto"
+
+
+@pytest.mark.parametrize("message", [
+    "Don't use workspace.search_text; use workspace.read_file to read notes.txt.",
+    "Avoid calling `workspace.search_text`; use workspace.read_file to read notes.txt.",
+    "Never invoke workspace.search_text. Use workspace.read_file to read notes.txt.",
+])
+@pytest.mark.asyncio
+async def test_negated_tool_mention_does_not_override_requested_tool(monkeypatch, message):
+    calls = []
+    responses = [
+        completion(tool_calls=[tool_call(
+            "call-read", "workspace__read_file", {"path": "notes.txt"}
+        )]),
+        completion(content="The file contains the requested notes."),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"path": args["path"], "content": "actual notes"}
+
+    # Deliberately put the negated tool first to catch order-dependent selection.
+    specs = [
+        {"type": "function", "function": {"name": "workspace__search_text", "parameters": {"type": "object"}}},
+        {"type": "function", "function": {"name": "workspace__read_file", "parameters": {"type": "object"}}},
+        {"type": "function", "function": {"name": "workspace__list_files", "parameters": {"type": "object"}}},
+    ]
+    result = await provider.chat_with_tools(
+        message,
+        tool_specs=specs, execute_tool=execute,
+    )
+
+    assert calls[0]["payload"]["tool_choice"] == {
+        "type": "function", "function": {"name": "workspace__read_file"}
+    }
+    assert executed == [("workspace__read_file", {"path": "notes.txt"})]
+    assert result["tool_calls"] == 1
