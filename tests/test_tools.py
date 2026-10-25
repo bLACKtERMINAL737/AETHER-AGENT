@@ -35,3 +35,36 @@ def test_provider_tool_names_are_valid_and_reversible(tmp_path: Path):
     assert dict(zip(exposed_names, internal_names)) == {
         provider_tool_name(name): name for name in internal_names
     }
+
+
+def test_read_file_returns_real_contents(tmp_path: Path):
+    source = tmp_path / "sample.py"
+    source.write_text("first\nsecond\nthird\n", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    result = registry.execute(
+        "workspace.read_file",
+        {"path": "sample.py", "start_line": 2, "max_lines": 1},
+    )
+
+    assert result["path"] == "sample.py"
+    assert result["content"] == "second"
+    assert result["total_lines"] == 3
+    assert result["truncated"] is True
+
+
+def test_read_file_rejects_path_escape(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("secret", encoding="utf-8")
+    registry = ToolRegistry(workspace)
+
+    with pytest.raises(ToolError):
+        registry.execute("workspace.read_file", {"path": "../outside.py"})
+
+
+def test_read_file_rejects_directory(tmp_path: Path):
+    registry = ToolRegistry(tmp_path)
+    with pytest.raises(ToolError):
+        registry.execute("workspace.read_file", {"path": "."})
