@@ -75,6 +75,6 @@ def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: 
     descriptions = {item["name"]: item["description"] for item in registry.describe()}
 
     assert "READ A SPECIFIC FILE" in descriptions["workspace.read_file"]
-    assert "never guess contents" in descriptions["workspace.read_file"]
+    assert "never" in descriptions["workspace.read_file"] and "guess file contents" in descriptions["workspace.read_file"]
     assert "directory listing" in descriptions["workspace.list_files"]
     assert "not for reading a known file" in descriptions["workspace.search_text"]
