@@ -168,3 +168,21 @@ async def test_native_tool_task_is_failed_when_model_request_fails_after_tool(tm
     executions = store.list_tool_executions(task["id"])
     assert len(executions) == 1
     assert executions[0]["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_preserves_explicit_coding_task_type(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "explicit-coding-task.sqlite3")
+    router = CapturingRouter()
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", router)
+
+    await app_module.chat(
+        app_module.ChatRequest(
+            message="Read a file and report its contents",
+            mode="auto",
+            task_type="coding",
+        )
+    )
+
+    assert router.calls[0]["task_type"] == "coding"

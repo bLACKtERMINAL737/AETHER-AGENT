@@ -373,7 +373,7 @@ async def chat(request: ChatRequest):
                     break
         effective_task = (
             infer_task_type(request.message)
-            if request.mode == "auto" or request.task_type == "auto"
+            if request.task_type == "auto"
             else request.task_type
         )
         if request.mode == "manual" and request.model_route is None:
