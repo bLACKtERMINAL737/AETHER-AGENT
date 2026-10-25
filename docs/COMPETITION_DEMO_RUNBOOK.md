@@ -16,6 +16,20 @@ Show one end-to-end flow:
 
 **Safety boundary:** never expose the local API to a public network, show provider keys on screen, or approve a diff without reading it. The test runner operates on a disposable snapshot; it is not a guarantee that arbitrary code is safe.
 
+## Minimum AI-agent acceptance gates (must pass before submission)
+
+The submission should prove that AETHER CLAW executes agent work, not just that the API starts or a model produces fluent text. Run these checks on the exact release candidate and record the result honestly.
+
+- [ ] **Reasoning and tool use:** ask a task that requires a workspace tool. Confirm the task journal shows the actual tool name, arguments, execution result, and final status. A guessed answer without a successful tool result is a failure.
+- [ ] **Read a known file:** create a harmless file under the configured workspace with two unique lines. Ask chat to read that exact relative path and report both lines. Confirm `workspace.read_file` executed successfully in the task journal. Listing or searching the file is not a substitute for reading it.
+- [ ] **Multi-step task:** ask for a small operation that requires more than one valid tool action, where supported. Confirm the answer is grounded in returned tool results; do not require multi-step behavior if the chosen provider does not support reliable tool calling.
+- [ ] **Persistent state:** create a chat session, send a follow-up, and verify history persists. Separately save a harmless explicit memory, search it, and verify memory retrieval is opt-in.
+- [ ] **Controlled coding:** create a proposal against a disposable sample project. Inspect the diff and verify the workspace remains unchanged before approval. If the Docker sandbox is enabled, show the real test result and verify the test-and-fix candidate remains pending until approval.
+- [ ] **Failure honesty:** cause one safe, expected failure (for example, request a nonexistent file). Confirm the UI/log reports the actual error and the agent does not invent file contents.
+- [ ] **Security and repeatability:** run the full test suite on the exact release commit; confirm localhost binding, API token protection, no visible secrets, and a clean working tree.
+
+**Release gate:** do not claim a check passed based only on GitHub CI or this checklist. Mark each item only after observing the real local result. If file-reading/tool selection still fails, fix that before recording the demo. Freeze new features once these gates pass; architectural expansion belongs after submission.
+
 ## Before the demo
 
 - [ ] Pull the latest `main` branch and run `python -m pytest -q`.
