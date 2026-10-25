@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import asyncio
 import json
 import logging
+import re
 from typing import Literal
 
 import httpx
@@ -95,6 +96,20 @@ class ModelProvider:
         executions = 0
         rounds = 0
         specs = tool_specs or []
+
+        # Respect an explicitly named registered tool on the first request.
+        # The provider-facing name may use "__" where the internal name uses ".".
+        forced_tool_name = None
+        for spec in specs:
+            function = spec.get("function", {}) if isinstance(spec, dict) else {}
+            name = function.get("name") if isinstance(function, dict) else None
+            if not isinstance(name, str) or not name:
+                continue
+            internal_name = name.replace("__", ".")
+            if re.search(rf"(?<![\\w]){re.escape(internal_name)}(?![\\w])", message):
+                forced_tool_name = name
+                break
+
         while True:
             payload: dict[str, object] = {
                 "model": self.model,
@@ -103,7 +118,15 @@ class ModelProvider:
             }
             if specs and execute_tool is not None and executions < max_tool_calls:
                 payload["tools"] = specs
-                payload["tool_choice"] = "auto"
+                if forced_tool_name:
+                    payload["tool_choice"] = {
+                        "type": "function",
+                        "function": {"name": forced_tool_name},
+                    }
+                    # Force only the first request; later choices depend on results.
+                    forced_tool_name = None
+                else:
+                    payload["tool_choice"] = "auto"
             async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                 response = await client.post(
                     self.base_url.rstrip("/") + "/chat/completions",
