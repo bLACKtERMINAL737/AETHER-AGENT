@@ -53,13 +53,18 @@ class ToolRegistry:
         self.workspace = workspace.resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self._tools: dict[str, tuple[type[BaseModel], Callable[..., Any], str]] = {
-            "workspace.list_files": (ListFilesInput, self.list_files, "List files within the approved workspace."),
-            "workspace.search_text": (SearchTextInput, self.search_text, "Search text files within the approved workspace."),
+            "workspace.list_files": (
+                ListFilesInput, self.list_files,
+                "List directory entries only. Use to list folders; this does not read file contents.",
+            ),
+            "workspace.search_text": (
+                SearchTextInput, self.search_text,
+                "Search for a non-empty text query inside files under a directory. Not a substitute for reading a specifically named file.",
+            ),
             "workspace.read_file": (
                 ReadFileInput,
                 self.read_file,
-                "Read a bounded range of lines from a text file inside the approved workspace. "
-                "Use this tool when asked to inspect actual file contents; never invent file contents.",
+                "Read the actual contents of one specifically named workspace file. Use for requests to read, open, inspect, or return a file's contents, especially when the user names a file path. Do not use list_files or search_text instead. Arguments: path (file path), optional start_line and max_lines. Never invent file contents.",
             ),
             "web.search": (
                 WebSearchInput,
