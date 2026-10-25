@@ -139,7 +139,7 @@ async def test_router_does_not_fall_back_after_tool_execution_attempt():
 @pytest.mark.asyncio
 async def test_explicitly_named_tool_is_forced_for_first_request(monkeypatch):
     calls = []
-    file_contents = "Secret test marker: CLAW-7319\\nSecond line: FILE-READ-SUCCESS"
+    file_contents = "Secret test marker: CLAW-7319\nSecond line: FILE-READ-SUCCESS"
     responses = [
         completion(tool_calls=[tool_call(
             "call-read", "workspace__read_file", {"path": ".claw-live-test.txt"}
