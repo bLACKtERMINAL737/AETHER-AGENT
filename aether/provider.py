@@ -113,7 +113,7 @@ class ModelProvider:
                 rf"\b(?:do\s+not|don't|never)\s+"
                 rf"(?:use|call|invoke)\s+{tool_pattern}\b|"
                 rf"\bavoid\s+(?:using|calling|invoking)\s+"
-                rf"[\x60'\"]?{tool_pattern}[\x60'\"]?\b",
+                rf"[\x60'\"]?{tool_pattern}[\x60'\"]?(?![\w])",
                 "",
                 message,
                 flags=re.IGNORECASE,
