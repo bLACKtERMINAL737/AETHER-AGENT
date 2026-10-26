@@ -188,6 +188,62 @@ async def test_chat_does_not_force_code_recall_without_memory_opt_in(tmp_path, m
 
 
 @pytest.mark.asyncio
+async def test_exact_missing_identifier_never_returns_unrelated_saved_code(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "exact-missing-code.sqlite3")
+    store.add_memory(
+        "note",
+        "AETHER_MEMORY_CHECK_4827",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message=(
+                "What exact secret code did I save as "
+                "AETHER_MEMORY_NONEXISTENT_92741? If you cannot find it in saved memory, "
+                "say you cannot find it. Do not guess."
+            ),
+            use_saved_memories=True,
+        )
+    )
+
+    assert result["answer"] == "I couldn't find that exact code in saved memory."
+    assert "AETHER_MEMORY_CHECK_4827" not in result["answer"]
+
+
+@pytest.mark.asyncio
+async def test_exact_identifier_recall_without_memory_opt_in_fails_closed(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "exact-code-opt-out.sqlite3")
+    store.add_memory(
+        "note",
+        "AETHER_MEMORY_CHECK_4827",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message=(
+                "What exact secret code did I save as "
+                "AETHER_MEMORY_NONEXISTENT_92741? If you cannot find it in saved memory, "
+                "say you cannot find it. Do not guess."
+            ),
+            use_saved_memories=False,
+        )
+    )
+
+    assert result["answer"] == (
+        "Saved memory is not enabled for this request, so I can't verify that exact code."
+    )
+    assert "AETHER_MEMORY_CHECK_4827" not in result["answer"]
+
+
+@pytest.mark.asyncio
 async def test_chat_general_recall_returns_explicitly_saved_project_fact(tmp_path, monkeypatch):
     store = TaskStore(tmp_path / "general-recall.sqlite3")
     store.add_memory(
