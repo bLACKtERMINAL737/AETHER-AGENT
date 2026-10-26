@@ -357,7 +357,16 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     )
     try:
         response = await router.chat(prompt, route)
-        data = json.loads(str(response.get("answer", "")).strip())
+        raw_answer = str(response.get("answer", "")).strip()
+        if raw_answer.startswith("```"):
+            raw_answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
+        try:
+            data = json.loads(raw_answer)
+        except json.JSONDecodeError:
+            object_match = re.search(r"\{.*\}", raw_answer, flags=re.DOTALL)
+            if object_match is None:
+                raise
+            data = json.loads(object_match.group(0))
         subtasks = plan_subtasks(data.get("subtasks") if isinstance(data, dict) else None)
         if any(item["role"] not in {"coding", "research", "memory", "monitor"} for item in subtasks):
             raise ValueError("Planner selected a reserved role")
