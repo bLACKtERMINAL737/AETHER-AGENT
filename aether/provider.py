@@ -50,6 +50,24 @@ class ModelProvider:
             "coding": "You are AETHER CLAW's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
             "reasoning": "You are AETHER CLAW's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
+        available_tool_names = {
+            str(spec.get("function", {}).get("name", ""))
+            for spec in (tool_specs or [])
+            if isinstance(spec, dict) and isinstance(spec.get("function"), dict)
+        }
+        workspace_tool_names = {name.replace("__", ".") for name in available_tool_names}
+        if any(name.startswith("workspace.") for name in workspace_tool_names):
+            system_prompt += (
+                "\\n\\nWorkspace tool selection rules: if the user asks to read, inspect, quote, "
+                "summarize, or report the contents of a specific file, call workspace.read_file "
+                "with that file's relative path. Do not use workspace.list_files or "
+                "workspace.search_text as substitutes for reading a known file. Use "
+                "workspace.list_files only to discover directory entries when the location is "
+                "unknown or the user asks for a listing. Use workspace.search_text only to find "
+                "matching text across a directory when the user asks to search for a term. "
+                "If a read fails, report the actual tool error and do not guess file contents. "
+                "After a successful read, base your answer only on the returned content."
+            )
         current_date = datetime.now(timezone.utc).date().isoformat()
         date_guidance = (
             f"Current date (UTC): {current_date}. The application does not provide verified "
