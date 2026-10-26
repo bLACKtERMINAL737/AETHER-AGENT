@@ -237,7 +237,7 @@ def _memory_recall_answer(message: str, memories: list[dict]) -> str | None:
     """Return a saved fact for clear recall questions; never synthesize missing facts."""
     text = message.casefold()
     recall_intent = re.search(
-        r"\b(?:what|which|tell me|remind me|do you remember|what's|what is|who|when|where)\b|"
+        r"\b(?:what|which|tell me|remind me|do you remember|do you have|have you saved|what's|what is|who|when|where)\b|"
         r"(?:মনে আছে|কি মনে|কী মনে|বলেছিলাম|বলেছিলে|নাম কী|নাম কি)",
         text,
     )
