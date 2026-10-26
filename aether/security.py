@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from starlette.responses import JSONResponse
 
 
-EXEMPT_PATHS = {"/health", "/ui", "/ui/", "/docs", "/openapi.json", "/redoc"}
+EXEMPT_PATHS = {"/health", "/ui", "/ui/"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
