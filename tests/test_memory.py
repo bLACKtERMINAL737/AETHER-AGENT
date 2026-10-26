@@ -230,3 +230,21 @@ async def test_chat_general_recall_does_not_invent_missing_facts(tmp_path, monke
     )
 
     assert result["answer"] == "I will keep the explanation concise and in Bangla."
+
+
+def test_memory_recall_accepts_do_you_have_question():
+    memory = {
+        "source": "explicit_chat_request",
+        "content": (
+            "this test fact for the next message in this session: "
+            "AETHER_MEMORY_CHECK_4827"
+        ),
+    }
+
+    answer = app_module._memory_recall_answer(
+        "Do you have the saved test fact AETHER_MEMORY_CHECK_4827? "
+        "If available in saved memory, return the exact fact.",
+        [memory],
+    )
+
+    assert answer == memory["content"]
