@@ -184,7 +184,7 @@ async def test_chat_does_not_force_code_recall_without_memory_opt_in(tmp_path, m
         )
     )
 
-    assert result["answer"] == "I will keep the explanation concise and in Bangla."
+    assert result["answer"] == "I couldn't find that information in saved memory."
 
 
 @pytest.mark.asyncio
