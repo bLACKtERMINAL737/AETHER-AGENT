@@ -285,7 +285,7 @@ async def test_chat_general_recall_does_not_invent_missing_facts(tmp_path, monke
         )
     )
 
-    assert result["answer"] == "I will keep the explanation concise and in Bangla."
+    assert result["answer"] == "I couldn't find that information in saved memory."
 
 
 def test_memory_recall_accepts_do_you_have_question():
@@ -304,3 +304,39 @@ def test_memory_recall_accepts_do_you_have_question():
     )
 
     assert answer == memory["content"]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("What city did I ask you to remember?", True),
+        ("What project name did I save?", True),
+        ("What exact secret code did I save as AETHER_MEMORY_MISSING_123?", True),
+        ("What is the capital of France?", False),
+        ("Explain how memory works.", False),
+    ],
+)
+def test_is_memory_recall_question(message, expected):
+    assert app_module._is_memory_recall_question(message) is expected
+
+
+@pytest.mark.asyncio
+async def test_chat_general_recall_missing_fact_fails_closed(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "general-recall-missing.sqlite3")
+    store.add_memory(
+        "note",
+        "My project name is AETHER CLAW",
+        source="explicit_chat_request",
+        tags=["chat", "user-requested"],
+    )
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", CapturingRouter())
+
+    result = await app_module.chat(
+        app_module.ChatRequest(
+            message="What city did I ask you to remember?",
+            use_saved_memories=True,
+        )
+    )
+
+    assert result["answer"] == "I couldn't find that information in saved memory."
