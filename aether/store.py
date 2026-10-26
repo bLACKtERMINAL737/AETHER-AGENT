@@ -111,6 +111,21 @@ class TaskStore:
             rows = con.execute("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [dict(row) for row in rows]
 
+    def claim_task(self, task_id: str) -> bool:
+        """Atomically transition a queued task to running; only one caller can claim it."""
+        with self.connect() as con:
+            cursor = con.execute(
+                "UPDATE tasks SET status='running',updated_at=?,result_json=NULL,error_text=NULL "
+                "WHERE id=? AND status='queued'",
+                (utc_now(), task_id),
+            )
+            if cursor.rowcount == 1:
+                return True
+            row = con.execute("SELECT id FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is None:
+                raise KeyError("Task not found")
+            return False
+
     def set_task_status(self, task_id: str, status: str, result: Any = None, error: str | None = None) -> None:
         if status not in STATUSES:
             raise ValueError("Invalid task status")
