@@ -346,6 +346,50 @@ def delegate_agent_work(request: AgentDelegateRequest):
     return {"goal": request.goal, "tasks": created, "executed": False}
 
 
+@app.post("/agents/orchestrate")
+async def orchestrate_agent_work(request: AgentPlanRequest):
+    """Plan bounded specialist tasks, run them sequentially, then request QA review."""
+    route = "reasoning" if reasoning_provider.configured else "primary"
+    prompt = (
+        "Return only JSON: {subtasks:[{title,input,role}]}. Create 1-4 tasks for the goal. "
+        "Roles must be coding, research, memory, or monitor. Keep tasks narrow. Do not claim execution.\n\n"
+        + request.goal
+    )
+    try:
+        response = await router.chat(prompt, route)
+        data = json.loads(str(response.get("answer", "")).strip())
+        subtasks = plan_subtasks(data.get("subtasks") if isinstance(data, dict) else None)
+        if any(item["role"] not in {"coding", "research", "memory", "monitor"} for item in subtasks):
+            raise ValueError("Planner selected a reserved role")
+    except ProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="No model route configured for planning.") from exc
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=502, detail="Planner returned an invalid plan; no tasks were created.") from exc
+
+    outcomes = []
+    for item in subtasks:
+        task = store.create_task(f"[{item['role']}] {item['title']}",
+            f"Parent goal: {request.goal}\nAssigned role: {item['role']}\nTask: {item['input']}")
+        try:
+            result = await run_agent_task(task["id"])
+            outcomes.append({"task_id": task["id"], "role": item["role"], "status": result["status"], "result": result["result"]})
+        except HTTPException as exc:
+            outcomes.append({"task_id": task["id"], "role": item["role"], "status": "failed", "error": exc.detail})
+
+    qa = store.create_task("[qa_security] Review specialist results",
+        "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
+        + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False))
+    try:
+        qa_result = await run_agent_task(qa["id"])
+        review = {"task_id": qa["id"], "status": qa_result["status"], "result": qa_result["result"]}
+    except HTTPException as exc:
+        review = {"task_id": qa["id"], "status": "failed", "error": exc.detail}
+    all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded"
+    return {"goal": request.goal, "status": "succeeded" if all_ok else "partial",
+            "tasks": outcomes, "qa_review": review, "workspace_modified": False,
+            "approval_required_before_changes": True}
+
+
 @app.post("/agents/run/{task_id}")
 async def run_agent_task(task_id: str):
     """Run one queued specialist task for analysis only; never execute generated code."""
