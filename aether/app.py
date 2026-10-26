@@ -267,6 +267,16 @@ def _memory_recall_answer(message: str, memories: list[dict]) -> str | None:
         if item.get("source") != "explicit_chat_request":
             continue
         content = str(item.get("content", "")).strip()
+        # If the user supplied an exact code-like identifier, only recall a fact
+        # that contains that identifier; generic word overlap is not sufficient.
+        identifiers = re.findall(
+            r"\b[A-Z][A-Z0-9]*(?:[_-][A-Z0-9]+)+\b", message
+        )
+        if identifiers and not all(
+            identifier.casefold() in content.casefold()
+            for identifier in identifiers
+        ):
+            continue
         words = set(re.findall(r"[a-z0-9_+-]+|[\u0980-\u09ff]+", content.casefold()))
         overlap = terms & words
         if overlap:
