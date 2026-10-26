@@ -286,9 +286,12 @@ def _memory_recall_answer(message: str, memories: list[dict]) -> str | None:
     candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
     best_score = candidates[0][0]
     best = [item for item in candidates if item[0] == best_score]
-    if len(best) != 1:
+    # Duplicate records containing the same fact are not ambiguous. Treat
+    # ambiguity as distinct candidate values, not the number of matching rows.
+    best_contents = list(dict.fromkeys(item[2] for item in best))
+    if len(best_contents) != 1:
         return None
-    return best[0][2]
+    return best_contents[0]
 
 
 def _is_memory_recall_question(message: str) -> bool:
