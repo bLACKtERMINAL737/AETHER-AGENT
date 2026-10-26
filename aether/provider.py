@@ -57,9 +57,11 @@ class ModelProvider:
             "Distinguish learned knowledge from live-verified information."
         )
         available_web_tools = {
-            spec.get("function", {}).get("name")
+            name.replace("__", ".")
             for spec in (tool_specs or [])
             if isinstance(spec, dict) and isinstance(spec.get("function"), dict)
+            for name in [spec["function"].get("name")]
+            if isinstance(name, str)
         }
         if "web.search" in available_web_tools:
             date_guidance += (
