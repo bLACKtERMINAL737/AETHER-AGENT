@@ -58,7 +58,7 @@ class ModelProvider:
         workspace_tool_names = {name.replace("__", ".") for name in available_tool_names}
         if any(name.startswith("workspace.") for name in workspace_tool_names):
             system_prompt += (
-                "\\n\\nWorkspace tool selection rules: if the user asks to read, inspect, quote, "
+                "\n\nWorkspace tool selection rules: if the user asks to read, inspect, quote, "
                 "summarize, or report the contents of a specific file, call workspace.read_file "
                 "with that file's relative path. Do not use workspace.list_files or "
                 "workspace.search_text as substitutes for reading a known file. Use "
