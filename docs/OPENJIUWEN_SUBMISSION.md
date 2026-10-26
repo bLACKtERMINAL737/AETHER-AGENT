@@ -1,6 +1,6 @@
 # OpenJiuwen Proposal Submission — AETHER CLAW
 
-> Working draft for the 30 October 2026 deadline. Re-check every item against the final recorded demo before submission.
+> Working draft targeting submission completion by 29 October 2026. Re-check every item against the final recorded demo before submission.
 
 ## Project name
 **AETHER CLAW — a local-first AI agent for controlled, verifiable task execution**
@@ -54,7 +54,7 @@ AI coding assistants can produce plausible edits, but developers still need to k
 - The project does not yet implement every feature of a fully autonomous agent: general browser automation, mobile nodes, a full multi-step workflow engine, a knowledge graph, and autonomous reinforcement learning are not completed features.
 - Keep the service local; do not expose it to a public network.
 
-## Updated release plan — October 25–30, 2026
+## Updated release plan — October 25–29, 2026 (hard feature freeze)
 
 | Date | Priority | Deliverable / exit condition |
 |---|---|---|
@@ -62,8 +62,7 @@ AI coding assistants can produce plausible edits, but developers still need to k
 | **Oct 26** | Reproducible verification | Pull the intended release branch into a clean checkout; run `python -m pytest -q` on the exact candidate commit and save the result. Investigate and fix any failure before proceeding. |
 | **Oct 27** | Sandbox and demo rehearsal | Build the Docker image and run the sandbox against a disposable test project. Verify the real workspace stays unchanged until explicit approval. Do not claim sandbox execution if it has not been verified. |
 | **Oct 28** | Submission quality review | Check setup instructions, scope/limitations, route configuration, secret redaction, and all demo claims against the running build. Freeze nonessential features. |
-| **Oct 29** | Record and prepare | Record the actual application in a maximum 3-minute demo; review playback, duration, and visible secrets. Fill in final commit, test result, video URL, and required metadata. Target submission today to preserve a buffer. |
-| **Oct 30** | Deadline | Submit before the deadline, verify the portal confirmation, and retain the final commit/test/video references. Avoid risky last-minute feature changes. |
+| **Oct 29** | Final submission deadline (internal target) | Submit the verified candidate, recorded demo, final commit SHA, test evidence, video URL, and required metadata. Verify portal confirmation and retain references. No feature changes after the final verification pass. |
 
 ### Demo plan (maximum 3 minutes)
 Use a disposable test project and non-sensitive sample data. Never show API keys or tokens.
