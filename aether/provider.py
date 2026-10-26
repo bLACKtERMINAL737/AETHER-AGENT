@@ -181,6 +181,13 @@ class ModelProvider:
                     args = None
                 normalized_calls.append((call_id, name, args))
 
+            # Tool result messages are correlated by call ID. Duplicate IDs make
+            # that correlation ambiguous, so reject the entire batch before any
+            # side-effecting tool callback can run.
+            call_ids = [call_id for call_id, _name, _args in normalized_calls]
+            if len(call_ids) != len(set(call_ids)):
+                raise RuntimeError("Provider returned duplicate tool-call IDs")
+
             messages.append({
                 "role": "assistant",
                 "content": content,
