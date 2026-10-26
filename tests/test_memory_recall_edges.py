@@ -94,3 +94,27 @@ def test_recall_returns_exact_matching_saved_fact():
     )
 
     assert answer == fact
+
+
+
+def test_recall_does_not_return_an_unrelated_fact_for_missing_exact_code():
+    memories = [
+        {
+            "source": "explicit_chat_request",
+            "content": (
+                "this test fact for the next message in this session: "
+                "AETHER_MEMORY_CHECK_4827. If saved memory is disabled, "
+                "say so honestly"
+            ),
+        }
+    ]
+
+    answer = app_module._memory_recall_answer(
+        "What exact secret code did I save as "
+        "AETHER_MEMORY_NONEXISTENT_92741? "
+        "If you cannot find it in saved memory, say you cannot find it. "
+        "Do not guess.",
+        memories,
+    )
+
+    assert answer is None
