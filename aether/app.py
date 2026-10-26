@@ -699,20 +699,27 @@ async def chat(request: ChatRequest):
             flags=re.IGNORECASE,
         )
         if request.use_saved_memories and code_recall:
+            # An exact identifier in the question must match the saved fact.
+            # Do not let this special code-recall path bypass the stricter
+            # _memory_recall_answer guard and return an unrelated memory.
+            requested_identifiers = re.findall(
+                r"\b[A-Z][A-Z0-9]*(?:[_-][A-Z0-9]+)+\b", request.message
+            )
             saved_codes = [
                 item for item in memories
                 if item.get("source") == "explicit_chat_request"
-                and re.search(r"\bcode\b", str(item.get("content", "")), flags=re.IGNORECASE)
+                and (
+                    re.search(r"\bcode\b", str(item.get("content", "")), flags=re.IGNORECASE)
+                    or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{2,80}", str(item.get("content", "")).strip())
+                )
+                and all(
+                    identifier.casefold() in str(item.get("content", "")).casefold()
+                    for identifier in requested_identifiers
+                )
             ]
-            # A code may be saved as just the value (e.g. CLAW-7391), so also
-            # allow concise alphanumeric/hyphen values from explicit remember requests.
-            if not saved_codes:
-                saved_codes = [
-                    item for item in memories
-                    if item.get("source") == "explicit_chat_request"
-                    and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{2,80}", str(item.get("content", "")).strip())
-                ]
-            if saved_codes:
+            if requested_identifiers and not saved_codes:
+                answer = "I couldn't find that exact code in saved memory."
+            elif saved_codes:
                 answer = str(saved_codes[0]["content"]).strip()
         if request.use_saved_memories and not code_recall:
             recalled = _memory_recall_answer(request.message, memories)
