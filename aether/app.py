@@ -17,6 +17,7 @@ from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
+from .agents import list_agent_roles
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aether")
@@ -287,6 +288,12 @@ def infer_task_type(message: str) -> Literal["general", "coding", "reasoning"]:
     if any(term in text for term in reasoning_terms):
         return "reasoning"
     return "general"
+
+
+@app.get("/agents")
+def list_agents():
+    """List built-in specialist roles; this endpoint does not execute or delegate work."""
+    return {"agents": list_agent_roles()}
 
 
 @app.get("/tools")
