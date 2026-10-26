@@ -255,3 +255,20 @@ def test_coding_apply_lock_excludes_other_store_instances(tmp_path: Path):
 
     with second.coding_apply_lock(blocking=False) as acquired_after_release:
         assert acquired_after_release is True
+
+
+def test_claim_task_is_atomic_and_only_claims_queued_tasks(tmp_path: Path):
+    store = TaskStore(tmp_path / "claim.sqlite3")
+    task = store.create_task("queued task", "run once")
+    assert store.claim_task(task["id"]) is True
+    assert store.get_task(task["id"])["status"] == "running"
+    assert store.claim_task(task["id"]) is False
+    assert store.get_task(task["id"])["status"] == "running"
+
+
+def test_claim_task_raises_for_missing_task(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "claim-missing.sqlite3")
+    with pytest.raises(KeyError, match="Task not found"):
+        store.claim_task("missing-id")
