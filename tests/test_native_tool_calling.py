@@ -218,3 +218,39 @@ async def test_negated_tool_mention_does_not_override_requested_tool(monkeypatch
     }
     assert executed == [("workspace__read_file", {"path": "notes.txt"})]
     assert result["tool_calls"] == 1
+
+@pytest.mark.asyncio
+async def test_duplicate_tool_call_ids_are_rejected_before_execution(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[
+            tool_call("duplicate-id", "workspace.list_files", {"path": "."}),
+            tool_call("duplicate-id", "workspace.list_files", {"path": "."}),
+        ]),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"entries": []}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    }]
+
+    with pytest.raises(RuntimeError, match="duplicate tool-call IDs"):
+        await provider.chat_with_tools(
+            "List files", tool_specs=specs, execute_tool=execute,
+        )
+
+    assert executed == []

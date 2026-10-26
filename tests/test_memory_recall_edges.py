@@ -63,7 +63,7 @@ def test_recall_avoids_ambiguous_equal_score_matches():
         },
         {
             "source": "explicit_chat_request",
-            "content": "My project code is CLAW-7391",
+            "content": "My project code is CLAW-7392",
         },
     ]
 
@@ -118,3 +118,17 @@ def test_recall_does_not_return_an_unrelated_fact_for_missing_exact_code():
     )
 
     assert answer is None
+
+def test_recall_allows_duplicate_rows_for_the_same_fact():
+    fact = "My project name is AETHER CLAW"
+    memories = [
+        {"source": "explicit_chat_request", "content": fact},
+        {"source": "explicit_chat_request", "content": fact},
+    ]
+
+    answer = app_module._memory_recall_answer(
+        "What did I ask you to remember about my project?",
+        memories,
+    )
+
+    assert answer == fact
