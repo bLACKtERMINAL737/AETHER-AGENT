@@ -128,3 +128,21 @@ def test_origin_validation_rejects_malformed_or_ambiguous_origins(origin):
 )
 def test_origin_validation_requires_matching_scheme_host_and_port(origin, request_host, scheme):
     assert not _origin_is_local(origin, request_host, scheme)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/docs", "/openapi.json", "/redoc"])
+async def test_api_documentation_routes_are_not_exempt_from_auth(monkeypatch, path):
+    app = make_app(monkeypatch)
+    # Add a route so the OpenAPI document can be generated.
+    @app.get("/private")
+    def duplicate_private():
+        return {"private": True}
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.get(path)
+
+    assert response.status_code == 401
