@@ -693,18 +693,27 @@ async def chat(request: ChatRequest):
         # For explicit requests to recall a remembered code, return the saved
         # value directly rather than a verbose model paraphrase. Only use
         # explicitly user-saved memories; never infer a code from unrelated notes.
+        # Exact identifier recall must fail closed even when saved-memory
+        # access is not enabled for this request. Never let the model substitute
+        # a different code from unrelated conversation context.
+        requested_identifiers = re.findall(
+            r"\b[A-Z][A-Z0-9]*(?:[_-][A-Z0-9]+)+\b", request.message
+        )
         code_recall = re.search(
-            r"\b(?:what|which)\s+(?:is\s+)?(?:the\s+)?code\b.*\b(?:remember|remembered|save|saved|ask you to remember)\b",
+            r"\b(?:what|which)\b.{0,40}\bcode\b.*\b(?:remember|remembered|save|saved|ask you to remember)\b",
             request.message,
             flags=re.IGNORECASE,
         )
-        if request.use_saved_memories and code_recall:
+        exact_identifier_recall = bool(
+            requested_identifiers
+            and code_recall
+        )
+        if exact_identifier_recall and not request.use_saved_memories:
+            answer = "Saved memory is not enabled for this request, so I can't verify that exact code."
+        elif request.use_saved_memories and code_recall:
             # An exact identifier in the question must match the saved fact.
             # Do not let this special code-recall path bypass the stricter
             # _memory_recall_answer guard and return an unrelated memory.
-            requested_identifiers = re.findall(
-                r"\b[A-Z][A-Z0-9]*(?:[_-][A-Z0-9]+)+\b", request.message
-            )
             saved_codes = [
                 item for item in memories
                 if item.get("source") == "explicit_chat_request"
