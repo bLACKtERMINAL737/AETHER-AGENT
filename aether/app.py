@@ -291,6 +291,22 @@ def _memory_recall_answer(message: str, memories: list[dict]) -> str | None:
     return best[0][2]
 
 
+def _is_memory_recall_question(message: str) -> bool:
+    """Recognize explicit questions asking for a previously saved fact."""
+    text = message.casefold()
+    recall_intent = re.search(
+        r"\\b(?:what|which|tell me|remind me|do you remember|do you have|have you saved|what's|what is|who|when|where)\\b|"
+        r"(?:মনে আছে|কি মনে|কী মনে|বলেছিলাম|বলেছিলে|নাম কী|নাম কি)",
+        text,
+    )
+    memory_intent = re.search(
+        r"\\b(?:remember|remembered|saved|save|told you|asked you|my project|project name|my preference|"
+        r"prefer|favorite|favourite|code|in memory)\\b|(?:মনে|বলেছিলাম|বলেছিলে|নাম)",
+        text,
+    )
+    return bool(recall_intent and memory_intent)
+
+
 def infer_task_type(message: str) -> Literal["general", "coding", "reasoning"]:
     """Conservative, local heuristic; it never sends a second request to classify a task."""
     text = message.lower()
@@ -734,6 +750,8 @@ async def chat(request: ChatRequest):
             recalled = _memory_recall_answer(request.message, memories)
             if recalled is not None:
                 answer = recalled
+            elif _is_memory_recall_question(request.message):
+                answer = "I couldn't find that information in saved memory."
         memory_to_save = extract_explicit_memory_request(request.message)
         if memory_to_save:
             saved_memory = store.add_memory(
