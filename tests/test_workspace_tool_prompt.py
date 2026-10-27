@@ -98,3 +98,56 @@ async def test_workspace_guidance_is_not_added_when_no_tools_are_supplied(monkey
 
     system_prompt = FakeAsyncClient.last_request["payload"]["messages"][0]["content"]
     assert "Workspace tool selection rules" not in system_prompt
+
+
+from pathlib import Path
+
+from aether.tools import ToolError, ToolRegistry
+
+
+def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path):
+    registry = ToolRegistry(tmp_path)
+    descriptions = {tool["name"]: tool["description"] for tool in registry.describe()}
+
+    assert "do not use this tool to read a file's contents" in descriptions["workspace.list_files"]
+    assert "not for reading a known file" in descriptions["workspace.search_text"]
+    assert "READ A SPECIFIC FILE" in descriptions["workspace.read_file"]
+    assert "Do not substitute" in descriptions["workspace.read_file"]
+
+
+def test_workspace_read_file_returns_actual_content_for_known_path(tmp_path):
+    target = tmp_path / "known.txt"
+    target.write_text("ALPHA-MARKER\nBETA-MARKER\n", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    result = registry.execute("workspace.read_file", {"path": "known.txt"})
+
+    assert result["path"] == "known.txt"
+    assert result["content"] == "ALPHA-MARKER\nBETA-MARKER"
+    assert result["total_lines"] == 2
+    assert result["truncated"] is False
+
+
+def test_workspace_read_file_reports_missing_path_without_fallback(tmp_path):
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="File does not exist"):
+        registry.execute("workspace.read_file", {"path": "missing-unique-file.txt"})
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "payload", "error"),
+    [
+        ("workspace.read_file", {"path": "folder"}, "Path must be a file"),
+        ("workspace.list_files", {"path": "known.txt"}, "Path must be a directory"),
+        ("workspace.search_text", {"path": "known.txt", "query": "marker"},
+         "Search path must be an existing directory"),
+    ],
+)
+def test_workspace_tools_reject_wrong_path_kind(tmp_path, tool_name, payload, error):
+    (tmp_path / "folder").mkdir()
+    (tmp_path / "known.txt").write_text("marker", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match=error):
+        registry.execute(tool_name, payload)
