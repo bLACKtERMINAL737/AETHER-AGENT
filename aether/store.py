@@ -500,8 +500,13 @@ class TaskStore:
         ranked = []
         for row in rows:
             item = dict(row)
-            haystack = item["content"].casefold()
-            haystack_terms = set(re.findall(r"\w+", haystack, flags=re.UNICODE))
+            # Tokenize before casefolding: Unicode casefolding can introduce
+            # combining marks (for example, İ -> i + combining dot), which
+            # Python's \\w pattern does not include when scanning folded text.
+            haystack_terms = {
+                token.casefold()
+                for token in re.findall(r"\w+", item["content"], flags=re.UNICODE)
+            }
             score = sum(1 for term in terms if term in haystack_terms)
             if score:
                 ranked.append((score, item["created_at"], item))
