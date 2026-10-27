@@ -59,16 +59,17 @@ class DockerTestSandbox:
             raise SandboxError("Workspace directory does not exist")
         total_bytes = 0
         file_count = 0
+        excluded_dirs = {name.casefold() for name in self.EXCLUDED_DIRS}
         for root, dirs, files in os.walk(self.workspace, followlinks=False):
             root_path = Path(root)
             for name in dirs:
                 directory = root_path / name
-                if name not in self.EXCLUDED_DIRS and directory.is_symlink():
+                if name.casefold() not in excluded_dirs and directory.is_symlink():
                     relative = directory.relative_to(self.workspace)
                     raise SandboxError(
                         f"Workspace contains a symlink directory; remove it before sandbox execution: {relative}"
                     )
-            dirs[:] = [name for name in dirs if name not in self.EXCLUDED_DIRS]
+            dirs[:] = [name for name in dirs if name.casefold() not in excluded_dirs]
             relative_root = root_path.relative_to(self.workspace)
             target_root = destination / relative_root
             target_root.mkdir(parents=True, exist_ok=True)
