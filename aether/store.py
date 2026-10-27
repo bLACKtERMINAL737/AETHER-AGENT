@@ -227,13 +227,24 @@ class TaskStore:
             json.dumps(results, ensure_ascii=False) if results is not None else None
         )
         with self.connect() as con:
+            # Workflows may advance while running or remain in the same state.
+            # Recovery must use claim_workflow_recovery() for the guarded unknown
+            # -> running transition. Completed workflows cannot be reopened.
             cursor = con.execute(
                 "UPDATE agent_workflows SET status=?,updated_at=?,"
-                "results_json=COALESCE(?,results_json),error_text=? WHERE id=?",
-                (status, utc_now(), encoded_results, error, workflow_id),
+                "results_json=COALESCE(?,results_json),error_text=? "
+                "WHERE id=? AND (status='running' OR status=?)",
+                (status, utc_now(), encoded_results, error, workflow_id, status),
             )
             if cursor.rowcount == 0:
-                raise KeyError("Workflow not found")
+                row = con.execute(
+                    "SELECT status FROM agent_workflows WHERE id=?", (workflow_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError("Workflow not found")
+                raise ValueError(
+                    f"Invalid workflow status transition from {row['status']} to {status}"
+                )
 
     def begin_tool(self, task_id: str, tool_name: str, tool_input: dict[str, Any]) -> str:
         execution_id, now = str(uuid4()), utc_now()

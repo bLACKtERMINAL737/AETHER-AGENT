@@ -892,11 +892,12 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                         outcomes_by_index[index] = {
                             **current, "status": "unknown", "error": cancel_error
                         }
-                persist_checkpoint()
-                store.update_workflow(
-                    workflow_id,
+                # A worker may already have marked the workflow unknown while
+                # handling its own cancellation. Persist the coordinator's final
+                # checkpoint directly as unknown; never write an intermediate running
+                # checkpoint after the workflow has entered an uncertain state.
+                persist_checkpoint(
                     "unknown",
-                    results=checkpoint,
                     error="Workflow execution was cancelled; task outcomes require inspection.",
                 )
                 raise
