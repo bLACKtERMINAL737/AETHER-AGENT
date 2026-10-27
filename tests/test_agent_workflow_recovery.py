@@ -251,3 +251,41 @@ async def test_recovery_rejects_succeeded_checkpoint_when_task_is_still_queued(
     assert store.get_task(prerequisite["id"])["status"] == "queued"
     assert store.get_task(dependent["id"])["status"] == "queued"
     assert store.get_workflow(workflow["id"])["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_recovery_accepts_not_started_qa_checkpoint_without_replaying_qa(tmp_path, monkeypatch):
+    store, workflow_id, task_id, _qa_id = make_workflow(tmp_path, monkeypatch, qa=False)
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["qa_review"] = {
+        "status": "not_started",
+        "error": "QA task was not checkpointed before interruption",
+    }
+    store.update_workflow(
+        workflow_id, "unknown", results=checkpoint, error="simulated interruption"
+    )
+    executed = []
+
+    async def fake_run(task_id_arg):
+        assert task_id_arg == task_id
+        task = store.get_task(task_id_arg)
+        assert task is not None and task["status"] == "queued"
+        assert store.claim_task(task_id_arg)
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": "verified"})
+        executed.append(task_id_arg)
+        return {
+            "task_id": task_id_arg,
+            "status": "succeeded",
+            "result": "verified",
+            "tool_calls": 0,
+            "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.recover_agent_workflow(workflow_id)
+
+    assert result["status"] == "partial"
+    assert executed == [task_id]
+    assert result["qa_review"]["status"] == "not_started"
+    assert store.get_workflow(workflow_id)["status"] == "partial"
