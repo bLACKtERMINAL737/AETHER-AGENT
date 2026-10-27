@@ -64,7 +64,10 @@ async def test_orchestrator_persists_plan_tasks_and_qa_checkpoint(tmp_path, monk
     saved = store.get_workflow(result["workflow_id"])
     assert saved is not None
     assert saved["status"] == "succeeded"
-    assert saved["plan"] == router.plan["subtasks"]
+    assert saved["plan"] == [
+        {**item, "depends_on": item.get("depends_on", [])}
+        for item in router.plan["subtasks"]
+    ]
     assert [item["status"] for item in saved["results"]["tasks"]] == [
         "succeeded", "succeeded"
     ]
