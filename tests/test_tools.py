@@ -104,6 +104,23 @@ def test_workspace_tools_exclude_common_secret_files_but_allow_env_examples(tmp_
     assert all(match["file"] not in {".env", "credentials.json"} for match in search["matches"])
 
 
+def test_workspace_search_excludes_sensitive_named_directories(tmp_path: Path):
+    secrets = tmp_path / "credentials"
+    secrets.mkdir()
+    (secrets / "notes.txt").write_text("needle-secret-value", encoding="utf-8")
+    nested_env = tmp_path / ".env.backup"
+    nested_env.mkdir()
+    (nested_env / "notes.txt").write_text("needle-secret-value", encoding="utf-8")
+    ordinary = tmp_path / "docs"
+    ordinary.mkdir()
+    (ordinary / "notes.txt").write_text("needle-secret-value", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    result = registry.execute("workspace.search_text", {"query": "needle-secret-value"})
+
+    assert [match["file"] for match in result["matches"]] == ["docs/notes.txt"]
+
+
 def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: Path):
     registry = ToolRegistry(tmp_path)
     descriptions = {item["name"]: item["description"] for item in registry.describe()}
