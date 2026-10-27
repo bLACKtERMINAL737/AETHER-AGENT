@@ -317,3 +317,43 @@ async def test_unregistered_tool_call_is_rejected_before_any_execution(monkeypat
         )
 
     assert executed == []
+
+
+@pytest.mark.asyncio
+async def test_tool_exception_details_are_not_sent_back_to_model(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[tool_call("call-1", "workspace.list_files", {"path": "."})]),
+        completion(content="The tool failed."),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    secret_detail = "private-token-at-/Users/example/private"
+    
+    async def execute(_name, _args):
+        raise RuntimeError(secret_detail)
+
+    result = await provider.chat_with_tools(
+        "List files",
+        tool_specs=[{
+            "type": "function",
+            "function": {
+                "name": "workspace.list_files",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+        execute_tool=execute,
+    )
+
+    tool_result = next(
+        message["content"]
+        for message in calls[1]["payload"]["messages"]
+        if message.get("role") == "tool"
+    )
+    assert secret_detail not in tool_result
+    assert "Tool execution failed (RuntimeError)." in tool_result
+    assert result["answer"] == "The tool failed."
