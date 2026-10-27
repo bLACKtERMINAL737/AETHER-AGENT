@@ -202,3 +202,17 @@ def test_memory_search_matches_hyphenated_identifier_components(tmp_path):
 
     assert [item["id"] for item in results] == [fact["id"]]
 
+def test_memory_search_handles_unicode_casefolding_with_dotted_i(tmp_path):
+    from aether.store import TaskStore
+
+    store = TaskStore(tmp_path / "unicode-memory.sqlite3")
+    fact = store.add_memory(
+        category="place",
+        content="İstanbul is a city",
+        source="explicit_chat_request",
+    )
+
+    results = store.search_memories("İSTANBUL")
+
+    assert any(item["id"] == fact["id"] for item in results)
+
