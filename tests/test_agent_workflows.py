@@ -266,3 +266,53 @@ async def test_orchestrator_waits_for_all_prerequisites_before_dependent_task(
     assert result["status"] == "succeeded"
     assert completion_order.index("[coding] Dependent C") > completion_order.index("[research] Prerequisite A")
     assert completion_order.index("[coding] Dependent C") > completion_order.index("[monitor] Prerequisite B")
+
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "1")
+    router.plan = {
+        "subtasks": [
+            {"title": "Slow prerequisite", "input": "May take too long", "role": "research"},
+            {"title": "Must wait", "input": "Use prerequisite", "role": "coding", "depends_on": [0]},
+        ]
+    }
+    started = []
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        if task["title"].startswith("[qa_security]"):
+            store.claim_task(task_id)
+            store.set_task_status(task_id, "succeeded", result={"answer": "reviewed"})
+            return {
+                "task_id": task_id, "status": "succeeded", "result": "reviewed",
+                "tool_calls": 0, "tool_attempts": 0,
+            }
+        started.append(task["title"])
+        assert store.claim_task(task_id)
+        if task["title"].startswith("[research]"):
+            await asyncio.sleep(1.2)
+        store.set_task_status(task_id, "succeeded", result={"answer": "ok"})
+        return {
+            "task_id": task_id, "status": "succeeded", "result": "ok",
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Handle slow tasks safely")
+    )
+
+    assert result["status"] == "partial"
+    assert result["task_timeout_seconds"] == 1
+    assert len(started) == 1
+    saved = store.get_workflow(result["workflow_id"])
+    by_title = {item["title"]: item for item in saved["results"]["tasks"]}
+    assert by_title["Slow prerequisite"]["status"] == "unknown"
+    assert "timeout" in by_title["Slow prerequisite"]["error"].lower()
+    assert by_title["Must wait"]["status"] == "blocked"
+    assert saved["results"]["qa_review"]["status"] == "succeeded"
