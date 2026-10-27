@@ -498,3 +498,19 @@ def test_unknown_task_cannot_be_marked_succeeded_by_late_response(tmp_path: Path
     assert saved is not None
     assert saved["status"] == "unknown"
     assert saved["error_text"] == "execution outcome uncertain"
+
+
+
+def test_running_task_cannot_regress_to_queued(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "task-monotonic-status.sqlite3")
+    task = store.create_task("In flight", "do not return to queue after claiming")
+    assert store.claim_task(task["id"]) is True
+
+    with pytest.raises(ValueError, match="Invalid task status transition from running to queued"):
+        store.set_task_status(task["id"], "queued")
+
+    saved = store.get_task(task["id"])
+    assert saved is not None
+    assert saved["status"] == "running"
