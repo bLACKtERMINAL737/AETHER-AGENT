@@ -18,10 +18,20 @@ def test_path_escape_is_rejected(tmp_path: Path):
         registry.execute("workspace.list_files", {"path": "../outside"})
 
 
-def test_unknown_tool_is_rejected(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("name", "payload"),
+    [
+        ("shell.run", {"command": "whoami"}),
+        # Provider-style names must not become executable merely because they
+        # use the provider's underscore separator instead of internal dots.
+        ("shell__run", {"command": "whoami"}),
+        ("workspace__delete_file", {"path": "important.txt"}),
+    ],
+)
+def test_unknown_tool_names_are_rejected(tmp_path: Path, name: str, payload: dict):
     registry = ToolRegistry(tmp_path)
-    with pytest.raises(ToolError):
-        registry.execute("shell.run", {"command": "whoami"})
+    with pytest.raises(ToolError, match="Unknown tool"):
+        registry.execute(name, payload)
 
 
 def test_provider_tool_names_are_valid_and_reversible(tmp_path: Path):
