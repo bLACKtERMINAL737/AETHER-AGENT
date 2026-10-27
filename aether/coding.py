@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .provider import ModelRouter
+from .improvement import evaluate_improvement, parse_pytest_evidence
 from .sandbox import DockerTestSandbox, SandboxError
 from .store import TaskStore
 
@@ -358,6 +359,23 @@ class CodingEngine:
                 test_timeout_seconds=self.test_timeout_seconds,
                 sandbox_image=self.sandbox_image,
             )
+            baseline_result = candidate_engine.run_tests()
+            baseline_evidence = parse_pytest_evidence(baseline_result)
+            if not baseline_result.get("passed") or baseline_evidence is None:
+                return {
+                    "passed": False,
+                    "rounds": [{
+                        "round": 0,
+                        "summary": "Baseline tests did not provide trustworthy passing evidence",
+                        "passed": False,
+                        "returncode": baseline_result.get("returncode"),
+                        "stdout": str(baseline_result.get("stdout", ""))[-6000:],
+                        "stderr": str(baseline_result.get("stderr", ""))[-6000:],
+                    }],
+                    "proposal": None,
+                    "message": "Self-improvement blocked: baseline tests must pass and provide a recognizable pytest summary. No changes were made to the real workspace.",
+                }
+
             for round_number in range(1, max_rounds + 1):
                 round_instruction = instruction
                 if latest_failure:
@@ -379,6 +397,9 @@ class CodingEngine:
                                                    error="Internal iteration candidate; not a user approval proposal")
 
                 passed = bool(test_result.get("passed"))
+                candidate_evidence = parse_pytest_evidence(test_result)
+                evaluation = evaluate_improvement(baseline_evidence, candidate_evidence) if passed and candidate_evidence else None
+                gate_ready = bool(evaluation and evaluation.status == "ready_for_review")
                 rounds.append({
                     "round": round_number,
                     "summary": interim["summary"],
@@ -387,8 +408,17 @@ class CodingEngine:
                     "timed_out": bool(test_result.get("timed_out", False)),
                     "stdout": str(test_result.get("stdout", ""))[-6000:],
                     "stderr": str(test_result.get("stderr", ""))[-6000:],
+                    "baseline_test_count": baseline_evidence.total,
+                    "candidate_test_count": candidate_evidence.total if candidate_evidence else None,
+                    "gate_status": evaluation.status if evaluation else "blocked",
+                    "gate_reasons": list(evaluation.reasons) if evaluation else ["Candidate pytest summary could not be parsed; evidence is incomplete."],
                 })
-                if passed:
+                if passed and not gate_ready:
+                    return {
+                        "passed": False, "rounds": rounds, "proposal": None,
+                        "message": "Self-improvement blocked: candidate evidence was incomplete or failed baseline comparison. No changes were made to the real workspace.",
+                    }
+                if passed and gate_ready:
                     final_changes = []
                     for path in paths:
                         original = original_by_path[path]
