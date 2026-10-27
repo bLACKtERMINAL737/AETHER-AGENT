@@ -156,3 +156,53 @@ def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: 
     assert "never guess contents" in descriptions["workspace.read_file"]
     assert "directory listing" in descriptions["workspace.list_files"]
     assert "not for reading a known file" in descriptions["workspace.search_text"]
+
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".npmrc",
+        ".pypirc",
+        ".netrc",
+        ".dockercfg",
+        "auth.json",
+        "tokens.json",
+        "service-account.json",
+        "kubeconfig",
+        "client.key",
+        "backup.pgp",
+        "vault.kdbx",
+    ],
+)
+def test_workspace_tools_reject_additional_credential_file_patterns(
+    tmp_path: Path, name: str
+):
+    (tmp_path / name).write_text("placeholder-secret", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    listed = {
+        entry["name"]
+        for entry in registry.execute("workspace.list_files", {"path": "."})["entries"]
+    }
+    assert name not in listed
+
+    with pytest.raises(ToolError, match="excluded"):
+        registry.execute("workspace.read_file", {"path": name})
+
+    search = registry.execute(
+        "workspace.search_text", {"query": "placeholder-secret"}
+    )
+    assert all(match["file"] != name for match in search["matches"])
+
+
+def test_workspace_tools_reject_ssh_config_directory(tmp_path: Path):
+    ssh = tmp_path / ".ssh"
+    ssh.mkdir()
+    (ssh / "config").write_text("Host private-host\n  IdentityFile ~/.ssh/id_ed25519\n", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="excluded"):
+        registry.execute("workspace.list_files", {"path": ".ssh"})
+    with pytest.raises(ToolError, match="excluded"):
+        registry.execute("workspace.read_file", {"path": ".ssh/config"})
