@@ -480,7 +480,7 @@ def test_task_terminal_status_cannot_be_reopened_by_stale_update(tmp_path: Path)
     saved = store.get_task(task["id"])
     assert saved is not None
     assert saved["status"] == "succeeded"
-    assert saved["result"] == {"answer": "done"}
+    assert json.loads(saved["result_json"]) == {"answer": "done"}
 
 
 def test_unknown_task_cannot_be_marked_succeeded_by_late_response(tmp_path: Path):
@@ -496,4 +496,4 @@ def test_unknown_task_cannot_be_marked_succeeded_by_late_response(tmp_path: Path
     saved = store.get_task(task["id"])
     assert saved is not None
     assert saved["status"] == "unknown"
-    assert saved["error"] == "execution outcome uncertain"
+    assert saved["error_text"] == "execution outcome uncertain"
