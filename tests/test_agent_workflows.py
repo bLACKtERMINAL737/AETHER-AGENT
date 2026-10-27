@@ -190,6 +190,13 @@ async def test_orchestrator_runs_independent_tasks_concurrently_with_a_hard_cap(
     async def fake_run(task_id):
         nonlocal active, peak_active
         task = store.get_task(task_id)
+        if task["title"].startswith("[qa_security]"):
+            store.claim_task(task_id)
+            store.set_task_status(task_id, "succeeded", result={"answer": "QA complete"})
+            return {
+                "task_id": task_id, "status": "succeeded", "result": "QA complete",
+                "tool_calls": 0, "tool_attempts": 0,
+            }
         async with lock:
             active += 1
             peak_active = max(peak_active, active)
