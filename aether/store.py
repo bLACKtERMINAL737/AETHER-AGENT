@@ -358,7 +358,9 @@ class TaskStore:
             for term in re.findall(r"[\w-]+", query, flags=re.UNICODE)
             if term.casefold() not in stop_words
         ]
-        if limit <= 0:
+        if limit <= 0 or not terms:
+            # Empty/stop-word-only queries must not match every explicit memory
+            # merely because the query resembles a natural-language recall request.
             return []
         candidates = self.list_memories(limit=500)
         recall_intent = bool(
