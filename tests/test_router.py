@@ -238,3 +238,55 @@ async def test_manual_fallback_route_does_not_retry_same_fallback_as_backup():
         await router.chat("hello", model_route="fallback")
 
     assert fallback.calls == 1
+
+
+@pytest.mark.parametrize("max_total_attempts", [0, 7, -1])
+def test_router_rejects_total_attempt_budgets_outside_supported_range(max_total_attempts):
+    with pytest.raises(ValueError, match="max_total_attempts must be between 1 and 6"):
+        ModelRouter(FakeProvider("primary"), max_total_attempts=max_total_attempts)
+
+
+@pytest.mark.asyncio
+async def test_total_attempt_budget_caps_retries_before_fallback(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    primary = FakeProvider(
+        "primary",
+        errors=[
+            httpx.ConnectError("first failure"),
+            httpx.ConnectError("second failure"),
+            httpx.ConnectError("third failure"),
+        ],
+    )
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(
+        primary, fallback=fallback, max_attempts=3, max_total_attempts=2
+    )
+
+    with pytest.raises(httpx.ConnectError, match="second failure"):
+        await router.chat("hello")
+
+    assert primary.calls == 2
+    assert fallback.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_total_attempt_budget_allows_fallback_when_budget_remains(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    primary = FakeProvider("primary", errors=[httpx.ConnectError("primary down")])
+    fallback = FakeProvider("fallback", errors=[httpx.ReadTimeout("fallback down")])
+    # One attempt per route leaves the second total-budget slot for fallback.
+    router = ModelRouter(
+        primary, fallback=fallback, max_attempts=1, max_total_attempts=2
+    )
+
+    with pytest.raises(httpx.ReadTimeout, match="fallback down"):
+        await router.chat("hello")
+
+    assert primary.calls == 1
+    assert fallback.calls == 1

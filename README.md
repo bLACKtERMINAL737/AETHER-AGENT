@@ -13,7 +13,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Auto and Manual model modes**: Auto locally classifies task intent and selects a configured route; Manual lets the user explicitly select a configured route. Neither mode exposes credentials.
 - **Model route discovery** via `GET /models`, returning only route IDs, model IDs, and configured status.
 - **Task-specific model routing** for primary, coding specialist, optional reasoning specialist, and fallback providers; each route can use a different OpenAI-compatible endpoint/model.
-- **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures.
+- **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures, with a configurable total attempt budget (1–6) across routes and route-labelled failure logs.
 - **Configurable model request timeout** shared across primary, coding, reasoning, and fallback routes, with validated 1–600 second bounds.
 - **Coding proposals** that show file diffs and require explicit approval before changes are applied.
 - **Proposal state protection** so only valid pending proposals can be approved or rejected, and already-applied changes cannot be applied again.
