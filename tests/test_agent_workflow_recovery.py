@@ -311,3 +311,35 @@ async def test_recovery_rejects_checkpoint_that_disagrees_with_saved_plan_before
 
     assert exc.value.status_code == 409
     assert store.get_workflow(workflow_id)["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_qa_checkpoint_reusing_task_id_before_claim(tmp_path, monkeypatch):
+    store, workflow_id, task_id, _qa_id = make_workflow(tmp_path, monkeypatch)
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["qa_review"]["task_id"] = task_id
+    assert store.claim_workflow_recovery(workflow_id)
+    store.update_workflow(workflow_id, "running", results=checkpoint)
+    store.update_workflow(workflow_id, "unknown", error="simulated corrupted QA checkpoint")
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_qa_checkpoint_that_disagrees_with_task_journal(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, _task_id, qa_id = make_workflow(tmp_path, monkeypatch)
+    assert qa_id is not None
+    store.set_task_status(qa_id, "failed", error="saved QA failure")
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
