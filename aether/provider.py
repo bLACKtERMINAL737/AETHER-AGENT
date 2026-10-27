@@ -328,14 +328,18 @@ class ModelRouter:
         fallback: ModelProvider | None = None,
         reasoning: ModelProvider | None = None,
         max_attempts: int = 2,
+        max_total_attempts: int = 6,
     ):
         if max_attempts < 1 or max_attempts > 3:
             raise ValueError("max_attempts must be between 1 and 3")
+        if max_total_attempts < 1 or max_total_attempts > 6:
+            raise ValueError("max_total_attempts must be between 1 and 6")
         self.primary = primary
         self.coding = coding
         self.fallback = fallback
         self.reasoning = reasoning
         self.max_attempts = max_attempts
+        self.max_total_attempts = max_total_attempts
 
     def available_routes(self) -> list[dict[str, str | bool]]:
         """Return configured routes without exposing credentials."""
@@ -395,6 +399,8 @@ class ModelRouter:
         attempts = 0
         for provider, provider_route in candidates:
             for attempt in range(self.max_attempts):
+                if attempts >= self.max_total_attempts:
+                    break
                 attempts += 1
                 try:
                     result = await provider.chat_with_tools(
@@ -411,6 +417,10 @@ class ModelRouter:
                     }
                 except Exception as exc:
                     last_error = exc
+                    logger.warning(
+                        "Model request failed on route %s (attempt %s/%s): %s",
+                        provider_route, attempts, self.max_total_attempts, type(exc).__name__,
+                    )
                     if execution_counter is not None and execution_counter():
                         raise
                     if not _retryable(exc) or attempt + 1 >= self.max_attempts:
@@ -442,6 +452,8 @@ class ModelRouter:
         attempts = 0
         for provider, provider_route in candidates:
             for attempt in range(self.max_attempts):
+                if attempts >= self.max_total_attempts:
+                    break
                 attempts += 1
                 try:
                     # Preserve compatibility with simple provider adapters that implement the original signature.
@@ -458,6 +470,10 @@ class ModelRouter:
                     }
                 except Exception as exc:
                     last_error = exc
+                    logger.warning(
+                        "Model request failed on route %s (attempt %s/%s): %s",
+                        provider_route, attempts, self.max_total_attempts, type(exc).__name__,
+                    )
                     if not _retryable(exc) or attempt + 1 >= self.max_attempts:
                         break
                     logger.warning("Transient model error on route %s; retry %s/%s",
