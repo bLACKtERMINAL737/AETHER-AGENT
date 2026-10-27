@@ -132,3 +132,46 @@ def test_recall_allows_duplicate_rows_for_the_same_fact():
     )
 
     assert answer == fact
+
+def test_memory_search_returns_empty_for_stopword_only_recall_query(tmp_path):
+    from aether.store import TaskStore
+
+    store = TaskStore(tmp_path / "memory.sqlite3")
+    store.add_memory(
+        category="project",
+        content="Project name is AETHER CLAW",
+        source="explicit_chat_request",
+    )
+
+    assert store.search_memories("What did I ask you to remember?") == []
+
+
+def test_memory_search_still_finds_explicit_fact_when_query_has_terms(tmp_path):
+    from aether.store import TaskStore
+
+    store = TaskStore(tmp_path / "memory.sqlite3")
+    fact = store.add_memory(
+        category="project",
+        content="Project name is AETHER CLAW",
+        source="explicit_chat_request",
+    )
+
+    results = store.search_memories("AETHER CLAW")
+
+    assert [item["id"] for item in results] == [fact["id"]]
+
+
+def test_memory_search_empty_and_whitespace_queries_return_no_results(tmp_path):
+    from aether.store import TaskStore
+
+    store = TaskStore(tmp_path / "memory.sqlite3")
+    store.add_memory(
+        category="note",
+        content="Keep this explicit memory",
+        source="explicit_chat_request",
+    )
+
+    assert store.search_memories("") == []
+    assert store.search_memories("   ") == []
+    assert store.search_memories("what did i ask") == []
+
