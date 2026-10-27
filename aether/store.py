@@ -257,7 +257,7 @@ class TaskStore:
                 "error_text=CASE WHEN status=? THEN COALESCE(error_text,?) ELSE ? END "
                 "WHERE id=? AND (status='running' OR status=?)",
                 (
-                    status, utc_now(), encoded_results,
+                    status, utc_now(), encoded_results, encoded_results,
                     status, error, error,
                     workflow_id, status,
                 ),
