@@ -27,10 +27,22 @@ settings = Settings.from_env()
 settings.workspace.mkdir(parents=True, exist_ok=True)
 store = TaskStore(settings.db_path)
 tools = ToolRegistry(settings.workspace)
-primary_provider = ModelProvider(settings.model_base_url, settings.model_api_key, settings.model_name)
-coding_provider = ModelProvider(settings.coding_model_base_url, settings.coding_model_api_key, settings.coding_model_name)
-fallback_provider = ModelProvider(settings.fallback_model_base_url, settings.fallback_model_api_key, settings.fallback_model_name)
-reasoning_provider = ModelProvider(settings.reasoning_model_base_url, settings.reasoning_model_api_key, settings.reasoning_model_name)
+primary_provider = ModelProvider(
+    settings.model_base_url, settings.model_api_key, settings.model_name,
+    timeout_seconds=settings.model_timeout_seconds,
+)
+coding_provider = ModelProvider(
+    settings.coding_model_base_url, settings.coding_model_api_key, settings.coding_model_name,
+    timeout_seconds=settings.model_timeout_seconds,
+)
+fallback_provider = ModelProvider(
+    settings.fallback_model_base_url, settings.fallback_model_api_key, settings.fallback_model_name,
+    timeout_seconds=settings.model_timeout_seconds,
+)
+reasoning_provider = ModelProvider(
+    settings.reasoning_model_base_url, settings.reasoning_model_api_key, settings.reasoning_model_name,
+    timeout_seconds=settings.model_timeout_seconds,
+)
 router = ModelRouter(primary_provider, coding_provider, fallback_provider, reasoning=reasoning_provider)
 coding = CodingEngine(
     settings.workspace, store, router,
