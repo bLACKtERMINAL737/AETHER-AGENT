@@ -94,6 +94,16 @@ class TaskStore:
               id TEXT PRIMARY KEY, title TEXT NOT NULL,
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS agent_workflows (
+              id TEXT PRIMARY KEY,
+              goal TEXT NOT NULL,
+              status TEXT NOT NULL CHECK(status IN ('running','succeeded','partial','failed','unknown')),
+              plan_json TEXT NOT NULL,
+              results_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              error_text TEXT
+            );
             CREATE TABLE IF NOT EXISTS session_messages (
               id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
               role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
@@ -145,6 +155,68 @@ class TaskStore:
             )
             if cursor.rowcount == 0:
                 raise KeyError("Task not found")
+
+    def create_workflow(self, goal: str, plan: list[dict[str, Any]]) -> dict[str, Any]:
+        """Persist a workflow plan before any specialist task starts."""
+        workflow_id, now = str(uuid4()), utc_now()
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO agent_workflows(id,goal,status,plan_json,results_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (
+                    workflow_id, goal, "running",
+                    json.dumps(plan, ensure_ascii=False),
+                    json.dumps({"tasks": [], "qa_review": None}, ensure_ascii=False),
+                    now, now,
+                ),
+            )
+        return self.get_workflow(workflow_id)  # type: ignore[return-value]
+
+    def get_workflow(self, workflow_id: str) -> dict[str, Any] | None:
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT * FROM agent_workflows WHERE id=?", (workflow_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["plan"] = json.loads(result.pop("plan_json"))
+        result["results"] = json.loads(result.pop("results_json"))
+        return result
+
+    def list_workflows(self, limit: int = 50) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT id FROM agent_workflows ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            workflow for row in rows
+            if (workflow := self.get_workflow(row["id"])) is not None
+        ]
+
+    def update_workflow(
+        self,
+        workflow_id: str,
+        status: str,
+        results: Any = None,
+        error: str | None = None,
+    ) -> None:
+        if status not in {"running", "succeeded", "partial", "failed", "unknown"}:
+            raise ValueError("Invalid workflow status")
+        encoded_results = (
+            json.dumps(results, ensure_ascii=False) if results is not None else None
+        )
+        with self.connect() as con:
+            cursor = con.execute(
+                "UPDATE agent_workflows SET status=?,updated_at=?,"
+                "results_json=COALESCE(?,results_json),error_text=? WHERE id=?",
+                (status, utc_now(), encoded_results, error, workflow_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError("Workflow not found")
 
     def begin_tool(self, task_id: str, tool_name: str, tool_input: dict[str, Any]) -> str:
         execution_id, now = str(uuid4()), utc_now()
@@ -198,7 +270,12 @@ class TaskStore:
                                 (now, "Process restarted during execution; verify effects before retrying"))
             tasks = con.execute("UPDATE tasks SET status='unknown',updated_at=?,error_text=COALESCE(error_text,?) WHERE status='running'",
                                 (now, "Process restarted during task; verify effects before retrying"))
-        return tools.rowcount + tasks.rowcount
+            workflows = con.execute(
+                "UPDATE agent_workflows SET status='unknown',updated_at=?,"
+                "error_text=COALESCE(error_text,?) WHERE status='running'",
+                (now, "Process restarted during workflow; inspect saved task checkpoints before manual recovery"),
+            )
+        return tools.rowcount + tasks.rowcount + workflows.rowcount
 
 
     def create_proposal(self, summary: str, changes: list[dict[str, Any]]) -> dict[str, Any]:

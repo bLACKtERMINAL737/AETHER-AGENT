@@ -348,3 +348,76 @@ def test_finish_tool_persists_result_and_error(tmp_path: Path):
     assert saved["status"] == "failed"
     assert json.loads(saved["result_json"]) == {"attempt": 1}
     assert saved["error_text"] == "file unavailable"
+
+
+def test_workflow_plan_and_checkpoints_persist_across_store_reopen(tmp_path: Path):
+    db_path = tmp_path / "workflow.sqlite3"
+    store = TaskStore(db_path)
+    plan = [
+        {"title": "Inspect code", "input": "Read modules and report evidence", "role": "research"},
+        {"title": "Review risks", "input": "Review the findings", "role": "qa_security"},
+    ]
+    workflow = store.create_workflow("Improve reliability", plan)
+
+    assert workflow["status"] == "running"
+    assert workflow["plan"] == plan
+    assert workflow["results"] == {"tasks": [], "qa_review": None}
+
+    checkpoint = {
+        "tasks": [
+            {"task_id": "task-1", "title": "Inspect code", "role": "research", "status": "succeeded"},
+            {"task_id": "task-2", "title": "Review risks", "role": "qa_security", "status": "queued"},
+        ],
+        "qa_review": None,
+    }
+    store.update_workflow(workflow["id"], "running", results=checkpoint)
+    store = TaskStore(db_path)
+
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["goal"] == "Improve reliability"
+    assert saved["plan"] == plan
+    assert saved["results"] == checkpoint
+
+    final_checkpoint = {
+        "tasks": checkpoint["tasks"],
+        "qa_review": {"task_id": "qa-1", "status": "succeeded", "result": "No blocking issues"},
+    }
+    store.update_workflow(workflow["id"], "succeeded", results=final_checkpoint)
+    assert TaskStore(db_path).get_workflow(workflow["id"])["status"] == "succeeded"
+
+
+def test_interrupted_running_workflow_is_marked_unknown(tmp_path: Path):
+    store = TaskStore(tmp_path / "interrupted-workflow.sqlite3")
+    workflow = store.create_workflow(
+        "Interrupted goal",
+        [{"title": "Inspect", "input": "Inspect safely", "role": "research"}],
+    )
+    store.update_workflow(
+        workflow["id"],
+        "running",
+        results={"tasks": [{"task_id": "task-1", "status": "succeeded"}], "qa_review": None},
+    )
+
+    assert store.mark_interrupted_as_unknown() == 1
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["status"] == "unknown"
+    assert "inspect saved task checkpoints" in saved["error_text"]
+    assert saved["results"]["tasks"][0]["status"] == "succeeded"
+
+
+def test_workflow_updates_validate_status_and_missing_ids(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "workflow-validation.sqlite3")
+    workflow = store.create_workflow("Goal", [{"title": "Inspect", "input": "Do work", "role": "research"}])
+
+    with pytest.raises(ValueError, match="Invalid workflow status"):
+        store.update_workflow(workflow["id"], "queued")
+
+    with pytest.raises(KeyError, match="Workflow not found"):
+        store.update_workflow("missing-workflow", "failed", error="not found")
+
+    with pytest.raises(ValueError, match="limit"):
+        store.list_workflows(0)
