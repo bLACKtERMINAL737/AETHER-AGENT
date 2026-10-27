@@ -280,8 +280,9 @@ async def test_total_attempt_budget_allows_fallback_when_budget_remains(monkeypa
     monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider("primary", errors=[httpx.ConnectError("primary down")])
     fallback = FakeProvider("fallback", errors=[httpx.ReadTimeout("fallback down")])
+    # One attempt per route leaves the second total-budget slot for fallback.
     router = ModelRouter(
-        primary, fallback=fallback, max_attempts=2, max_total_attempts=2
+        primary, fallback=fallback, max_attempts=1, max_total_attempts=2
     )
 
     with pytest.raises(httpx.ReadTimeout, match="fallback down"):
