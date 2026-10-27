@@ -580,8 +580,12 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(status_code=502, detail="Planner returned an invalid plan; no tasks were created.") from exc
 
-    # Never allow a model-generated plan to control resource usage without a cap.
-    max_concurrency = 3
+    # Never allow a model-generated plan or environment value to create unbounded work.
+    try:
+        configured_concurrency = int(os.getenv("AETHER_AGENT_MAX_CONCURRENCY", "3"))
+    except (TypeError, ValueError):
+        configured_concurrency = 3
+    max_concurrency = min(max(configured_concurrency, 1), 3)
     try:
         configured_timeout = float(os.getenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "120"))
     except (TypeError, ValueError):
