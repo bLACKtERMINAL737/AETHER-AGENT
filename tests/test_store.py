@@ -514,3 +514,44 @@ def test_running_task_cannot_regress_to_queued(tmp_path: Path):
     saved = store.get_task(task["id"])
     assert saved is not None
     assert saved["status"] == "running"
+
+
+
+def test_finished_tool_execution_cannot_be_rewritten_by_stale_update(tmp_path: Path):
+    import json
+    import pytest
+
+    store = TaskStore(tmp_path / "tool-terminal-guard.sqlite3")
+    task = store.create_task("Tool completed", "preserve the original result")
+    execution_id = store.begin_tool(task["id"], "workspace.read_file", {"path": "safe.txt"})
+    store.finish_tool(execution_id, "succeeded", result={"content": "original"})
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid tool execution status transition from succeeded to failed",
+    ):
+        store.finish_tool(execution_id, "failed", result={"content": "stale"}, error="late error")
+
+    saved = store.list_tool_executions(task["id"])[0]
+    assert saved["status"] == "succeeded"
+    assert json.loads(saved["result_json"]) == {"content": "original"}
+    assert saved["error_text"] is None
+
+
+def test_unknown_tool_execution_cannot_be_overwritten_by_late_success(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "tool-unknown-guard.sqlite3")
+    task = store.create_task("Tool uncertain", "do not hide uncertain execution")
+    execution_id = store.begin_tool(task["id"], "workspace.read_file", {"path": "safe.txt"})
+    store.finish_tool(execution_id, "unknown", error="outcome uncertain")
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid tool execution status transition from unknown to succeeded",
+    ):
+        store.finish_tool(execution_id, "succeeded", result={"content": "late result"})
+
+    saved = store.list_tool_executions(task["id"])[0]
+    assert saved["status"] == "unknown"
+    assert saved["error_text"] == "outcome uncertain"
