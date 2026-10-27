@@ -193,6 +193,8 @@ class ModelProvider:
                 raw_args = function.get("arguments", "{}")
                 if not isinstance(name, str) or not name or not isinstance(raw_args, str):
                     raise RuntimeError("Provider returned a malformed tool call")
+                if name not in available_tool_names:
+                    raise RuntimeError("Provider returned an unregistered tool name")
                 try:
                     args = json.loads(raw_args)
                     if not isinstance(args, dict):

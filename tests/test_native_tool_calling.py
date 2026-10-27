@@ -282,3 +282,38 @@ async def test_live_search_guidance_recognizes_provider_tool_name_variants(
     system_message = calls[0]["payload"]["messages"][0]["content"]
     assert "Live-search response standard" in system_message
     assert result["answer"] == "Search guidance was included."
+
+
+@pytest.mark.asyncio
+async def test_unregistered_tool_call_is_rejected_before_any_execution(monkeypatch):
+    calls = []
+    responses = [completion(tool_calls=[
+        tool_call("call-valid", "workspace.list_files", {"path": "."}),
+        tool_call("call-unknown", "workspace.delete_everything", {"path": "."}),
+    ])]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"entries": []}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    }]
+
+    with pytest.raises(RuntimeError, match="unregistered tool name"):
+        await provider.chat_with_tools(
+            "List files", tool_specs=specs, execute_tool=execute,
+        )
+
+    assert executed == []
