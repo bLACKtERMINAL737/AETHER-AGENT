@@ -398,6 +398,138 @@ def get_agent_workflow(workflow_id: str):
     return workflow
 
 
+@app.post("/agents/workflows/{workflow_id}/recover")
+async def recover_agent_workflow(workflow_id: str):
+    """Explicitly continue only checkpointed queued tasks; never replay uncertain work."""
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow["status"] != "unknown":
+        raise HTTPException(
+            status_code=409,
+            detail="Only workflows marked unknown after interruption can be recovered.",
+        )
+
+    checkpoint = workflow.get("results") or {}
+    outcomes = checkpoint.get("tasks")
+    if not isinstance(outcomes, list) or any(not isinstance(item, dict) for item in outcomes):
+        raise HTTPException(status_code=409, detail="Workflow checkpoints are invalid; inspect the record manually.")
+
+    # Preflight before claiming: queued checkpoint must match queued durable task.
+    # Never reset running/unknown/terminal tasks to force replay.
+    for outcome in outcomes:
+        if outcome.get("status") != "queued":
+            continue
+        task_id = outcome.get("task_id")
+        task = store.get_task(task_id) if isinstance(task_id, str) else None
+        if task is None or task["status"] != "queued":
+            raise HTTPException(
+                status_code=409,
+                detail="A queued checkpoint does not match a queued task record; inspect task and tool journals before recovery.",
+            )
+
+    qa_checkpoint = checkpoint.get("qa_review")
+    if isinstance(qa_checkpoint, dict) and qa_checkpoint.get("status") == "queued":
+        qa_id = qa_checkpoint.get("task_id")
+        qa_task = store.get_task(qa_id) if isinstance(qa_id, str) else None
+        if qa_task is None or qa_task["status"] != "queued":
+            raise HTTPException(
+                status_code=409,
+                detail="The queued QA checkpoint does not match a queued task record; inspect it before recovery.",
+            )
+
+    try:
+        claimed = store.claim_workflow_recovery(workflow_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Workflow not found") from exc
+    if not claimed:
+        raise HTTPException(status_code=409, detail="Another request already claimed this workflow for recovery.")
+
+    try:
+        for index, outcome in enumerate(outcomes):
+            if outcome.get("status") != "queued":
+                continue
+            task_id = outcome["task_id"]
+            try:
+                result = await run_agent_task(task_id)
+                updated = {
+                    **outcome,
+                    "status": result["status"],
+                    "result": result.get("result", ""),
+                    "tool_calls": result.get("tool_calls", 0),
+                    "tool_attempts": result.get("tool_attempts", 0),
+                }
+            except HTTPException as exc:
+                saved_task = store.get_task(task_id)
+                updated = {
+                    **outcome,
+                    "status": saved_task["status"] if saved_task else "unknown",
+                    "error": exc.detail,
+                }
+            outcomes[index] = updated
+            checkpoint["tasks"] = outcomes
+            store.update_workflow(workflow_id, "running", results=checkpoint)
+
+        qa_checkpoint = checkpoint.get("qa_review")
+        if isinstance(qa_checkpoint, dict) and qa_checkpoint.get("status") == "queued":
+            qa_id = qa_checkpoint["task_id"]
+            try:
+                result = await run_agent_task(qa_id)
+                review = {
+                    "task_id": qa_id,
+                    "status": result["status"],
+                    "result": result.get("result", ""),
+                    "tool_calls": result.get("tool_calls", 0),
+                    "tool_attempts": result.get("tool_attempts", 0),
+                }
+            except HTTPException as exc:
+                saved_qa = store.get_task(qa_id)
+                review = {
+                    "task_id": qa_id,
+                    "status": saved_qa["status"] if saved_qa else "unknown",
+                    "error": exc.detail,
+                }
+            checkpoint["qa_review"] = review
+        elif qa_checkpoint is None:
+            # A crash may have happened before the QA task ID was checkpointed.
+            # Do not create another QA task automatically: an unrecorded one may exist.
+            checkpoint["qa_review"] = {
+                "status": "not_started",
+                "error": "QA task was not checkpointed before interruption; start a new workflow for a fresh QA review.",
+            }
+
+        all_ok = (
+            all(item.get("status") == "succeeded" for item in outcomes)
+            and isinstance(checkpoint.get("qa_review"), dict)
+            and checkpoint["qa_review"].get("status") == "succeeded"
+        )
+        final_status = "succeeded" if all_ok else "partial"
+        store.update_workflow(
+            workflow_id,
+            final_status,
+            results=checkpoint,
+            error=None if all_ok else "Recovery finished without replaying uncertain work; inspect remaining failed or unknown checkpoints.",
+        )
+        return {
+            "workflow_id": workflow_id,
+            "status": final_status,
+            "tasks": outcomes,
+            "qa_review": checkpoint.get("qa_review"),
+            "recovery": "explicit; only previously queued and checkpointed tasks were executed",
+        }
+    except Exception:
+        try:
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Recovery stopped unexpectedly; inspect task and tool checkpoints before another attempt.",
+            )
+        except Exception:
+            logger.exception("Could not persist interrupted workflow recovery state")
+        raise
+
+
 @app.post("/agents/orchestrate")
 async def orchestrate_agent_work(request: AgentPlanRequest):
     """Persist a workflow plan and each task/QA checkpoint while running sequentially."""
