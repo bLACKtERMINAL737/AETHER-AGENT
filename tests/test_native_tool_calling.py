@@ -357,3 +357,54 @@ async def test_tool_exception_details_are_not_sent_back_to_model(monkeypatch):
     assert secret_detail not in tool_result
     assert "Tool execution failed (RuntimeError)." in tool_result
     assert result["answer"] == "The tool failed."
+
+
+@pytest.mark.parametrize("raw_arguments", ["{not-json", '["not", "an", "object"]', "null"])
+@pytest.mark.asyncio
+async def test_invalid_tool_arguments_are_returned_without_execution(monkeypatch, raw_arguments):
+    calls = []
+    responses = [
+        completion(tool_calls=[{
+            "id": "call-invalid",
+            "type": "function",
+            "function": {
+                "name": "workspace.list_files",
+                "arguments": raw_arguments,
+            },
+        }]),
+        completion(content="The arguments were invalid."),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"entries": []}
+
+    result = await provider.chat_with_tools(
+        "List files",
+        tool_specs=[{
+            "type": "function",
+            "function": {
+                "name": "workspace.list_files",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+        execute_tool=execute,
+    )
+
+    assert executed == []
+    tool_message = next(
+        message
+        for message in calls[1]["payload"]["messages"]
+        if message.get("role") == "tool"
+    )
+    assert json.loads(tool_message["content"]) == {
+        "error": "Invalid tool arguments; expected a JSON object."
+    }
+    assert result["answer"] == "The arguments were invalid."
