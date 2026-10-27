@@ -214,7 +214,11 @@ class ToolRegistry:
             host = parsed.hostname.rstrip(".")
             if host.lower() == "localhost" or host.lower().endswith(".localhost"):
                 raise ValueError("Local hosts are not allowed")
-            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            port = parsed.port
+            if port is None:
+                port = 443 if parsed.scheme == "https" else 80
+            if port == 0:
+                raise ValueError("Port zero is not valid for a public webpage request")
             answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
             addresses = list(dict.fromkeys(
                 item[4][0].split("%", 1)[0] for item in answers
