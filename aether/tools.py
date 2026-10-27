@@ -93,7 +93,18 @@ class ToolRegistry:
                 for n, (s, _, d) in self._tools.items()]
 
     def _safe_path(self, raw_path: str) -> Path:
-        target = (self.workspace / raw_path).resolve()
+        raw = Path(raw_path)
+        if raw.is_absolute():
+            raise ToolError("Use relative paths inside the configured workspace")
+        candidate = self.workspace / raw
+        # Reject symlinks before resolve(), which would erase evidence that a
+        # path component was a symlink (including links that stay in-workspace).
+        cursor = candidate
+        while cursor != self.workspace and cursor != cursor.parent:
+            if cursor.is_symlink():
+                raise ToolError("Symlink paths are not supported")
+            cursor = cursor.parent
+        target = candidate.resolve()
         try:
             target.relative_to(self.workspace)
         except ValueError as exc:
