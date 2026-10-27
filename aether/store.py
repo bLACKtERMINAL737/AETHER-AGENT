@@ -139,8 +139,12 @@ class TaskStore:
         if status not in STATUSES:
             raise ValueError("Invalid task status")
         with self.connect() as con:
-            con.execute("UPDATE tasks SET status=?,updated_at=?,result_json=?,error_text=? WHERE id=?",
-                        (status, utc_now(), json.dumps(result, ensure_ascii=False) if result is not None else None, error, task_id))
+            cursor = con.execute(
+                "UPDATE tasks SET status=?,updated_at=?,result_json=?,error_text=? WHERE id=?",
+                (status, utc_now(), json.dumps(result, ensure_ascii=False) if result is not None else None, error, task_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError("Task not found")
 
     def begin_tool(self, task_id: str, tool_name: str, tool_input: dict[str, Any]) -> str:
         execution_id, now = str(uuid4()), utc_now()

@@ -303,3 +303,25 @@ def test_session_search_ignores_punctuation_only_query(tmp_path: Path):
 
     assert store.search_session_messages("... --- !!!") == []
 
+
+
+def test_set_task_status_raises_for_missing_task(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "missing-task.sqlite3")
+    with pytest.raises(KeyError, match="Task not found"):
+        store.set_task_status("missing-id", "failed", error="should not be lost")
+
+
+def test_set_task_status_persists_result_and_error(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "task-status.sqlite3")
+    task = store.create_task("status test", "verify status persistence")
+
+    store.set_task_status(task["id"], "failed", result={"attempt": 1}, error="expected failure")
+
+    saved = store.get_task(task["id"])
+    assert saved["status"] == "failed"
+    assert json.loads(saved["result_json"]) == {"attempt": 1}
+    assert saved["error_text"] == "expected failure"
