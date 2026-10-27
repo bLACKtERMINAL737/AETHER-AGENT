@@ -362,3 +362,42 @@ def test_pinned_page_response_body_is_bounded_to_one_megabyte(tmp_path, monkeypa
     )
 
     assert len(body) == 1_000_000
+
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "::ffff:127.0.0.1",
+        "::ffff:10.0.0.8",
+        "fc00::1",
+        "fe80::1",
+    ],
+)
+def test_web_open_rejects_non_public_ipv6_and_ipv4_mapped_addresses(
+    tmp_path, monkeypatch, address
+):
+    import socket
+
+    def unsafe_resolution(host, port, type):
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", (address, port, 0, 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", unsafe_resolution)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        ToolRegistry(tmp_path).execute(
+            "web.open", {"url": "https://mapped-address.example/resource"}
+        )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com:invalid/path",
+        "http://[not-an-ipv6-address]/",
+        "http://example.com:99999/path",
+    ],
+)
+def test_web_open_rejects_malformed_authorities(tmp_path, url):
+    with pytest.raises(ToolError, match="URL is invalid"):
+        ToolRegistry(tmp_path).execute("web.open", {"url": url})
