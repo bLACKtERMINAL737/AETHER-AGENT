@@ -4,7 +4,7 @@ from aether.tools import ToolRegistry, ToolError, provider_tool_name
 
 
 def test_list_and_search_workspace(tmp_path: Path):
-    (tmp_path / "hello.py").write_text("print('hello')\\n# Aether test\\n", encoding="utf-8")
+    (tmp_path / "hello.py").write_text("print('hello')\n# Aether test\n", encoding="utf-8")
     registry = ToolRegistry(tmp_path)
     listing = registry.execute("workspace.list_files", {"path": "."})
     assert any(entry["name"] == "hello.py" for entry in listing["entries"])
@@ -49,7 +49,7 @@ def test_provider_tool_names_are_valid_and_reversible(tmp_path: Path):
 
 def test_read_file_returns_real_contents(tmp_path: Path):
     source = tmp_path / "sample.py"
-    source.write_text("first\\nsecond\\nthird\\n", encoding="utf-8")
+    source.write_text("first\nsecond\nthird\n", encoding="utf-8")
     registry = ToolRegistry(tmp_path)
 
     result = registry.execute(
