@@ -609,3 +609,56 @@ def test_same_state_workflow_update_preserves_existing_error(tmp_path: Path):
     assert saved is not None
     assert saved["status"] == "running"
     assert saved["error_text"] == "original warning"
+
+
+
+def test_concurrent_task_claim_has_exactly_one_winner(tmp_path: Path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = TaskStore(tmp_path / "concurrent-task-claim.sqlite3")
+    task = store.create_task("Concurrent claim", "only one worker may claim this")
+    workers = 8
+    barrier = Barrier(workers)
+
+    def claim():
+        barrier.wait()
+        return store.claim_task(task["id"])
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        outcomes = list(pool.map(lambda _: claim(), range(workers)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == workers - 1
+    saved = store.get_task(task["id"])
+    assert saved is not None
+    assert saved["status"] == "running"
+
+
+def test_concurrent_workflow_recovery_claim_has_exactly_one_winner(tmp_path: Path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = TaskStore(tmp_path / "concurrent-workflow-recovery-claim.sqlite3")
+    workflow = store.create_workflow("Concurrent recovery", [])
+    store.update_workflow(
+        workflow["id"],
+        "unknown",
+        results={"tasks": [], "qa_review": None},
+        error="previous process interrupted",
+    )
+    workers = 8
+    barrier = Barrier(workers)
+
+    def claim():
+        barrier.wait()
+        return store.claim_workflow_recovery(workflow["id"])
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        outcomes = list(pool.map(lambda _: claim(), range(workers)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == workers - 1
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["status"] == "running"
