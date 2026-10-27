@@ -754,4 +754,4 @@ def test_terminal_workflow_same_state_update_cannot_replace_checkpoint(tmp_path:
         "tasks": [{"status": "succeeded"}],
         "qa_review": {"status": "succeeded"},
     }
-    assert saved["error"] == "original diagnostic"
+    assert saved["error_text"] == "original diagnostic"
