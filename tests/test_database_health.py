@@ -1,3 +1,4 @@
+import os
 from fastapi.testclient import TestClient
 
 from aether import app as app_module
@@ -9,7 +10,15 @@ def test_database_health_returns_ok_when_database_query_succeeds(monkeypatch):
     with TestClient(
         app_module.app,
         base_url="http://127.0.0.1",
-        headers={"Origin": "http://127.0.0.1", "Host": "127.0.0.1"},
+        headers={
+            "Origin": "http://127.0.0.1",
+            "Host": "127.0.0.1",
+            **(
+                {"Authorization": f"Bearer {os.environ['AETHER_API_TOKEN']}"}
+                if os.getenv("AETHER_API_TOKEN")
+                else {}
+            ),
+        },
         client=("127.0.0.1", 12345),
     ) as client:
         response = client.get("/health/db")
@@ -27,7 +36,15 @@ def test_database_health_returns_generic_error_when_database_query_fails(monkeyp
     with TestClient(
         app_module.app,
         base_url="http://127.0.0.1",
-        headers={"Origin": "http://127.0.0.1", "Host": "127.0.0.1"},
+        headers={
+            "Origin": "http://127.0.0.1",
+            "Host": "127.0.0.1",
+            **(
+                {"Authorization": f"Bearer {os.environ['AETHER_API_TOKEN']}"}
+                if os.getenv("AETHER_API_TOKEN")
+                else {}
+            ),
+        },
         client=("127.0.0.1", 12345),
         raise_server_exceptions=False,
     ) as client:
