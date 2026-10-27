@@ -422,3 +422,49 @@ def test_workflow_concurrency_configuration_is_clamped(
         )
     )
     assert result["max_concurrency"] == expected
+
+
+
+@pytest.mark.asyncio
+async def test_cancelled_workflow_marks_running_task_unknown_and_checkpoints(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    router.plan = {
+        "subtasks": [
+            {"title": "Long-running task", "input": "Work until cancelled", "role": "research"}
+        ]
+    }
+    started = asyncio.Event()
+    never_release = asyncio.Event()
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert store.claim_task(task_id)
+        started.set()
+        await never_release.wait()
+        store.set_task_status(task_id, "succeeded", result={"answer": "finished"})
+        return {
+            "task_id": task_id, "status": "succeeded", "result": "finished",
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    operation = asyncio.create_task(
+        app_module.orchestrate_agent_work(
+            app_module.AgentPlanRequest(goal="Cancel safely")
+        )
+    )
+    await asyncio.wait_for(started.wait(), timeout=2)
+    workflow = store.list_workflows()[0]
+    operation.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+
+    saved_workflow = store.get_workflow(workflow["id"])
+    assert saved_workflow["status"] == "unknown"
+    outcome = saved_workflow["results"]["tasks"][0]
+    assert outcome["status"] == "unknown"
+    assert "cancelled" in outcome["error"].lower()
+    assert store.get_task(outcome["task_id"])["status"] == "unknown"
+    assert saved_workflow["results"]["diagnostics"]["failure_count"] == 1

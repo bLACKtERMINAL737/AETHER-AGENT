@@ -687,6 +687,28 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "tool_calls": result.get("tool_calls", 0),
                 "tool_attempts": result.get("tool_attempts", 0),
             }
+        except asyncio.CancelledError:
+            saved_task = store.get_task(task_id)
+            if saved_task and saved_task["status"] in {"queued", "running"}:
+                store.set_task_status(
+                    task_id,
+                    "unknown",
+                    error="Workflow execution was cancelled; inspect task and tool journals before recovery.",
+                )
+            updated = {
+                **outcome,
+                "status": "unknown",
+                "error": "Workflow execution was cancelled; inspect task and tool journals before recovery.",
+            }
+            outcomes_by_index[plan_index] = updated
+            persist_checkpoint()
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Workflow execution was cancelled; task outcomes require inspection.",
+            )
+            raise
         except Exception as exc:
             saved_task = store.get_task(task_id)
             status = saved_task["status"] if saved_task else "failed"
@@ -775,11 +797,40 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 asyncio.create_task(execute_one(index, task_id, outcome))
                 for index, task_id, outcome in scheduled
             ]
-            for completed in asyncio.as_completed(workers):
-                plan_index, outcome = await completed
-                outcomes_by_index[plan_index] = outcome
-                # Save each completed task as soon as it settles, not only at batch end.
+            try:
+                for completed in asyncio.as_completed(workers):
+                    plan_index, outcome = await completed
+                    outcomes_by_index[plan_index] = outcome
+                    # Save each completed task as soon as it settles, not only at batch end.
+                    persist_checkpoint()
+            except asyncio.CancelledError:
+                # Cancelling the coordinator does not automatically cancel tasks
+                # yielded by as_completed; stop every worker explicitly and await cleanup.
+                for worker in workers:
+                    if not worker.done():
+                        worker.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+                for index, task_id, outcome in scheduled:
+                    current = outcomes_by_index.get(index, outcome)
+                    if current.get("status") not in {"succeeded", "failed", "blocked"}:
+                        cancel_error = (
+                            "Workflow execution was cancelled; inspect task and tool journals "
+                            "before recovery."
+                        )
+                        saved_task = store.get_task(task_id)
+                        if saved_task and saved_task["status"] in {"queued", "running"}:
+                            store.set_task_status(task_id, "unknown", error=cancel_error)
+                        outcomes_by_index[index] = {
+                            **current, "status": "unknown", "error": cancel_error
+                        }
                 persist_checkpoint()
+                store.update_workflow(
+                    workflow_id,
+                    "unknown",
+                    results=checkpoint,
+                    error="Workflow execution was cancelled; task outcomes require inspection.",
+                )
+                raise
 
         outcomes = ordered_outcomes()
         qa = store.create_task(
@@ -799,6 +850,21 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "tool_calls": qa_result.get("tool_calls", 0),
                 "tool_attempts": qa_result.get("tool_attempts", 0),
             }
+        except asyncio.CancelledError:
+            saved_qa = store.get_task(qa["id"])
+            cancel_error = "Workflow QA review was cancelled; inspect its task journal before recovery."
+            if saved_qa and saved_qa["status"] in {"queued", "running"}:
+                store.set_task_status(qa["id"], "unknown", error=cancel_error)
+            review = {"task_id": qa["id"], "status": "unknown", "error": cancel_error}
+            checkpoint["qa_review"] = review
+            checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Workflow QA review was cancelled; outcome requires inspection.",
+            )
+            raise
         except Exception as exc:
             saved_qa = store.get_task(qa["id"])
             review = {
