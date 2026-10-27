@@ -175,7 +175,13 @@ def configure_model(request: ModelConfigurationRequest):
     try:
         parsed = urlsplit(raw_url)
         host = parsed.hostname
-        if parsed.scheme not in {"http", "https"} or not host or parsed.username or parsed.password:
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not host
+            or "@" in parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
             raise ValueError
         if parsed.query or parsed.fragment:
             raise ValueError
