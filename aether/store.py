@@ -353,9 +353,12 @@ class TaskStore:
             "the", "a", "an", "is", "was", "were", "to", "of", "for",
             "in", "on", "that", "this", "please", "ask", "asked", "remember", "recall", "memorized", "saved",
         }
+        # Match complete words rather than substrings (e.g. "art" must not
+        # match "party"). Splitting hyphens/underscores keeps identifiers searchable
+        # by their meaningful components as well as their full text.
         terms = [
             term.casefold()
-            for term in re.findall(r"[\w-]+", query, flags=re.UNICODE)
+            for term in re.findall(r"\w+", query, flags=re.UNICODE)
             if term.casefold() not in stop_words
         ]
         if limit <= 0 or not terms:
@@ -372,7 +375,8 @@ class TaskStore:
             haystack = (
                 item["category"] + " " + item["content"] + " " + " ".join(item["tags"])
             ).casefold()
-            score = sum(1 for term in terms if term in haystack)
+            haystack_terms = set(re.findall(r"\w+", haystack, flags=re.UNICODE))
+            score = sum(1 for term in terms if term in haystack_terms)
             # Natural-language recall questions may not contain the saved value.
             # Give explicit user-requested memories a modest boost for those queries.
             if recall_intent and item.get("source") == "explicit_chat_request":
