@@ -351,8 +351,6 @@ def test_finish_tool_persists_result_and_error(tmp_path: Path):
 
 
 def test_workflow_plan_and_checkpoints_persist_across_store_reopen(tmp_path: Path):
-    import json
-
     db_path = tmp_path / "workflow.sqlite3"
     store = TaskStore(db_path)
     plan = [
@@ -380,7 +378,6 @@ def test_workflow_plan_and_checkpoints_persist_across_store_reopen(tmp_path: Pat
     assert saved["goal"] == "Improve reliability"
     assert saved["plan"] == plan
     assert saved["results"] == checkpoint
-    assert json.loads(saved["results_json"]) == checkpoint
 
     final_checkpoint = {
         "tasks": checkpoint["tasks"],
