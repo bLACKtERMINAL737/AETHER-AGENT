@@ -465,6 +465,7 @@ def test_unknown_workflow_requires_atomic_recovery_claim(tmp_path: Path):
 
 
 def test_task_terminal_status_cannot_be_reopened_by_stale_update(tmp_path: Path):
+    import json
     import pytest
 
     store = TaskStore(tmp_path / "task-terminal-status.sqlite3")
