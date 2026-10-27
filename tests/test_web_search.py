@@ -401,3 +401,16 @@ def test_web_open_rejects_non_public_ipv6_and_ipv4_mapped_addresses(
 def test_web_open_rejects_malformed_authorities(tmp_path, url):
     with pytest.raises(ToolError, match="URL is invalid"):
         ToolRegistry(tmp_path).execute("web.open", {"url": url})
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://@example.com/resource",
+        "https://:@example.com/resource",
+        "http://user:@example.com/resource",
+        "http://:password@example.com/resource",
+    ],
+)
+def test_web_open_rejects_url_userinfo_with_empty_components(tmp_path, url):
+    with pytest.raises(ToolError, match="URL is invalid"):
+        ToolRegistry(tmp_path).execute("web.open", {"url": url})
