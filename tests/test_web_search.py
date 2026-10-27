@@ -85,49 +85,21 @@ def test_web_search_rejects_invalid_result_limit(tmp_path):
 
 
 def test_open_web_page_extracts_readable_text_and_ignores_scripts(tmp_path, monkeypatch):
-    import httpx
+    import socket
 
-    class FakeResponse:
-        status_code = 200
-        url = "https://example.com/article"
-        encoding = "utf-8"
-        headers = {"content-type": "text/html; charset=utf-8"}
-        content = b"<html><nav>Menu</nav><h1>Current Release</h1><script>secret()</script><p>Release notes text.</p></html>"
+    def public_resolution(host, port, type):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
 
-        def __enter__(self):
-            return self
+    monkeypatch.setattr(socket, "getaddrinfo", public_resolution)
+    def fake_request(parsed, address):
+        assert parsed.hostname == "example.com"
+        assert address == "93.184.216.34"
+        return 200, {"content-type": "text/html; charset=utf-8"}, (
+            b"<html><nav>Menu</nav><h1>Current Release</h1>"
+            b"<script>secret()</script><p>Release notes text.</p></html>"
+        ), "utf-8"
 
-        def __exit__(self, *args):
-            return False
-
-        def iter_bytes(self):
-            yield self.content
-
-        def raise_for_status(self):
-            return None
-
-        @property
-        def is_redirect(self):
-            return False
-
-    class FakeClient:
-        def __init__(self, **kwargs):
-            assert kwargs["follow_redirects"] is False
-            assert kwargs["trust_env"] is False
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return False
-
-        def stream(self, method, url):
-            assert method == "GET"
-            assert url == "https://example.com/article"
-            return FakeResponse()
-
-    monkeypatch.setattr(httpx, "Client", FakeClient)
-    monkeypatch.setattr(ToolRegistry, "_validate_public_web_url", staticmethod(lambda url: url))
+    monkeypatch.setattr(ToolRegistry, "_request_pinned_page", staticmethod(fake_request))
     result = ToolRegistry(tmp_path).execute("web.open", {"url": "https://example.com/article"})
 
     assert result["status_code"] == 200
@@ -144,33 +116,39 @@ def test_open_web_page_rejects_invalid_urls(tmp_path):
         registry.execute("web.open", {"url": "http://127.0.0.1/admin"})
 
 
-def test_open_web_page_rejects_redirects_and_unsupported_content(tmp_path, monkeypatch):
-    import httpx
+def test_open_web_page_rejects_redirects(tmp_path, monkeypatch):
+    import socket
 
-    class RedirectResponse:
-        is_redirect = True
-        headers = {}
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return False
-        def raise_for_status(self):
-            return None
+    monkeypatch.setattr(
+        socket, "getaddrinfo",
+        lambda host, port, type: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))],
+    )
 
-    class FakeClient:
-        def __init__(self, **kwargs):
-            pass
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            return False
-        def stream(self, method, url):
-            return RedirectResponse()
+    def fake_request(parsed, address):
+        raise ToolError("This page redirects; use a direct public URL from search results.")
 
-    monkeypatch.setattr(httpx, "Client", FakeClient)
-    monkeypatch.setattr(ToolRegistry, "_validate_public_web_url", staticmethod(lambda url: url))
+    monkeypatch.setattr(ToolRegistry, "_request_pinned_page", staticmethod(fake_request))
     with pytest.raises(ToolError, match="redirects"):
         ToolRegistry(tmp_path).execute("web.open", {"url": "https://example.com/article"})
+
+
+def test_web_open_uses_validated_address_for_connection(tmp_path, monkeypatch):
+    import socket
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo",
+        lambda host, port, type: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))],
+    )
+    seen = {}
+
+    def fake_request(parsed, address):
+        seen["host"] = parsed.hostname
+        seen["address"] = address
+        return 200, {"content-type": "text/plain"}, b"ok", "utf-8"
+
+    monkeypatch.setattr(ToolRegistry, "_request_pinned_page", staticmethod(fake_request))
+    ToolRegistry(tmp_path).execute("web.open", {"url": "https://public.example/path"})
+    assert seen == {"host": "public.example", "address": "93.184.216.34"}
 
 
 @pytest.mark.parametrize(
