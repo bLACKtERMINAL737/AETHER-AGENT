@@ -221,6 +221,8 @@ class ToolRegistry:
         }
 
     def search_text(self, query: str, path: str = ".", max_results: int = 50) -> dict[str, Any]:
+        if max_results <= 0:
+            return {"query": query, "matches": [], "truncated": False}
         target = self._safe_path(path)
         if not target.exists() or not target.is_dir():
             raise ToolError("Search path must be an existing directory")
