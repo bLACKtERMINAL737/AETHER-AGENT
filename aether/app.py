@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 import json
@@ -550,24 +551,24 @@ async def recover_agent_workflow(workflow_id: str):
 
 @app.post("/agents/orchestrate")
 async def orchestrate_agent_work(request: AgentPlanRequest):
-    """Persist a workflow plan and each task/QA checkpoint while running sequentially."""
+    """Execute dependency-ready tasks concurrently with bounded, durable checkpoints."""
     route = "reasoning" if reasoning_provider.configured else "primary"
     prompt = (
         "Return only JSON: {subtasks:[{title,input,role,depends_on}]}. Create 1-4 tasks for the goal. "
         "depends_on is an array of zero-based prerequisite task indexes, or [] if independent. "
         "Dependencies must form an acyclic graph. Roles must be coding, research, memory, or monitor. "
-        "Keep tasks narrow. Do not claim execution.\n\n"
+        "Keep tasks narrow. Do not claim execution.\\n\\n"
         + request.goal
     )
     try:
         response = await router.chat(prompt, route)
         raw_answer = str(response.get("answer", "")).strip()
         if raw_answer.startswith("```"):
-            raw_answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
+            raw_answer = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
         try:
             data = json.loads(raw_answer)
         except json.JSONDecodeError:
-            object_match = re.search(r"\{.*\}", raw_answer, flags=re.DOTALL)
+            object_match = re.search(r"\\{.*\\}", raw_answer, flags=re.DOTALL)
             if object_match is None:
                 raise
             data = json.loads(object_match.group(0))
@@ -579,106 +580,147 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(status_code=502, detail="Planner returned an invalid plan; no tasks were created.") from exc
 
-    # Persist the validated plan before creating or running any specialist tasks.
+    # Never allow a model-generated plan to control resource usage without a cap.
+    max_concurrency = 3
     workflow = store.create_workflow(request.goal, subtasks)
     workflow_id = workflow["id"]
-    checkpoint = {"tasks": [], "qa_review": None}
+    outcomes_by_index: dict[int, dict[str, Any]] = {}
+    pending = set(range(len(subtasks)))
+    checkpoint: dict[str, Any] = {"tasks": [], "qa_review": None}
+
+    def ordered_outcomes() -> list[dict[str, Any]]:
+        return [outcomes_by_index[index] for index in sorted(outcomes_by_index)]
+
+    def persist_checkpoint() -> None:
+        checkpoint["tasks"] = ordered_outcomes()
+        store.update_workflow(workflow_id, "running", results=checkpoint)
+
+    async def execute_one(plan_index: int, task_id: str, outcome: dict[str, Any]):
+        try:
+            result = await run_agent_task(task_id)
+            updated = {
+                **outcome,
+                "status": result["status"],
+                "result": result.get("result", ""),
+                "tool_calls": result.get("tool_calls", 0),
+                "tool_attempts": result.get("tool_attempts", 0),
+            }
+        except Exception as exc:
+            saved_task = store.get_task(task_id)
+            status = saved_task["status"] if saved_task else "failed"
+            error = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            updated = {**outcome, "status": status, "error": error}
+        return plan_index, updated
 
     try:
-        outcomes_by_index: dict[int, dict[str, Any]] = {}
-        outcomes: list[dict[str, Any]] = []
-        for plan_index in dependency_order(subtasks):
-            item = subtasks[plan_index]
-            dependencies = item.get("depends_on", [])
-            blocked_by = [
-                dep for dep in dependencies
-                if outcomes_by_index.get(dep, {}).get("status") != "succeeded"
+        while pending:
+            # Resolve failed prerequisites before scheduling any newly ready work.
+            blocked_indexes = [
+                index for index in sorted(pending)
+                if any(
+                    dep in outcomes_by_index and outcomes_by_index[dep].get("status") != "succeeded"
+                    for dep in subtasks[index].get("depends_on", [])
+                )
             ]
-            if blocked_by:
-                outcome = {
-                    "plan_index": plan_index,
+            for index in blocked_indexes:
+                item = subtasks[index]
+                blocked_by = [
+                    dep for dep in item.get("depends_on", [])
+                    if outcomes_by_index.get(dep, {}).get("status") != "succeeded"
+                ]
+                outcomes_by_index[index] = {
+                    "plan_index": index,
                     "title": item["title"],
                     "role": item["role"],
-                    "depends_on": dependencies,
+                    "depends_on": item.get("depends_on", []),
                     "status": "blocked",
                     "blocked_by": blocked_by,
                     "error": "Prerequisite task(s) did not succeed; this task was not executed.",
                 }
+                pending.remove(index)
+                persist_checkpoint()
+
+            if not pending:
+                break
+
+            ready = [
+                index for index in sorted(pending)
+                if all(
+                    outcomes_by_index.get(dep, {}).get("status") == "succeeded"
+                    for dep in subtasks[index].get("depends_on", [])
+                )
+            ]
+            if not ready:
+                # The graph is validated as acyclic; reaching this branch indicates
+                # an inconsistent scheduler state, so preserve it for manual inspection.
+                raise RuntimeError("Workflow scheduler could not find a dependency-ready task")
+
+            batch = ready[:max_concurrency]
+            scheduled: list[tuple[int, str, dict[str, Any]]] = []
+            for plan_index in batch:
+                item = subtasks[plan_index]
+                dependencies = item.get("depends_on", [])
+                prerequisite_results = {
+                    str(dep): outcomes_by_index[dep].get("result", "")
+                    for dep in dependencies
+                }
+                task = store.create_task(
+                    f"[{item['role']}] {item['title']}",
+                    f"Workflow ID: {workflow_id}\\n"
+                    f"Parent goal: {request.goal}\\n"
+                    f"Assigned role: {item['role']}\\n"
+                    f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\\n"
+                    f"Task: {item['input']}",
+                )
+                outcome = {
+                    "plan_index": plan_index,
+                    "task_id": task["id"],
+                    "title": item["title"],
+                    "role": item["role"],
+                    "depends_on": dependencies,
+                    "status": "queued",
+                }
                 outcomes_by_index[plan_index] = outcome
-                outcomes.append(outcome)
-                checkpoint = {"tasks": outcomes, "qa_review": None}
-                store.update_workflow(workflow_id, "running", results=checkpoint)
-                continue
+                pending.remove(plan_index)
+                scheduled.append((plan_index, task["id"], outcome))
+                # Persist each task ID before any worker starts, so interruption
+                # cannot turn uncheckpointed running work into an automatic replay.
+                persist_checkpoint()
 
-            prerequisite_results = {
-                str(dep): outcomes_by_index[dep].get("result", "")
-                for dep in dependencies
-            }
-            task = store.create_task(
-                f"[{item['role']}] {item['title']}",
-                f"Workflow ID: {workflow_id}\n"
-                f"Parent goal: {request.goal}\n"
-                f"Assigned role: {item['role']}\n"
-                f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\n"
-                f"Task: {item['input']}",
-            )
-            outcome = {
-                "plan_index": plan_index,
-                "task_id": task["id"],
-                "title": item["title"],
-                "role": item["role"],
-                "depends_on": dependencies,
-                "status": "queued",
-            }
-            outcomes_by_index[plan_index] = outcome
-            outcomes.append(outcome)
-            checkpoint = {"tasks": outcomes, "qa_review": None}
-            store.update_workflow(workflow_id, "running", results=checkpoint)
+            workers = [
+                asyncio.create_task(execute_one(index, task_id, outcome))
+                for index, task_id, outcome in scheduled
+            ]
+            for completed in asyncio.as_completed(workers):
+                plan_index, outcome = await completed
+                outcomes_by_index[plan_index] = outcome
+                # Save each completed task as soon as it settles, not only at batch end.
+                persist_checkpoint()
 
-            try:
-                result = await run_agent_task(task["id"])
-                outcome = {
-                    **outcome,
-                    "status": result["status"],
-                    "result": result.get("result", ""),
-                    "tool_calls": result.get("tool_calls", 0),
-                    "tool_attempts": result.get("tool_attempts", 0),
-                }
-            except HTTPException as exc:
-                saved_task = store.get_task(task["id"])
-                outcome = {
-                    **outcome,
-                    "status": saved_task["status"] if saved_task else "failed",
-                    "error": exc.detail,
-                }
-            outcomes_by_index[plan_index] = outcome
-            outcomes[-1] = outcome
-            checkpoint = {"tasks": outcomes, "qa_review": None}
-            store.update_workflow(workflow_id, "running", results=checkpoint)
-
+        outcomes = ordered_outcomes()
         qa = store.create_task(
             "[qa_security] Review specialist results",
-            "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
+            "Review this goal and the specialist results for correctness, security risks, and missing tests.\\n"
             + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False),
         )
         checkpoint["qa_review"] = {"task_id": qa["id"], "status": "queued"}
-        store.update_workflow(workflow_id, "running", results=checkpoint)
+        persist_checkpoint()
 
         try:
             qa_result = await run_agent_task(qa["id"])
             review = {
                 "task_id": qa["id"],
                 "status": qa_result["status"],
-                "result": qa_result["result"],
+                "result": qa_result.get("result", ""),
                 "tool_calls": qa_result.get("tool_calls", 0),
                 "tool_attempts": qa_result.get("tool_attempts", 0),
             }
-        except HTTPException as exc:
+        except Exception as exc:
             saved_qa = store.get_task(qa["id"])
             review = {
                 "task_id": qa["id"],
                 "status": saved_qa["status"] if saved_qa else "failed",
-                "error": exc.detail,
+                "error": exc.detail if isinstance(exc, HTTPException) else str(exc),
             }
         checkpoint["qa_review"] = review
         all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded"
@@ -697,6 +739,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "qa_review": review,
             "workspace_modified": False,
             "approval_required_before_changes": True,
+            "max_concurrency": max_concurrency,
         }
     except Exception:
         # Keep already persisted checkpoints; never automatically replay a workflow
