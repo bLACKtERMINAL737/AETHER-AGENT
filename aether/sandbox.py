@@ -104,8 +104,11 @@ class DockerTestSandbox:
     def run_pytest(self) -> dict[str, Any]:
         if not shutil.which("docker"):
             raise SandboxError("Docker CLI not found. Install Docker and build the local sandbox image first.")
-        if not self.image or any(char.isspace() for char in self.image):
-            raise SandboxError("Invalid sandbox image name")
+        if (
+            not isinstance(self.image, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}", self.image)
+        ):
+            raise SandboxError("Invalid sandbox image reference")
         with tempfile.TemporaryDirectory(prefix="aether-sandbox-") as temp:
             snapshot = Path(temp) / "workspace"
             snapshot.mkdir(mode=0o777)
