@@ -502,7 +502,18 @@ def execute_tool(tool_name: str, request: ToolRequest):
         raise HTTPException(status_code=404, detail="Task not found")
     if not task_id:
         task_id = store.create_task(f"Tool: {tool_name}", f"Execute {tool_name}")["id"]
-    store.set_task_status(task_id, "running")
+    # A task is a single-use execution record. Claim it atomically so a retry
+    # or concurrent request cannot reset a terminal/running task and execute
+    # the same work twice.
+    try:
+        claimed = store.claim_task(task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+    if not claimed:
+        raise HTTPException(
+            status_code=409,
+            detail="Task cannot run from its current status. Only queued tasks can run.",
+        )
     execution_id = None
     try:
         execution_id = store.begin_tool(task_id, tool_name, request.input)
