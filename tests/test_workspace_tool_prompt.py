@@ -100,8 +100,6 @@ async def test_workspace_guidance_is_not_added_when_no_tools_are_supplied(monkey
     assert "Workspace tool selection rules" not in system_prompt
 
 
-from pathlib import Path
-
 from aether.tools import ToolError, ToolRegistry
 
 
