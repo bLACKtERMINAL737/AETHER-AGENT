@@ -582,6 +582,12 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
 
     # Never allow a model-generated plan to control resource usage without a cap.
     max_concurrency = 3
+    try:
+        configured_timeout = float(os.getenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "120"))
+    except (TypeError, ValueError):
+        configured_timeout = 120.0
+    task_timeout_seconds = min(max(configured_timeout, 1.0), 600.0)
+
     workflow = store.create_workflow(request.goal, subtasks)
     workflow_id = workflow["id"]
     outcomes_by_index: dict[int, dict[str, Any]] = {}
@@ -595,9 +601,27 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         checkpoint["tasks"] = ordered_outcomes()
         store.update_workflow(workflow_id, "running", results=checkpoint)
 
+    async def run_task_with_timeout(task_id: str) -> dict[str, Any]:
+        try:
+            return await asyncio.wait_for(
+                run_agent_task(task_id),
+                timeout=task_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            saved_task = store.get_task(task_id)
+            # A timed-out operation may have made progress before cancellation.
+            # Preserve uncertainty instead of marking it failed or replayable.
+            if saved_task and saved_task["status"] in {"queued", "running"}:
+                store.set_task_status(
+                    task_id,
+                    "unknown",
+                    error=f"Agent task exceeded its {task_timeout_seconds:g}s timeout; outcome requires inspection.",
+                )
+            raise
+
     async def execute_one(plan_index: int, task_id: str, outcome: dict[str, Any]):
         try:
-            result = await run_agent_task(task_id)
+            result = await run_task_with_timeout(task_id)
             updated = {
                 **outcome,
                 "status": result["status"],
@@ -609,6 +633,8 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             saved_task = store.get_task(task_id)
             status = saved_task["status"] if saved_task else "failed"
             error = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            if not error and saved_task:
+                error = saved_task.get("error_text") or ""
             updated = {**outcome, "status": status, "error": error}
         return plan_index, updated
 
@@ -707,7 +733,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         persist_checkpoint()
 
         try:
-            qa_result = await run_agent_task(qa["id"])
+            qa_result = await run_task_with_timeout(qa["id"])
             review = {
                 "task_id": qa["id"],
                 "status": qa_result["status"],
@@ -740,6 +766,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "workspace_modified": False,
             "approval_required_before_changes": True,
             "max_concurrency": max_concurrency,
+            "task_timeout_seconds": task_timeout_seconds,
         }
     except Exception:
         # Keep already persisted checkpoints; never automatically replay a workflow
