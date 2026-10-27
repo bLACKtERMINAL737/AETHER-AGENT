@@ -462,7 +462,9 @@ async def recover_agent_workflow(workflow_id: str):
             if not isinstance(qa_checkpoint, dict):
                 raise ValueError("Workflow QA checkpoint is malformed")
             qa_status = qa_checkpoint.get("status")
-            if qa_status not in allowed_task_statuses:
+            # Recovery itself can persist this sentinel when interruption happened
+            # before a QA task ID was checkpointed. It is valid only without a task ID.
+            if qa_status not in allowed_task_statuses | {"not_started"}:
                 raise ValueError("Workflow QA checkpoint has an invalid status")
             qa_id = qa_checkpoint.get("task_id")
             if not isinstance(qa_id, str) or not qa_id.strip() or qa_id in seen_task_ids:
