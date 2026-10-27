@@ -381,3 +381,41 @@ async def test_recovery_rejects_invalid_dependency_index_types_and_duplicates(
 
     assert exc.value.status_code == 409
     assert store.get_workflow(workflow_id)["status"] == "unknown"
+
+
+@pytest.mark.parametrize("invalid_dependencies", [[-1], [1]])
+@pytest.mark.asyncio
+async def test_recovery_rejects_out_of_range_dependency_indexes(
+    tmp_path, monkeypatch, invalid_dependencies
+):
+    store = TaskStore(tmp_path / "recovery.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    task = store.create_task("[research] Inspect files", "Read-only inspection")
+    plan = [{
+        "title": "Inspect files",
+        "input": "Read-only inspection",
+        "role": "research",
+        "depends_on": invalid_dependencies,
+    }]
+    checkpoint = {
+        "tasks": [{
+            "task_id": task["id"],
+            "title": "Inspect files",
+            "role": "research",
+            "status": "queued",
+            "depends_on": invalid_dependencies,
+        }],
+        "qa_review": None,
+    }
+    workflow = store.create_workflow("Inspect safely", plan)
+    workflow_id = workflow["id"]
+    store.update_workflow(
+        workflow_id, "unknown", results=checkpoint,
+        error="simulated out-of-range dependency metadata"
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
