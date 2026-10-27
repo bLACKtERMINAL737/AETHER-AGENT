@@ -235,6 +235,7 @@ class ToolRegistry:
             dirs[:] = [
                 d for d in dirs
                 if d.casefold() not in excluded_dirs
+                and not self._is_sensitive_file(d)
                 and not (Path(root) / d).is_symlink()
             ]
             for name in names:
