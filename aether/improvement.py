@@ -8,6 +8,9 @@ GateStatus = Literal["blocked", "ready_for_review", "approved_for_apply"]
 @dataclass(frozen=True)
 class TestEvidence:
     """Auditable test evidence for one version of the workspace."""
+
+    __test__ = False
+
     passed: bool
     total: int
     failed: int = 0
