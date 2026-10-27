@@ -157,6 +157,12 @@ class ToolRegistry:
         excluded = {".ssh", ".aws", ".azure", ".gnupg"}
         return any(part.casefold() in excluded for part in relative.parts)
 
+    @classmethod
+    def _is_sensitive_directory_path(cls, relative: Path) -> bool:
+        return cls._is_credential_path(relative) or any(
+            cls._is_sensitive_file(part) for part in relative.parts
+        )
+
     @staticmethod
     def _is_sensitive_file(name: str) -> bool:
         """Keep common local secret files out of model-readable workspace tools."""
@@ -172,7 +178,7 @@ class ToolRegistry:
 
     def list_files(self, path: str = ".") -> dict[str, Any]:
         target = self._safe_path(path)
-        if self._is_credential_path(target.relative_to(self.workspace)):
+        if self._is_sensitive_directory_path(target.relative_to(self.workspace)):
             raise ToolError("Path is excluded because it may contain credentials")
         if not target.exists():
             raise ToolError("Path does not exist")
