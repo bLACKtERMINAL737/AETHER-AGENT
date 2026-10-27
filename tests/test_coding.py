@@ -272,8 +272,9 @@ async def test_iterative_loop_returns_pending_proposal_after_sandbox_pass(tmp_pa
     engine = CodingEngine(workspace, store, router, enable_test_runner=True)
 
     results = iter([
+        {"passed": True, "returncode": 0, "stdout": "===== 2 passed in 0.1s =====", "stderr": ""},
         {"passed": False, "returncode": 1, "stdout": "assert 2 == 3", "stderr": ""},
-        {"passed": True, "returncode": 0, "stdout": "2 passed", "stderr": ""},
+        {"passed": True, "returncode": 0, "stdout": "===== 2 passed in 0.1s =====", "stderr": ""},
     ])
     monkeypatch.setattr(CodingEngine, "run_tests", lambda self: next(results))
 
