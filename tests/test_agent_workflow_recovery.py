@@ -164,3 +164,42 @@ async def test_recovery_rejects_cyclic_dependency_checkpoint_before_claim(tmp_pa
     assert error.value.status_code == 409
     assert store.get_workflow(workflow["id"])["status"] == "unknown"
     assert store.get_task(task["id"])["status"] == "queued"
+
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda task: task.update(plan_index=7), "plan indexes"),
+        (lambda task: task.update(status="mystery"), "task status"),
+        (lambda task: task.update(task_id=""), "task IDs"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_recovery_rejects_inconsistent_checkpoint_identity_before_claim(
+    tmp_path, monkeypatch, mutate, message
+):
+    store = TaskStore(tmp_path / "checkpoint-integrity.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    task = store.create_task("[research] Must remain queued", "Do not run on invalid checkpoint")
+    workflow = store.create_workflow(
+        "Invalid checkpoint identity",
+        [{"title": "Must remain queued", "input": "Inspect", "role": "research"}],
+    )
+    saved_task = {
+        "plan_index": 0, "task_id": task["id"], "title": "Must remain queued",
+        "status": "queued", "depends_on": [],
+    }
+    mutate(saved_task)
+    store.update_workflow(
+        workflow["id"], "unknown",
+        results={"tasks": [saved_task], "qa_review": None},
+        error="simulated inconsistent checkpoint",
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await app_module.recover_agent_workflow(workflow["id"])
+
+    assert error.value.status_code == 409
+    assert store.get_workflow(workflow["id"])["status"] == "unknown"
+    assert store.get_task(task["id"])["status"] == "queued"

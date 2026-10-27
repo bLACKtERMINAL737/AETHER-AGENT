@@ -417,10 +417,27 @@ async def recover_agent_workflow(workflow_id: str):
     if not isinstance(outcomes, list) or any(not isinstance(item, dict) for item in outcomes):
         raise HTTPException(status_code=409, detail="Workflow checkpoints are invalid; inspect the record manually.")
 
-    # Validate the saved dependency graph before claiming recovery. Corrupt indexes,
-    # self-dependencies, and cycles must never cause recovery to execute out of order.
+    # Validate checkpoint structure before claiming recovery. These fields influence
+    # task identity and dependency order, so reject inconsistent records rather than
+    # guessing which saved task should run.
+    allowed_task_statuses = {"queued", "running", "succeeded", "failed", "unknown", "blocked"}
+    seen_task_ids: set[str] = set()
     try:
         for index, outcome in enumerate(outcomes):
+            plan_index = outcome.get("plan_index", index)
+            if (
+                not isinstance(plan_index, int)
+                or isinstance(plan_index, bool)
+                or plan_index != index
+            ):
+                raise ValueError("Workflow checkpoint plan indexes are inconsistent")
+            status = outcome.get("status")
+            if status not in allowed_task_statuses:
+                raise ValueError("Workflow checkpoint contains an invalid task status")
+            task_id = outcome.get("task_id")
+            if not isinstance(task_id, str) or not task_id.strip() or task_id in seen_task_ids:
+                raise ValueError("Workflow checkpoint task IDs are missing or duplicated")
+            seen_task_ids.add(task_id)
             dependencies = outcome.get("depends_on", [])
             if not isinstance(dependencies, list) or any(
                 not isinstance(dep, int) or isinstance(dep, bool)
@@ -428,6 +445,16 @@ async def recover_agent_workflow(workflow_id: str):
                 for dep in dependencies
             ) or len(set(dependencies)) != len(dependencies):
                 raise ValueError("Invalid dependency indexes in workflow checkpoint")
+        qa_checkpoint = checkpoint.get("qa_review")
+        if qa_checkpoint is not None:
+            if not isinstance(qa_checkpoint, dict):
+                raise ValueError("Workflow QA checkpoint is malformed")
+            qa_status = qa_checkpoint.get("status")
+            if qa_status not in allowed_task_statuses:
+                raise ValueError("Workflow QA checkpoint has an invalid status")
+            qa_id = qa_checkpoint.get("task_id")
+            if not isinstance(qa_id, str) or not qa_id.strip() or qa_id in seen_task_ids:
+                raise ValueError("Workflow QA checkpoint task ID is missing or duplicated")
         recovery_order = dependency_order(outcomes)
     except (TypeError, ValueError) as exc:
         raise HTTPException(
