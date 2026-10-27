@@ -461,3 +461,39 @@ def test_unknown_workflow_requires_atomic_recovery_claim(tmp_path: Path):
     assert store.claim_workflow_recovery(workflow["id"]) is True
     assert store.claim_workflow_recovery(workflow["id"]) is False
     assert store.get_workflow(workflow["id"])["status"] == "running"
+
+
+
+def test_task_terminal_status_cannot_be_reopened_by_stale_update(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "task-terminal-status.sqlite3")
+    task = store.create_task("Finish once", "protect terminal journal state")
+    store.set_task_status(task["id"], "succeeded", result={"answer": "done"})
+
+    with pytest.raises(ValueError, match="Invalid task status transition from succeeded to running"):
+        store.set_task_status(task["id"], "running", error=None)
+
+    with pytest.raises(ValueError, match="Invalid task status transition from succeeded to unknown"):
+        store.set_task_status(task["id"], "unknown", error="stale cancellation")
+
+    saved = store.get_task(task["id"])
+    assert saved is not None
+    assert saved["status"] == "succeeded"
+    assert saved["result"] == {"answer": "done"}
+
+
+def test_unknown_task_cannot_be_marked_succeeded_by_late_response(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "task-unknown-status.sqlite3")
+    task = store.create_task("Uncertain", "late response must not erase uncertainty")
+    store.set_task_status(task["id"], "unknown", error="execution outcome uncertain")
+
+    with pytest.raises(ValueError, match="Invalid task status transition from unknown to succeeded"):
+        store.set_task_status(task["id"], "succeeded", result={"late": True})
+
+    saved = store.get_task(task["id"])
+    assert saved is not None
+    assert saved["status"] == "unknown"
+    assert saved["error"] == "execution outcome uncertain"
