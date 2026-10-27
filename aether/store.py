@@ -197,6 +197,23 @@ class TaskStore:
             if (workflow := self.get_workflow(row["id"])) is not None
         ]
 
+    def claim_workflow_recovery(self, workflow_id: str) -> bool:
+        """Atomically claim an unknown workflow for one explicit recovery attempt."""
+        with self.connect() as con:
+            cursor = con.execute(
+                "UPDATE agent_workflows SET status='running',updated_at=?,error_text=NULL "
+                "WHERE id=? AND status='unknown'",
+                (utc_now(), workflow_id),
+            )
+            if cursor.rowcount == 1:
+                return True
+            row = con.execute(
+                "SELECT id FROM agent_workflows WHERE id=?", (workflow_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError("Workflow not found")
+            return False
+
     def update_workflow(
         self,
         workflow_id: str,
