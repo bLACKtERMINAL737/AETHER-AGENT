@@ -325,3 +325,26 @@ def test_set_task_status_persists_result_and_error(tmp_path: Path):
     assert saved["status"] == "failed"
     assert json.loads(saved["result_json"]) == {"attempt": 1}
     assert saved["error_text"] == "expected failure"
+
+
+def test_finish_tool_raises_for_missing_execution(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "missing-tool-execution.sqlite3")
+    with pytest.raises(KeyError, match="Tool execution not found"):
+        store.finish_tool("missing-execution-id", "failed", error="should not be lost")
+
+
+def test_finish_tool_persists_result_and_error(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "tool-execution-status.sqlite3")
+    task = store.create_task("tool status test", "verify tool result persistence")
+    execution_id = store.begin_tool(task["id"], "workspace.read_file", {"path": "notes.txt"})
+
+    store.finish_tool(execution_id, "failed", result={"attempt": 1}, error="file unavailable")
+
+    saved = store.list_tool_executions(task["id"])[0]
+    assert saved["status"] == "failed"
+    assert json.loads(saved["result_json"]) == {"attempt": 1}
+    assert saved["error_text"] == "file unavailable"
