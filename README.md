@@ -14,6 +14,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Model route discovery** via `GET /models`, returning only route IDs, model IDs, and configured status.
 - **Task-specific model routing** for primary, coding specialist, optional reasoning specialist, and fallback providers; each route can use a different OpenAI-compatible endpoint/model.
 - **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures.
+- **Configurable model request timeout** shared across primary, coding, reasoning, and fallback routes, with validated 1–600 second bounds.
 - **Coding proposals** that show file diffs and require explicit approval before changes are applied.
 - **Proposal state protection** so only valid pending proposals can be approved or rejected, and already-applied changes cannot be applied again.
 - **Test-and-fix workflow** with up to three rounds on a disposable workspace copy; only a passing candidate becomes a proposal.
