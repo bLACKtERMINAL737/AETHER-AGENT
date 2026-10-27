@@ -228,6 +228,7 @@ $("deleteSession").onclick=async()=>{
  }catch(e){setStatus("chatStatus",e.message,"bad");}
 };
 async function sendChat(){
+ if($("sendChat").disabled)return;
  const message=$("chatInput").value.trim();
  if(!message){setStatus("chatStatus","Enter a message first.","bad");return;}
  $("sendChat").disabled=true;setStatus("chatStatus","AETHER CLAW is thinking…");
