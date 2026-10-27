@@ -1,0 +1,125 @@
+import json
+
+import pytest
+from fastapi import HTTPException
+
+from aether import app as app_module
+from aether.store import TaskStore
+
+
+class PlanningAndSpecialistRouter:
+    def __init__(self, fail_role=None):
+        self.plan = {
+            "subtasks": [
+                {"title": "Inspect repository", "input": "Read the relevant implementation and report evidence", "role": "research"},
+                {"title": "Review risks", "input": "Check implementation risks and missing tests", "role": "monitor"},
+            ]
+        }
+        self.fail_role = fail_role
+        self.planning_calls = []
+
+    async def chat(self, message, task_type):
+        self.planning_calls.append((message, task_type))
+        return {"answer": json.dumps(self.plan)}
+
+    async def chat_with_tools(self, message, task_type, **kwargs):
+        if self.fail_role and f"You are the {self.fail_role} specialist" in message:
+            raise RuntimeError("simulated specialist failure")
+        return {"answer": f"Verified result for {task_type}", "tool_calls": 0}
+
+
+class NoTools:
+    def describe(self):
+        return []
+
+
+class ConfiguredRoute:
+    configured = True
+
+
+def configure(monkeypatch, tmp_path, *, fail_role=None):
+    store = TaskStore(tmp_path / "workflow-app.sqlite3")
+    router = PlanningAndSpecialistRouter(fail_role=fail_role)
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", router)
+    monkeypatch.setattr(app_module, "tools", NoTools())
+    monkeypatch.setattr(app_module, "reasoning_provider", ConfiguredRoute())
+    return store, router
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_persists_plan_tasks_and_qa_checkpoint(tmp_path, monkeypatch):
+    store, router = configure(monkeypatch, tmp_path)
+
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Inspect the repository and review its risks")
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["workflow_id"]
+    assert result["workspace_modified"] is False
+    assert result["approval_required_before_changes"] is True
+    assert len(router.planning_calls) == 1
+
+    saved = store.get_workflow(result["workflow_id"])
+    assert saved is not None
+    assert saved["status"] == "succeeded"
+    assert saved["plan"] == router.plan["subtasks"]
+    assert [item["status"] for item in saved["results"]["tasks"]] == [
+        "succeeded", "succeeded"
+    ]
+    assert saved["results"]["qa_review"]["status"] == "succeeded"
+    assert saved["error_text"] is None
+
+    # Checkpoints refer to durable task-journal entries, not only in-memory output.
+    for item in saved["results"]["tasks"]:
+        task = store.get_task(item["task_id"])
+        assert task is not None
+        assert task["status"] == "succeeded"
+    qa = store.get_task(saved["results"]["qa_review"]["task_id"])
+    assert qa is not None
+    assert qa["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_persists_partial_outcome_when_specialist_fails(
+    tmp_path, monkeypatch
+):
+    store, _router = configure(monkeypatch, tmp_path, fail_role="research")
+
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Inspect a task and report issues")
+    )
+
+    assert result["status"] == "partial"
+    saved = store.get_workflow(result["workflow_id"])
+    assert saved is not None
+    assert saved["status"] == "partial"
+    assert saved["results"]["tasks"][0]["status"] == "failed"
+    assert saved["results"]["tasks"][1]["status"] == "succeeded"
+    assert saved["results"]["qa_review"]["status"] == "succeeded"
+    assert saved["error_text"] is not None
+
+
+def test_workflow_read_endpoints_return_saved_state_and_validate_ids(
+    tmp_path, monkeypatch
+):
+    store, _router = configure(monkeypatch, tmp_path)
+    workflow = store.create_workflow(
+        "Saved workflow",
+        [{"title": "Inspect", "input": "Read safely", "role": "research"}],
+    )
+
+    item = app_module.get_agent_workflow(workflow["id"])
+    listing = app_module.list_agent_workflows(limit=10)
+
+    assert item["id"] == workflow["id"]
+    assert listing["workflows"][0]["id"] == workflow["id"]
+
+    with pytest.raises(HTTPException) as missing:
+        app_module.get_agent_workflow("missing-workflow")
+    assert missing.value.status_code == 404
+
+    with pytest.raises(HTTPException) as bad_limit:
+        app_module.list_agent_workflows(limit=0)
+    assert bad_limit.value.status_code == 400
