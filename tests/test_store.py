@@ -662,3 +662,28 @@ def test_concurrent_workflow_recovery_claim_has_exactly_one_winner(tmp_path: Pat
     saved = store.get_workflow(workflow["id"])
     assert saved is not None
     assert saved["status"] == "running"
+
+
+
+def test_concurrent_proposal_apply_claim_has_exactly_one_winner(tmp_path: Path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = TaskStore(tmp_path / "concurrent-proposal-claim.sqlite3")
+    proposal = store.create_proposal("Concurrent apply claim", [])
+    store.set_proposal_status(proposal["id"], "approved")
+    workers = 8
+    barrier = Barrier(workers)
+
+    def claim():
+        barrier.wait()
+        return store.claim_proposal_for_apply(proposal["id"])
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        outcomes = list(pool.map(lambda _: claim(), range(workers)))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == workers - 1
+    saved = store.get_proposal(proposal["id"])
+    assert saved is not None
+    assert saved["status"] == "applying"
