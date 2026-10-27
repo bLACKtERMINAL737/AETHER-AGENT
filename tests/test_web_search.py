@@ -171,3 +171,62 @@ def test_open_web_page_rejects_redirects_and_unsupported_content(tmp_path, monke
     monkeypatch.setattr(ToolRegistry, "_validate_public_web_url", staticmethod(lambda url: url))
     with pytest.raises(ToolError, match="redirects"):
         ToolRegistry(tmp_path).execute("web.open", {"url": "https://example.com/article"})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file:///etc/passwd",
+        "ftp://example.com/resource",
+        "https://user:password@example.com/",
+        "http://localhost./admin",
+        "http://service.localhost/admin",
+        "http://[::1]/admin",
+        "http://169.254.169.254/latest/meta-data/",
+    ],
+)
+def test_web_open_rejects_unsafe_url_forms(tmp_path, url):
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        registry.execute("web.open", {"url": url})
+
+
+def test_web_open_rejects_public_hostname_resolving_to_private_address(
+    tmp_path, monkeypatch
+):
+    import socket
+
+    def private_resolution(host, port, type):
+        assert host == "public-looking.example"
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.8", port)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", private_resolution)
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        registry.execute(
+            "web.open", {"url": "https://public-looking.example/private"}
+        )
+
+
+def test_web_open_rejects_hostname_with_mixed_public_and_private_addresses(
+    tmp_path, monkeypatch
+):
+    import socket
+
+    def mixed_resolution(host, port, type):
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.10", port)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", mixed_resolution)
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        registry.execute(
+            "web.open", {"url": "https://mixed-address.example/article"}
+        )
