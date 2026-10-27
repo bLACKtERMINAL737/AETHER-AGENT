@@ -157,6 +157,19 @@ class ToolRegistry:
         excluded = {".ssh", ".aws", ".azure", ".gnupg"}
         return any(part.casefold() in excluded for part in relative.parts)
 
+    @staticmethod
+    def _is_sensitive_file(name: str) -> bool:
+        """Keep common local secret files out of model-readable workspace tools."""
+        normalized = name.casefold()
+        if normalized == ".env" or normalized.startswith(".env."):
+            return normalized not in {".env.example", ".env.sample", ".env.template"}
+        if normalized in {
+            "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+            "credentials", "credentials.json", "secrets.json",
+        }:
+            return True
+        return Path(normalized).suffix in {".pem", ".key", ".p12", ".pfx", ".keystore"}
+
     def list_files(self, path: str = ".") -> dict[str, Any]:
         target = self._safe_path(path)
         if self._is_credential_path(target.relative_to(self.workspace)):
@@ -169,7 +182,7 @@ class ToolRegistry:
         # workspace files/directories, since their targets may be outside the workspace.
         entries = [{"name": p.name, "type": "directory" if p.is_dir() else "file"}
                    for p in sorted(target.iterdir(), key=lambda p: p.name.casefold())
-                   if not p.is_symlink()]
+                   if not p.is_symlink() and not self._is_sensitive_file(p.name)]
         return {"path": str(target.relative_to(self.workspace)), "entries": entries[:500]}
 
     def read_file(
@@ -178,6 +191,8 @@ class ToolRegistry:
         target = self._safe_path(path)
         if self._is_credential_path(target.relative_to(self.workspace)):
             raise ToolError("Path is excluded because it may contain credentials")
+        if self._is_sensitive_file(target.name):
+            raise ToolError("File is excluded because it may contain credentials")
         if not target.exists():
             raise ToolError("File does not exist")
         if not target.is_file():
@@ -224,7 +239,7 @@ class ToolRegistry:
             ]
             for name in names:
                 file_path = Path(root) / name
-                if file_path.suffix.lower() not in allowed:
+                if file_path.suffix.lower() not in allowed or self._is_sensitive_file(name):
                     continue
                 lines = self._read_workspace_file(file_path)
                 if lines is None:
