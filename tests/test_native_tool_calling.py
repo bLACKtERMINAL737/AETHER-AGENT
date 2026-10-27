@@ -254,3 +254,31 @@ async def test_duplicate_tool_call_ids_are_rejected_before_execution(monkeypatch
         )
 
     assert executed == []
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("web_tool_name", ["web.search", "web__search"])
+async def test_live_search_guidance_recognizes_provider_tool_name_variants(
+    monkeypatch, web_tool_name
+):
+    calls = []
+    responses = [completion(content="Search guidance was included.")]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    result = await provider.chat_with_tools(
+        "What is the latest update?",
+        tool_specs=[{
+            "type": "function",
+            "function": {"name": web_tool_name, "parameters": {"type": "object"}},
+        }],
+        execute_tool=lambda *_args: None,
+    )
+
+    system_message = calls[0]["payload"]["messages"][0]["content"]
+    assert "Live-search response standard" in system_message
+    assert result["answer"] == "Search guidance was included."
