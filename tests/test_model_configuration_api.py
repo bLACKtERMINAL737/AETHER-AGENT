@@ -110,3 +110,29 @@ def test_model_configuration_endpoint_rejects_blank_secret(client_and_providers)
         },
     )
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://@api.example.com/v1",
+        "https://:@api.example.com/v1",
+        "https://user:@api.example.com/v1",
+        "https://:secret@api.example.com/v1",
+    ],
+)
+def test_model_configuration_endpoint_rejects_empty_or_partial_url_userinfo(
+    client_and_providers, base_url
+):
+    client, _ = client_and_providers
+    response = client.post(
+        "/models/configure",
+        json={
+            "route": "primary",
+            "base_url": base_url,
+            "model": "test-model",
+            "api_key": "test-key",
+        },
+    )
+
+    assert response.status_code == 422
