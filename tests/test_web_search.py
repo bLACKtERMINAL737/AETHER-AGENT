@@ -208,3 +208,157 @@ def test_web_open_rejects_hostname_with_mixed_public_and_private_addresses(
         registry.execute(
             "web.open", {"url": "https://mixed-address.example/article"}
         )
+
+
+
+def test_pinned_http_connection_connects_to_validated_ip(tmp_path, monkeypatch):
+    import socket
+    from urllib.parse import urlsplit
+
+    from aether.tools import ToolRegistry
+
+    seen = {}
+    fake_socket = object()
+
+    def create_connection(destination, timeout, source_address):
+        seen["destination"] = destination
+        seen["timeout"] = timeout
+        return fake_socket
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+
+    class FakeResponse:
+        status = 200
+        headers = types.SimpleNamespace(get_content_charset=lambda: "utf-8")
+
+        def getheaders(self):
+            return [("Content-Type", "text/plain")]
+
+        def read(self, limit):
+            seen["read_limit"] = limit
+            return b"hello"
+
+    def request_and_connect(connection, method, target, headers):
+        connection.connect()
+        seen["request"] = (method, target, headers)
+
+    monkeypatch.setattr("http.client.HTTPConnection.request", request_and_connect)
+    monkeypatch.setattr("http.client.HTTPConnection.getresponse", lambda self: FakeResponse())
+    monkeypatch.setattr("http.client.HTTPConnection.close", lambda self: None)
+
+    status, headers, body, charset = ToolRegistry._request_pinned_page(
+        urlsplit("http://public.example/path?q=1"), "93.184.216.34"
+    )
+
+    assert seen["destination"] == ("93.184.216.34", 80)
+    assert seen["request"][0:2] == ("GET", "/path?q=1")
+    assert seen["request"][2]["Host"] == "public.example"
+    assert status == 200
+    assert body == b"hello"
+    assert charset == "utf-8"
+
+
+def test_pinned_https_connection_pins_ip_but_keeps_hostname_for_tls(tmp_path, monkeypatch):
+    import socket
+    from urllib.parse import urlsplit
+
+    from aether.tools import ToolRegistry
+
+    seen = {}
+    raw_socket = object()
+    tls_socket = object()
+
+    def create_connection(destination, timeout, source_address):
+        seen["destination"] = destination
+        return raw_socket
+
+    class FakeTLSContext:
+        def wrap_socket(self, sock, server_hostname):
+            seen["wrapped_socket"] = sock
+            seen["server_hostname"] = server_hostname
+            return tls_socket
+
+    monkeypatch.setattr(socket, "create_connection", create_connection)
+    monkeypatch.setattr("ssl.create_default_context", FakeTLSContext)
+
+    class FakeResponse:
+        status = 200
+        headers = types.SimpleNamespace(get_content_charset=lambda: "utf-8")
+
+        def getheaders(self):
+            return [("Content-Type", "text/plain; charset=utf-8")]
+
+        def read(self, limit):
+            return b"secure"
+
+    def request_and_connect(connection, method, target, headers):
+        connection.connect()
+        seen["request"] = (method, target, headers)
+
+    monkeypatch.setattr("http.client.HTTPConnection.request", request_and_connect)
+    monkeypatch.setattr("http.client.HTTPConnection.getresponse", lambda self: FakeResponse())
+    monkeypatch.setattr("http.client.HTTPConnection.close", lambda self: None)
+
+    status, _, body, charset = ToolRegistry._request_pinned_page(
+        urlsplit("https://public.example:8443/docs"), "93.184.216.34"
+    )
+
+    assert seen["destination"] == ("93.184.216.34", 8443)
+    assert seen["wrapped_socket"] is raw_socket
+    assert seen["server_hostname"] == "public.example"
+    assert seen["request"][0:2] == ("GET", "/docs")
+    assert seen["request"][2]["Host"] == "public.example:8443"
+    assert status == 200
+    assert body == b"secure"
+    assert charset == "utf-8"
+
+
+@pytest.mark.parametrize("status", [301, 302, 307, 308])
+def test_pinned_page_rejects_redirect_responses(tmp_path, monkeypatch, status):
+    from urllib.parse import urlsplit
+
+    from aether.tools import ToolRegistry
+
+    class FakeResponse:
+        def __init__(self):
+            self.status = status
+            self.headers = types.SimpleNamespace(get_content_charset=lambda: "utf-8")
+
+        def getheaders(self):
+            return [("Location", "http://127.0.0.1/admin"), ("Content-Type", "text/html")]
+
+    monkeypatch.setattr("http.client.HTTPConnection.request", lambda *args, **kwargs: None)
+    monkeypatch.setattr("http.client.HTTPConnection.getresponse", lambda self: FakeResponse())
+    monkeypatch.setattr("http.client.HTTPConnection.close", lambda self: None)
+
+    with pytest.raises(ToolError, match="redirects"):
+        ToolRegistry._request_pinned_page(
+            urlsplit("http://public.example/redirect"), "93.184.216.34"
+        )
+
+
+def test_pinned_page_response_body_is_bounded_to_one_megabyte(tmp_path, monkeypatch):
+    from urllib.parse import urlsplit
+
+    from aether.tools import ToolRegistry
+
+    class FakeResponse:
+        status = 200
+        headers = types.SimpleNamespace(get_content_charset=lambda: "utf-8")
+
+        def getheaders(self):
+            return [("Content-Type", "text/plain")]
+
+        def read(self, limit):
+            assert limit == 1_000_001
+            return b"x" * limit
+
+    monkeypatch.setattr("http.client.HTTPConnection.request", lambda *args, **kwargs: None)
+    monkeypatch.setattr("http.client.HTTPConnection.getresponse", lambda self: FakeResponse())
+    monkeypatch.setattr("http.client.HTTPConnection.close", lambda self: None)
+
+    _, _, body, _ = ToolRegistry._request_pinned_page(
+        urlsplit("http://public.example/large"), "93.184.216.34"
+    )
+
+    assert len(body) == 1_000_000
