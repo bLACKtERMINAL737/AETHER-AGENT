@@ -555,3 +555,57 @@ def test_unknown_tool_execution_cannot_be_overwritten_by_late_success(tmp_path: 
     saved = store.list_tool_executions(task["id"])[0]
     assert saved["status"] == "unknown"
     assert saved["error_text"] == "outcome uncertain"
+
+
+
+def test_same_state_task_update_preserves_existing_result_and_error(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "same-state-task-preserve.sqlite3")
+    task = store.create_task("Preserve task journal", "same-state update omits optional fields")
+    store.set_task_status(
+        task["id"], "failed", result={"reason": "original"}, error="original failure"
+    )
+
+    store.set_task_status(task["id"], "failed")
+
+    saved = store.get_task(task["id"])
+    assert saved is not None
+    assert saved["status"] == "failed"
+    assert json.loads(saved["result_json"]) == {"reason": "original"}
+    assert saved["error_text"] == "original failure"
+
+
+def test_same_state_tool_update_preserves_existing_result_and_error(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "same-state-tool-preserve.sqlite3")
+    task = store.create_task("Preserve tool journal", "same-state update omits optional fields")
+    execution_id = store.begin_tool(task["id"], "workspace.read_file", {"path": "safe.txt"})
+    store.finish_tool(
+        execution_id, "failed", result={"reason": "original"}, error="original failure"
+    )
+
+    store.finish_tool(execution_id, "failed")
+
+    saved = store.list_tool_executions(task["id"])[0]
+    assert saved["status"] == "failed"
+    assert json.loads(saved["result_json"]) == {"reason": "original"}
+    assert saved["error_text"] == "original failure"
+
+
+def test_same_state_workflow_update_preserves_existing_error(tmp_path: Path):
+    store = TaskStore(tmp_path / "same-state-workflow-preserve.sqlite3")
+    workflow = store.create_workflow("Preserve workflow journal", [])
+    store.update_workflow(
+        workflow["id"], "running", results={"tasks": [], "qa_review": None}, error="original warning"
+    )
+
+    store.update_workflow(
+        workflow["id"], "running", results={"tasks": [], "qa_review": None}
+    )
+
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["status"] == "running"
+    assert saved["error_text"] == "original warning"

@@ -154,10 +154,17 @@ class TaskStore:
             # task must never be silently reopened by a stale request. Same-state
             # writes remain allowed so callers can enrich the existing journal row.
             cursor = con.execute(
-                "UPDATE tasks SET status=?,updated_at=?,result_json=?,error_text=? "
+                "UPDATE tasks SET status=?,updated_at=?,"
+                "result_json=CASE WHEN status=? THEN COALESCE(?,result_json) ELSE ? END,"
+                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
                 "WHERE id=? AND (status='queued' OR "
                 "(status='running' AND ? != 'queued') OR status=?)",
-                (status, utc_now(), encoded_result, error, task_id, status, status),
+                (
+                    status, utc_now(),
+                    status, encoded_result, encoded_result,
+                    status, error, error,
+                    task_id, status, status,
+                ),
             )
             if cursor.rowcount == 0:
                 row = con.execute(
@@ -245,9 +252,14 @@ class TaskStore:
             # -> running transition. Completed workflows cannot be reopened.
             cursor = con.execute(
                 "UPDATE agent_workflows SET status=?,updated_at=?,"
-                "results_json=COALESCE(?,results_json),error_text=? "
+                "results_json=COALESCE(?,results_json),"
+                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
                 "WHERE id=? AND (status='running' OR status=?)",
-                (status, utc_now(), encoded_results, error, workflow_id, status),
+                (
+                    status, utc_now(), encoded_results,
+                    status, error, error,
+                    workflow_id, status,
+                ),
             )
             if cursor.rowcount == 0:
                 row = con.execute(
@@ -271,15 +283,18 @@ class TaskStore:
             raise ValueError("Invalid final tool status")
         with self.connect() as con:
             cursor = con.execute(
-                "UPDATE tool_executions SET status=?,updated_at=?,result_json=?,error_text=? "
+                "UPDATE tool_executions SET status=?,updated_at=?,"
+                "result_json=CASE WHEN status=? THEN COALESCE(?,result_json) ELSE ? END,"
+                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
                 "WHERE id=? AND (status='running' OR status=?)",
                 (
                     status,
                     utc_now(),
-                    json.dumps(result, ensure_ascii=False) if result is not None else None,
-                    error,
-                    execution_id,
                     status,
+                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    status, error, error,
+                    execution_id, status,
                 ),
             )
             if cursor.rowcount == 0:
