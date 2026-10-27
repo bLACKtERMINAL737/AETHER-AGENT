@@ -633,6 +633,8 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             saved_task = store.get_task(task_id)
             status = saved_task["status"] if saved_task else "failed"
             error = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            if not error and saved_task:
+                error = saved_task.get("error_text") or ""
             updated = {**outcome, "status": status, "error": error}
         return plan_index, updated
 
