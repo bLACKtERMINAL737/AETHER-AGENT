@@ -417,6 +417,24 @@ async def recover_agent_workflow(workflow_id: str):
     if not isinstance(outcomes, list) or any(not isinstance(item, dict) for item in outcomes):
         raise HTTPException(status_code=409, detail="Workflow checkpoints are invalid; inspect the record manually.")
 
+    # Validate the saved dependency graph before claiming recovery. Corrupt indexes,
+    # self-dependencies, and cycles must never cause recovery to execute out of order.
+    try:
+        for index, outcome in enumerate(outcomes):
+            dependencies = outcome.get("depends_on", [])
+            if not isinstance(dependencies, list) or any(
+                not isinstance(dep, int) or isinstance(dep, bool)
+                or dep < 0 or dep >= len(outcomes) or dep == index
+                for dep in dependencies
+            ) or len(set(dependencies)) != len(dependencies):
+                raise ValueError("Invalid dependency indexes in workflow checkpoint")
+        recovery_order = dependency_order(outcomes)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Workflow dependency checkpoint is invalid or cyclic; inspect the record manually.",
+        ) from exc
+
     # Preflight before claiming: queued checkpoint must match queued durable task.
     # Never reset running/unknown/terminal tasks to force replay.
     for outcome in outcomes:
@@ -448,7 +466,10 @@ async def recover_agent_workflow(workflow_id: str):
         raise HTTPException(status_code=409, detail="Another request already claimed this workflow for recovery.")
 
     try:
-        for index, outcome in enumerate(outcomes):
+        # Resume in topological order, not display/plan order: a valid prerequisite
+        # may have a larger plan index than the task that depends on it.
+        for index in recovery_order:
+            outcome = outcomes[index]
             if outcome.get("status") != "queued":
                 continue
             by_plan_index = {

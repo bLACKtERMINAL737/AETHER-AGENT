@@ -205,7 +205,7 @@ Memory is explicit and local; the application does not silently infer or save me
 
 - SQLite WAL and transactions are used for local persistence.
 - Interrupted in-flight tasks, tool executions, and running agent workflows are marked `unknown` rather than replayed automatically.
-- Agent workflow plans, dependency graphs, task outcomes, and QA checkpoints are persisted in SQLite and exposed through read-only workflow endpoints. Cycles and invalid dependency indexes are rejected before task creation. Fresh orchestration runs at most three independent tasks concurrently; dependent work waits for all prerequisites to succeed. Explicit recovery remains sequential and never replays running, failed, succeeded, or unknown tasks.
+- Agent workflow plans, dependency graphs, task outcomes, and QA checkpoints are persisted in SQLite and exposed through read-only workflow endpoints. Cycles and invalid dependency indexes are rejected before task creation and revalidated during recovery. Fresh orchestration runs at most three independent tasks concurrently; dependent work waits for all prerequisites to succeed. Explicit recovery remains sequential in validated topological order and never replays running, failed, succeeded, or unknown tasks.
 - Coding proposal application verifies original file hashes before replacing files.
 - Proposal state transitions are checked to prevent invalid approval/rejection and duplicate application.
 - Sandbox tests run without network access and do not pull images at runtime.
