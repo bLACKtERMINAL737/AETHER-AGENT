@@ -285,8 +285,8 @@ class TaskStore:
         with self.connect() as con:
             cursor = con.execute(
                 "UPDATE tool_executions SET status=?,updated_at=?,"
-                "result_json=CASE WHEN status=? THEN COALESCE(?,result_json) ELSE ? END,"
-                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
+                "result_json=CASE WHEN status=? THEN COALESCE(result_json,?) ELSE ? END,"
+                "error_text=CASE WHEN status=? THEN COALESCE(error_text,?) ELSE ? END "
                 "WHERE id=? AND (status='running' OR status=?)",
                 (
                     status,
