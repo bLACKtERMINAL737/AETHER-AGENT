@@ -109,3 +109,29 @@ def test_run_pytest_requires_docker_cli(tmp_path: Path, monkeypatch):
 
     with pytest.raises(SandboxError, match="Docker CLI not found"):
         sandbox.run_pytest()
+
+
+
+def test_snapshot_excludes_common_credential_directories(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    secrets = {
+        ".ssh/id_ecdsa": "private ssh key",
+        ".ssh/id_dsa": "legacy private ssh key",
+        ".aws/credentials": "[default]\naws_access_key_id=hidden\n",
+        ".azure/accessTokens.json": "hidden token",
+        ".gnupg/private-keys-v1.d/key": "private key material",
+    }
+    for relative, content in secrets.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    (workspace / "app.py").write_text("SAFE = True\n", encoding="utf-8")
+
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    DockerTestSandbox(workspace)._snapshot(snapshot)
+
+    for relative in secrets:
+        assert not (snapshot / relative).exists()
+    assert (snapshot / "app.py").exists()
