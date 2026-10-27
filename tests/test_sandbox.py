@@ -87,3 +87,30 @@ def test_snapshot_skips_common_secret_files(tmp_path: Path):
     assert not (destination / "credentials.json").exists()
     assert not (destination / "service-secret.txt").exists()
     assert (destination / "config.py").exists()
+
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "--privileged",
+        "--pid=host",
+        "--volume=/:/host",
+        "-v",
+        "",
+        " image:latest",
+        "image:latest ",
+        "image:latest\n--privileged",
+        "image;--privileged",
+    ],
+)
+def test_run_pytest_rejects_invalid_or_option_like_image_reference(
+    tmp_path: Path, monkeypatch, image: str
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    sandbox = DockerTestSandbox(workspace, image=image)
+    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
+
+    with pytest.raises(SandboxError, match="Invalid sandbox image reference"):
+        sandbox.run_pytest()
