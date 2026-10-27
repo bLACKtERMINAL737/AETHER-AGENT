@@ -36,3 +36,11 @@ def test_parse_pytest_evidence_fails_closed_on_missing_summary():
 
 def test_parse_pytest_evidence_fails_closed_on_timeout():
     assert parse_pytest_evidence({"passed": False, "timed_out": True, "stdout": ""}) is None
+
+def test_parse_pytest_evidence_fails_closed_when_all_tests_are_skipped():
+    result = {"passed": True, "stdout": "===== 5 skipped in 0.01s ====="}
+    assert parse_pytest_evidence(result) is None
+
+def test_parse_pytest_evidence_fails_closed_when_no_tests_pass():
+    result = {"passed": True, "stdout": "===== 3 xfailed in 0.01s ====="}
+    assert parse_pytest_evidence(result) is None
