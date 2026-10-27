@@ -472,6 +472,8 @@ class TaskStore:
 
     def search_session_messages(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """Search message text across conversations, ranked by matching query terms."""
+        if limit <= 0:
+            return []
         terms = list(dict.fromkeys(term.casefold() for term in query.split() if term.strip()))
         if not terms:
             return []

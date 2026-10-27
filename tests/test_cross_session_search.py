@@ -58,3 +58,12 @@ def test_cross_session_search_handles_unicode_casefolding_in_non_latin_text(tmp_
 
     assert len(results) == 1
     assert "İstanbul" in results[0]["content"]
+
+ 
+def test_cross_session_search_rejects_non_positive_limits(tmp_path):
+    store = TaskStore(tmp_path / "cross-session-search-limits.sqlite3")
+    session = store.create_session("Search limits")
+    store.add_session_message(session["id"], "user", "A searchable message")
+
+    assert store.search_session_messages("searchable", limit=0) == []
+    assert store.search_session_messages("searchable", limit=-1) == []
