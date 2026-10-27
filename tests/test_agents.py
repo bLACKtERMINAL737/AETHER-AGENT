@@ -25,7 +25,7 @@ def test_registry_returns_defensive_copies():
 
 def test_plan_validation_accepts_valid_bounded_tasks():
     result = plan_subtasks([{"title":"Inspect code","input":"Review current implementation","role":"qa_security"}])
-    assert result == [{"title":"Inspect code","input":"Review current implementation","role":"qa_security"}]
+    assert result == [{"title":"Inspect code","input":"Review current implementation","role":"qa_security","depends_on":[]}]
 
 
 @pytest.mark.parametrize("value", [None, [], [{}], [{"title":"x","input":"y","role":"root"}],
@@ -35,3 +35,36 @@ def test_plan_validation_accepts_valid_bounded_tasks():
 def test_plan_validation_rejects_invalid_or_oversized_tasks(value):
     with pytest.raises(ValueError):
         plan_subtasks(value)
+
+
+def test_plan_subtasks_validates_dependencies_and_topological_order():
+    from aether.agents import dependency_order
+
+    plan = plan_subtasks([
+        {"title": "Final report", "input": "Summarize results", "role": "qa_security", "depends_on": [2]},
+        {"title": "Independent scan", "input": "Inspect independently", "role": "research"},
+        {"title": "Collect evidence", "input": "Gather evidence first", "role": "research"},
+    ])
+    order = dependency_order(plan)
+    assert order.index(2) < order.index(0)
+    assert order.index(1) < order.index(0)
+    assert plan[0]["depends_on"] == [2]
+
+
+@pytest.mark.parametrize("dependencies", [[0], [3], [-1], [1, 1], ["1"]])
+def test_plan_subtasks_rejects_invalid_dependency_indexes(dependencies):
+    plan = [
+        {"title": "First", "input": "First step", "role": "research", "depends_on": dependencies},
+        {"title": "Second", "input": "Second step", "role": "monitor"},
+    ]
+    with pytest.raises(ValueError):
+        plan_subtasks(plan)
+
+
+def test_plan_subtasks_rejects_dependency_cycles():
+    plan = [
+        {"title": "First", "input": "First step", "role": "research", "depends_on": [1]},
+        {"title": "Second", "input": "Second step", "role": "monitor", "depends_on": [0]},
+    ]
+    with pytest.raises(ValueError, match="acyclic"):
+        plan_subtasks(plan)
