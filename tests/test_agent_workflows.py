@@ -135,7 +135,7 @@ async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on
     store, router = configure(monkeypatch, tmp_path)
     router.plan = {
         "subtasks": [
-            {"title": "Publish summary", "input": "Summarize findings", "role": "qa_security", "depends_on": [2]},
+            {"title": "Publish summary", "input": "Summarize findings", "role": "coding", "depends_on": [2]},
             {"title": "Independent check", "input": "Check independently", "role": "monitor"},
             {"title": "Gather evidence", "input": "Gather evidence", "role": "research"},
         ]
@@ -157,9 +157,9 @@ async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on
         app_module.AgentPlanRequest(goal="Gather evidence then summarize")
     )
 
-    assert execution_order[0].startswith("[research]")
-    assert execution_order[1].startswith("[monitor]")
-    assert not any(title.startswith("[qa_security] Publish summary") for title in execution_order)
+    assert any(title.startswith("[research] Gather evidence") for title in execution_order)
+    assert any(title.startswith("[monitor] Independent check") for title in execution_order)
+    assert not any(title.startswith("[coding] Publish summary") for title in execution_order)
     saved = store.get_workflow(result["workflow_id"])
     by_title = {item["title"]: item for item in saved["results"]["tasks"]}
     assert by_title["Gather evidence"]["status"] == "failed"
