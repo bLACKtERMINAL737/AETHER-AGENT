@@ -289,3 +289,25 @@ async def test_recovery_accepts_not_started_qa_checkpoint_without_replaying_qa(t
     assert executed == [task_id]
     assert result["qa_review"]["status"] == "not_started"
     assert store.get_workflow(workflow_id)["status"] == "partial"
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_checkpoint_that_disagrees_with_saved_plan_before_claim(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, _task_id, _qa_id = make_workflow(tmp_path, monkeypatch, qa=False)
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["tasks"][0]["title"] = "Different task than the saved plan"
+    # The store intentionally makes unknown checkpoints immutable through its normal
+    # update API. Simulate persisted corruption by using the guarded recovery transition
+    # and writing the checkpoint while running, then interrupt it back to unknown.
+    assert store.claim_workflow_recovery(workflow_id)
+    store.update_workflow(workflow_id, "running", results=checkpoint)
+    store.update_workflow(workflow_id, "unknown", error="simulated corruption")
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
