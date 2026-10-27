@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 GateStatus = Literal["blocked", "ready_for_review", "approved_for_apply"]
 
+
 @dataclass(frozen=True)
 class TestEvidence:
     """Auditable test evidence for one version of the workspace."""
@@ -23,9 +24,11 @@ class TestEvidence:
         if not self.passed and self.failed == 0:
             raise ValueError("Failing evidence must report at least one failed test")
 
+
 @dataclass(frozen=True)
 class ImprovementProposal:
     """A candidate improvement with evidence, not an executable patch."""
+
     title: str
     observed_failure: str
     hypothesis: str
@@ -35,6 +38,7 @@ class ImprovementProposal:
         for name in ("title", "observed_failure", "hypothesis", "patch_summary"):
             if not getattr(self, name).strip():
                 raise ValueError(f"{name} must not be empty")
+
 
 @dataclass(frozen=True)
 class ImprovementEvaluation:
@@ -47,34 +51,51 @@ class ImprovementEvaluation:
     def eligible_for_review(self) -> bool:
         return self.status in ("ready_for_review", "approved_for_apply")
 
+
 def parse_pytest_evidence(result: dict[str, Any]) -> TestEvidence | None:
-    """Parse a pytest summary; ambiguous or missing evidence fails closed."""
-    if not isinstance(result, dict):
+    """Parse trustworthy pytest evidence; ambiguous or incomplete evidence fails closed."""
+    if not isinstance(result, dict) or result.get("timed_out") is True:
         return None
+
     output = "\n".join(str(result.get(key, "")) for key in ("stdout", "stderr"))
     summaries = re.findall(r"(?m)^=+\s*(.*?)\s*=+\s*$", output)
     if not summaries:
         return None
+
     summary = summaries[-1]
     counts = {name: 0 for name in ("passed", "failed", "error", "skipped", "xfailed", "xpassed")}
     found = False
-    for count, name in re.findall(r"(?<![\w])([0-9]+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)(?![\w])", summary):
+    for count, name in re.findall(
+        r"(?<![\w])([0-9]+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)(?![\w])",
+        summary,
+    ):
         counts["error" if name.startswith("error") else name] += int(count)
         found = True
     if not found:
         return None
+
     total = sum(counts.values())
     failures = counts["failed"] + counts["error"]
     # A green process exit is not sufficient when pytest ran no passing tests.
-    # All-skipped or all-xfailed runs must not authorize a self-improvement.
     if total <= 0 or counts["passed"] == 0:
         return None
-    passed = bool(result.get("passed")) and failures == 0
+
+    # Do not accept contradictory evidence: a success flag with a non-zero
+    # process exit, or a missing/invalid exit status, cannot authorize a proposal.
+    returncode = result.get("returncode")
+    process_succeeded = returncode == 0 and result.get("passed") is True
+    passed = process_succeeded and failures == 0
     if not passed and failures == 0:
         return None
     return TestEvidence(passed=passed, total=total, failed=failures)
 
-def evaluate_improvement(baseline: TestEvidence, candidate: TestEvidence, *, human_approved: bool = False) -> ImprovementEvaluation:
+
+def evaluate_improvement(
+    baseline: TestEvidence,
+    candidate: TestEvidence,
+    *,
+    human_approved: bool = False,
+) -> ImprovementEvaluation:
     """Compare evidence; never applies changes or treats tests as full proof."""
     reasons: list[str] = []
     if not baseline.passed:
@@ -86,5 +107,15 @@ def evaluate_improvement(baseline: TestEvidence, candidate: TestEvidence, *, hum
     if reasons:
         return ImprovementEvaluation("blocked", tuple(reasons), baseline, candidate)
     if not human_approved:
-        return ImprovementEvaluation("ready_for_review", ("Evidence passed; human review and approval are still required.",), baseline, candidate)
-    return ImprovementEvaluation("approved_for_apply", ("Explicit approval recorded; use the existing guarded proposal workflow to apply.",), baseline, candidate)
+        return ImprovementEvaluation(
+            "ready_for_review",
+            ("Evidence passed; human review and approval are still required.",),
+            baseline,
+            candidate,
+        )
+    return ImprovementEvaluation(
+        "approved_for_apply",
+        ("Explicit approval recorded; use the existing guarded proposal workflow to apply.",),
+        baseline,
+        candidate,
+    )
