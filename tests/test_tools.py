@@ -135,6 +135,19 @@ def test_workspace_list_and_read_reject_sensitive_directory_paths(tmp_path: Path
         registry.execute("workspace.search_text", {"query": "private", "path": "credentials"})
 
 
+@pytest.mark.parametrize("max_results", [0, -1, -50])
+def test_workspace_search_nonpositive_limit_returns_no_matches(
+    tmp_path: Path, max_results: int
+):
+    (tmp_path / "notes.txt").write_text("needle", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    result = registry.search_text("needle", max_results=max_results)
+
+    assert result["matches"] == []
+    assert result["truncated"] is False
+
+
 def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: Path):
     registry = ToolRegistry(tmp_path)
     descriptions = {item["name"]: item["description"] for item in registry.describe()}
