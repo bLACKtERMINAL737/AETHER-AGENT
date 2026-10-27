@@ -195,7 +195,7 @@ class ToolRegistry:
         self, path: str, start_line: int = 1, max_lines: int = 200
     ) -> dict[str, Any]:
         target = self._safe_path(path)
-        if self._is_credential_path(target.relative_to(self.workspace)):
+        if self._is_sensitive_directory_path(target.relative_to(self.workspace)):
             raise ToolError("Path is excluded because it may contain credentials")
         if self._is_sensitive_file(target.name):
             raise ToolError("File is excluded because it may contain credentials")
