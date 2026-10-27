@@ -467,7 +467,10 @@ async def recover_agent_workflow(workflow_id: str):
             if qa_status not in allowed_task_statuses | {"not_started"}:
                 raise ValueError("Workflow QA checkpoint has an invalid status")
             qa_id = qa_checkpoint.get("task_id")
-            if not isinstance(qa_id, str) or not qa_id.strip() or qa_id in seen_task_ids:
+            if qa_status == "not_started":
+                if qa_id is not None:
+                    raise ValueError("The not-started QA checkpoint unexpectedly contains a task ID")
+            elif not isinstance(qa_id, str) or not qa_id.strip() or qa_id in seen_task_ids:
                 raise ValueError("Workflow QA checkpoint task ID is missing or duplicated")
         recovery_order = dependency_order(outcomes)
     except (TypeError, ValueError) as exc:
