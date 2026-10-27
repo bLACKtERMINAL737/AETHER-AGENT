@@ -414,3 +414,43 @@ def test_web_open_rejects_malformed_authorities(tmp_path, url):
 def test_web_open_rejects_url_userinfo_with_empty_components(tmp_path, url):
     with pytest.raises(ToolError, match="URL is invalid"):
         ToolRegistry(tmp_path).execute("web.open", {"url": url})
+
+
+
+def test_web_open_rejects_explicit_zero_port_before_dns_lookup(tmp_path, monkeypatch):
+    import socket
+
+    def unexpected_resolution(*args, **kwargs):
+        raise AssertionError("DNS lookup must not happen for an invalid port")
+
+    monkeypatch.setattr(socket, "getaddrinfo", unexpected_resolution)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        ToolRegistry(tmp_path).execute(
+            "web.open", {"url": "http://example.com:0/resource"}
+        )
+
+
+def test_web_open_fails_closed_when_dns_resolution_raises(tmp_path, monkeypatch):
+    import socket
+
+    def failed_resolution(host, port, type):
+        raise socket.gaierror("simulated resolver failure")
+
+    monkeypatch.setattr(socket, "getaddrinfo", failed_resolution)
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        ToolRegistry(tmp_path).execute(
+            "web.open", {"url": "https://unresolvable.example/resource"}
+        )
+
+
+def test_web_open_fails_closed_when_dns_returns_no_addresses(tmp_path, monkeypatch):
+    import socket
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, type: [])
+
+    with pytest.raises(ToolError, match="URL is invalid"):
+        ToolRegistry(tmp_path).execute(
+            "web.open", {"url": "https://empty-resolution.example/resource"}
+        )
