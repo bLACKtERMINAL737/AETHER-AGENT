@@ -231,7 +231,9 @@ class ModelProvider:
                         if not isinstance(result, dict):
                             result = {"result": result}
                     except Exception as exc:
-                        result = {"error": str(exc)[:500] or "Tool execution failed."}
+                        # Do not send arbitrary exception text (which may contain
+                        # local paths, tokens, or provider data) back to the model.
+                        result = {"error": f"Tool execution failed ({type(exc).__name__})."}
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
