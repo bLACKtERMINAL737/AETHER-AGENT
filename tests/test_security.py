@@ -128,3 +128,22 @@ def test_origin_validation_rejects_malformed_or_ambiguous_origins(origin):
 )
 def test_origin_validation_requires_matching_scheme_host_and_port(origin, request_host, scheme):
     assert not _origin_is_local(origin, request_host, scheme)
+
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://@127.0.0.1:8000",
+        "http://:@127.0.0.1:8000",
+        "http://user:@127.0.0.1:8000",
+        "http://:password@127.0.0.1:8000",
+        "http://127.0.0.1:0",
+    ],
+)
+def test_origin_validation_rejects_empty_userinfo_and_zero_port(origin):
+    assert not _origin_is_local(origin, "127.0.0.1:8000", "http")
+
+
+def test_origin_validation_rejects_zero_port_in_request_host():
+    assert not _origin_is_local("http://127.0.0.1", "127.0.0.1:0", "http")
