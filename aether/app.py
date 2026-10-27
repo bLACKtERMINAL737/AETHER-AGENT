@@ -381,9 +381,26 @@ def delegate_agent_work(request: AgentDelegateRequest):
     return {"goal": request.goal, "tasks": created, "executed": False}
 
 
+@app.get("/agents/workflows")
+def list_agent_workflows(limit: int = 50):
+    """List durable workflow runs and their current status."""
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    return {"workflows": store.list_workflows(limit)}
+
+
+@app.get("/agents/workflows/{workflow_id}")
+def get_agent_workflow(workflow_id: str):
+    """Read the persisted plan, task checkpoints, and QA result for one workflow."""
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow
+
+
 @app.post("/agents/orchestrate")
 async def orchestrate_agent_work(request: AgentPlanRequest):
-    """Plan bounded specialist tasks, run them sequentially, then request QA review."""
+    """Persist a workflow plan and each task/QA checkpoint while running sequentially."""
     route = "reasoning" if reasoning_provider.configured else "primary"
     prompt = (
         "Return only JSON: {subtasks:[{title,input,role}]}. Create 1-4 tasks for the goal. "
@@ -410,28 +427,110 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(status_code=502, detail="Planner returned an invalid plan; no tasks were created.") from exc
 
-    outcomes = []
-    for item in subtasks:
-        task = store.create_task(f"[{item['role']}] {item['title']}",
-            f"Parent goal: {request.goal}\nAssigned role: {item['role']}\nTask: {item['input']}")
-        try:
-            result = await run_agent_task(task["id"])
-            outcomes.append({"task_id": task["id"], "role": item["role"], "status": result["status"], "result": result["result"]})
-        except HTTPException as exc:
-            outcomes.append({"task_id": task["id"], "role": item["role"], "status": "failed", "error": exc.detail})
+    # Persist the validated plan before creating or running any specialist tasks.
+    workflow = store.create_workflow(request.goal, subtasks)
+    workflow_id = workflow["id"]
+    checkpoint = {"tasks": [], "qa_review": None}
 
-    qa = store.create_task("[qa_security] Review specialist results",
-        "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
-        + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False))
     try:
-        qa_result = await run_agent_task(qa["id"])
-        review = {"task_id": qa["id"], "status": qa_result["status"], "result": qa_result["result"]}
-    except HTTPException as exc:
-        review = {"task_id": qa["id"], "status": "failed", "error": exc.detail}
-    all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded"
-    return {"goal": request.goal, "status": "succeeded" if all_ok else "partial",
-            "tasks": outcomes, "qa_review": review, "workspace_modified": False,
-            "approval_required_before_changes": True}
+        outcomes = []
+        for item in subtasks:
+            task = store.create_task(
+                f"[{item['role']}] {item['title']}",
+                f"Workflow ID: {workflow_id}\n"
+                f"Parent goal: {request.goal}\n"
+                f"Assigned role: {item['role']}\nTask: {item['input']}",
+            )
+            outcome = {
+                "task_id": task["id"],
+                "title": item["title"],
+                "role": item["role"],
+                "status": "queued",
+            }
+            outcomes.append(outcome)
+            checkpoint = {"tasks": outcomes, "qa_review": None}
+            store.update_workflow(workflow_id, "running", results=checkpoint)
+
+            try:
+                result = await run_agent_task(task["id"])
+                outcome = {
+                    "task_id": task["id"],
+                    "title": item["title"],
+                    "role": item["role"],
+                    "status": result["status"],
+                    "result": result.get("result", ""),
+                    "tool_calls": result.get("tool_calls", 0),
+                    "tool_attempts": result.get("tool_attempts", 0),
+                }
+            except HTTPException as exc:
+                saved_task = store.get_task(task["id"])
+                outcome = {
+                    "task_id": task["id"],
+                    "title": item["title"],
+                    "role": item["role"],
+                    "status": saved_task["status"] if saved_task else "failed",
+                    "error": exc.detail,
+                }
+            outcomes[-1] = outcome
+            checkpoint = {"tasks": outcomes, "qa_review": None}
+            # Each completed specialist outcome is durable before the next task begins.
+            store.update_workflow(workflow_id, "running", results=checkpoint)
+
+        qa = store.create_task(
+            "[qa_security] Review specialist results",
+            "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
+            + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False),
+        )
+        checkpoint["qa_review"] = {"task_id": qa["id"], "status": "queued"}
+        store.update_workflow(workflow_id, "running", results=checkpoint)
+
+        try:
+            qa_result = await run_agent_task(qa["id"])
+            review = {
+                "task_id": qa["id"],
+                "status": qa_result["status"],
+                "result": qa_result["result"],
+                "tool_calls": qa_result.get("tool_calls", 0),
+                "tool_attempts": qa_result.get("tool_attempts", 0),
+            }
+        except HTTPException as exc:
+            saved_qa = store.get_task(qa["id"])
+            review = {
+                "task_id": qa["id"],
+                "status": saved_qa["status"] if saved_qa else "failed",
+                "error": exc.detail,
+            }
+        checkpoint["qa_review"] = review
+        all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded"
+        final_status = "succeeded" if all_ok else "partial"
+        store.update_workflow(
+            workflow_id,
+            final_status,
+            results=checkpoint,
+            error=None if all_ok else "One or more specialist tasks or the QA review did not succeed.",
+        )
+        return {
+            "workflow_id": workflow_id,
+            "goal": request.goal,
+            "status": final_status,
+            "tasks": outcomes,
+            "qa_review": review,
+            "workspace_modified": False,
+            "approval_required_before_changes": True,
+        }
+    except Exception:
+        # Keep already persisted checkpoints; never automatically replay a workflow
+        # whose process/DB outcome may be uncertain.
+        try:
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Workflow stopped unexpectedly; inspect saved checkpoints before recovery.",
+            )
+        except Exception:
+            logger.exception("Could not persist interrupted workflow state")
+        raise
 
 
 @app.post("/agents/run/{task_id}")
