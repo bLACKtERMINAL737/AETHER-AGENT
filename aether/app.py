@@ -502,30 +502,33 @@ async def run_agent_task(task_id: str):
             tool_state["failed"] = True
             raise ToolError("Tool is not registered for specialist tasks.")
 
-        execution_id = store.begin_tool(task_id, internal_name, arguments)
+        execution_id = None
         try:
+            execution_id = store.begin_tool(task_id, internal_name, arguments)
             result = tools.execute(internal_name, arguments)
         except ToolError as exc:
             tool_state["failed"] = True
-            try:
-                store.finish_tool(execution_id, "failed", error=str(exc)[:500])
-            except Exception:
-                tool_state["uncertain"] = True
-                logger.exception("Could not journal specialist tool failure")
-                raise ToolError("Tool failed and its result could not be safely journaled.") from exc
+            if execution_id is not None:
+                try:
+                    store.finish_tool(execution_id, "failed", error=str(exc)[:500])
+                except Exception:
+                    tool_state["uncertain"] = True
+                    logger.exception("Could not journal specialist tool failure")
+                    raise ToolError("Tool failed and its result could not be safely journaled.") from exc
             raise
         except Exception as exc:
             tool_state["failed"] = True
             tool_state["uncertain"] = True
-            logger.exception("Unexpected specialist tool failure")
-            try:
-                store.finish_tool(
-                    execution_id,
-                    "unknown",
-                    error="Unexpected execution error; inspect local logs before retrying",
-                )
-            except Exception:
-                logger.exception("Could not journal uncertain specialist tool execution")
+            logger.exception("Unexpected specialist tool or journal-start failure")
+            if execution_id is not None:
+                try:
+                    store.finish_tool(
+                        execution_id,
+                        "unknown",
+                        error="Unexpected execution error; inspect local logs before retrying",
+                    )
+                except Exception:
+                    logger.exception("Could not journal uncertain specialist tool execution")
             raise ToolError("Tool execution outcome may be uncertain.") from exc
 
         try:
