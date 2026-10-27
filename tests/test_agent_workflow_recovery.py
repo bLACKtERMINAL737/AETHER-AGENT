@@ -343,3 +343,25 @@ async def test_recovery_rejects_qa_checkpoint_that_disagrees_with_task_journal(
 
     assert exc.value.status_code == 409
     assert store.get_workflow(workflow_id)["status"] == "unknown"
+
+
+@pytest.mark.parametrize("invalid_dependencies", [[True], [0, 0]])
+@pytest.mark.asyncio
+async def test_recovery_rejects_invalid_dependency_index_types_and_duplicates(
+    tmp_path, monkeypatch, invalid_dependencies
+):
+    store, workflow_id, _task_id, _qa_id = make_workflow(tmp_path, monkeypatch, qa=False)
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["tasks"][0]["depends_on"] = invalid_dependencies
+    plan = workflow["plan"]
+    plan[0]["depends_on"] = invalid_dependencies
+    store.update_workflow(
+        workflow_id, "unknown", plan=plan, results=checkpoint, error="simulated corruption"
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
