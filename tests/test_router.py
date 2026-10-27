@@ -290,3 +290,35 @@ async def test_total_attempt_budget_allows_fallback_when_budget_remains(monkeypa
 
     assert primary.calls == 1
     assert fallback.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_router_reports_sanitized_attempt_history_for_fallback_success(monkeypatch):
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    secret_detail = "private provider error detail"
+    primary = FakeProvider("primary", errors=[httpx.ConnectError(secret_detail)])
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(primary, fallback=fallback, max_attempts=1, max_total_attempts=2)
+
+    result = await router.chat("hello")
+
+    assert result["attempt_history"] == [
+        {"route": "primary", "attempt": 1, "outcome": "failure", "error_type": "ConnectError"},
+        {"route": "fallback", "attempt": 2, "outcome": "success"},
+    ]
+    assert secret_detail not in str(result["attempt_history"])
+    assert result["attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_router_reports_single_success_attempt_history():
+    router = ModelRouter(FakeProvider("primary"))
+
+    result = await router.chat("hello")
+
+    assert result["attempt_history"] == [
+        {"route": "primary", "attempt": 1, "outcome": "success"}
+    ]
