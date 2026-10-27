@@ -95,3 +95,72 @@ def test_workflow_recovery_claim_is_atomic(tmp_path):
     assert store.claim_workflow_recovery(workflow["id"]) is True
     assert store.claim_workflow_recovery(workflow["id"]) is False
     assert store.get_workflow(workflow["id"])["status"] == "running"
+
+
+
+@pytest.mark.asyncio
+async def test_recovery_runs_prerequisite_with_later_plan_index_first(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "reverse-dependency.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    first = store.create_task("[research] Dependent first", "Wait for prerequisite")
+    second = store.create_task("[research] Prerequisite second", "Run before dependent")
+    qa = store.create_task("[qa_security] Review", "Review completed tasks")
+    workflow = store.create_workflow(
+        "Recover reverse dependency",
+        [
+            {"title": "Dependent first", "input": "Wait", "role": "research", "depends_on": [1]},
+            {"title": "Prerequisite second", "input": "Prerequisite", "role": "research", "depends_on": []},
+        ],
+    )
+    results = {
+        "tasks": [
+            {"plan_index": 0, "task_id": first["id"], "title": "Dependent first", "status": "queued", "depends_on": [1]},
+            {"plan_index": 1, "task_id": second["id"], "title": "Prerequisite second", "status": "queued", "depends_on": []},
+        ],
+        "qa_review": {"task_id": qa["id"], "status": "queued"},
+    }
+    store.update_workflow(workflow["id"], "unknown", results=results, error="simulated interruption")
+    executed = []
+
+    async def fake_run(task_id_arg):
+        task = store.get_task(task_id_arg)
+        assert task is not None and task["status"] == "queued"
+        assert store.claim_task(task_id_arg)
+        if task_id_arg == first["id"]:
+            assert second["id"] in executed, "dependent must wait for its prerequisite"
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": task["title"]})
+        executed.append(task_id_arg)
+        return {
+            "task_id": task_id_arg, "status": "succeeded", "result": task["title"],
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.recover_agent_workflow(workflow["id"])
+
+    assert result["status"] == "succeeded"
+    assert executed.index(second["id"]) < executed.index(first["id"])
+    assert executed[-1] == qa["id"]
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_cyclic_dependency_checkpoint_before_claim(tmp_path, monkeypatch):
+    store = TaskStore(tmp_path / "cyclic-dependency.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    task = store.create_task("[research] Cyclic task", "Do not execute")
+    workflow = store.create_workflow("Invalid dependency graph", [{"title": "Cyclic task"}])
+    results = {
+        "tasks": [{
+            "plan_index": 0, "task_id": task["id"], "title": "Cyclic task",
+            "status": "queued", "depends_on": [0],
+        }],
+        "qa_review": None,
+    }
+    store.update_workflow(workflow["id"], "unknown", results=results, error="simulated corrupt checkpoint")
+
+    with pytest.raises(HTTPException) as error:
+        await app_module.recover_agent_workflow(workflow["id"])
+
+    assert error.value.status_code == 409
+    assert store.get_workflow(workflow["id"])["status"] == "unknown"
+    assert store.get_task(task["id"])["status"] == "queued"
