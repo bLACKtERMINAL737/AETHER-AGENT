@@ -421,3 +421,43 @@ def test_workflow_updates_validate_status_and_missing_ids(tmp_path: Path):
 
     with pytest.raises(ValueError, match="limit"):
         store.list_workflows(0)
+
+
+
+def test_workflow_status_cannot_regress_after_completion(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "workflow-terminal-status.sqlite3")
+    workflow = store.create_workflow(
+        "Finish once",
+        [{"title": "Inspect", "input": "Inspect safely", "role": "research"}],
+    )
+    store.update_workflow(
+        workflow["id"], "succeeded",
+        results={"tasks": [], "qa_review": {"status": "succeeded"}},
+    )
+
+    with pytest.raises(ValueError, match="Invalid workflow status transition from succeeded to running"):
+        store.update_workflow(workflow["id"], "running", error=None)
+
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["status"] == "succeeded"
+
+
+def test_unknown_workflow_requires_atomic_recovery_claim(tmp_path: Path):
+    import pytest
+
+    store = TaskStore(tmp_path / "workflow-recovery-claim.sqlite3")
+    workflow = store.create_workflow(
+        "Interrupted",
+        [{"title": "Inspect", "input": "Inspect safely", "role": "research"}],
+    )
+    store.update_workflow(workflow["id"], "unknown", error="interrupted")
+
+    with pytest.raises(ValueError, match="Invalid workflow status transition from unknown to running"):
+        store.update_workflow(workflow["id"], "running")
+
+    assert store.claim_workflow_recovery(workflow["id"]) is True
+    assert store.claim_workflow_recovery(workflow["id"]) is False
+    assert store.get_workflow(workflow["id"])["status"] == "running"
