@@ -213,3 +213,28 @@ async def test_remote_protocol_error_retries_before_fallback(monkeypatch):
     assert result["attempts"] == 3
     assert primary.calls == 2
     assert fallback.calls == 1
+
+
+
+@pytest.mark.asyncio
+async def test_explicitly_disabled_fallback_is_never_called():
+    primary = FakeProvider("primary", errors=[httpx.ConnectError("network down")])
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(primary, fallback=fallback, max_attempts=1)
+
+    with pytest.raises(httpx.ConnectError, match="network down"):
+        await router.chat("hello", allow_fallback=False)
+
+    assert primary.calls == 1
+    assert fallback.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_manual_fallback_route_does_not_retry_same_fallback_as_backup():
+    fallback = FakeProvider("fallback", errors=[httpx.ConnectError("fallback down")])
+    router = ModelRouter(FakeProvider("primary"), fallback=fallback, max_attempts=1)
+
+    with pytest.raises(httpx.ConnectError, match="fallback down"):
+        await router.chat("hello", model_route="fallback")
+
+    assert fallback.calls == 1
