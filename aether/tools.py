@@ -235,7 +235,7 @@ class ToolRegistry:
             relative_parts = target.relative_to(self.workspace).parts
         except ValueError as exc:
             raise ToolError("Search path escapes the configured workspace") from exc
-        if any(part.casefold() in excluded_dirs for part in relative_parts):
+        if self._is_sensitive_directory_path(Path(*relative_parts)):
             raise ToolError("Search path is excluded because it may contain credentials")
         for root, dirs, names in os.walk(target, followlinks=False):
             dirs[:] = [
