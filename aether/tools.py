@@ -208,7 +208,8 @@ class ToolRegistry:
             parsed = urlsplit(raw_url)
             if parsed.scheme not in {"http", "https"} or not parsed.hostname:
                 raise ValueError("Only HTTP(S) URLs are allowed")
-            if parsed.username or parsed.password:
+            # Reject userinfo even when the username/password are empty (e.g. https://@host/).
+            if "@" in parsed.netloc or parsed.username is not None or parsed.password is not None:
                 raise ValueError("Credentials in URLs are not allowed")
             host = parsed.hostname.rstrip(".")
             if host.lower() == "localhost" or host.lower().endswith(".localhost"):
