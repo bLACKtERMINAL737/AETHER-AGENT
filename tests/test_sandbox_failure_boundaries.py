@@ -135,3 +135,28 @@ def test_snapshot_excludes_common_credential_directories(tmp_path: Path):
     for relative in secrets:
         assert not (snapshot / relative).exists()
     assert (snapshot / "app.py").exists()
+
+
+
+def test_snapshot_excludes_secret_directories_case_insensitively(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    secrets = {
+        ".SSH/private-material": "private key",
+        ".AWS/custom-profile": "access token",
+        ".Azure/custom-token": "access token",
+        ".GNUPG/private-data": "private key material",
+    }
+    for relative, content in secrets.items():
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    (workspace / "safe.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    DockerTestSandbox(workspace)._snapshot(snapshot)
+
+    for relative in secrets:
+        assert not (snapshot / relative).exists()
+    assert (snapshot / "safe.py").exists()
