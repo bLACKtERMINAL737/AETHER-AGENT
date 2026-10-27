@@ -687,3 +687,71 @@ def test_concurrent_proposal_apply_claim_has_exactly_one_winner(tmp_path: Path):
     saved = store.get_proposal(proposal["id"])
     assert saved is not None
     assert saved["status"] == "applying"
+
+
+
+def test_terminal_task_same_state_update_cannot_replace_outcome(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "terminal-task-immutable.sqlite3")
+    task = store.create_task("Immutable task outcome", "keep the first final result")
+    store.set_task_status(
+        task["id"], "failed", result={"attempt": 1}, error="original failure"
+    )
+
+    store.set_task_status(
+        task["id"], "failed", result={"attempt": 2}, error="late failure"
+    )
+
+    saved = store.get_task(task["id"])
+    assert saved is not None
+    assert saved["status"] == "failed"
+    assert json.loads(saved["result_json"]) == {"attempt": 1}
+    assert saved["error_text"] == "original failure"
+
+
+def test_terminal_tool_same_state_update_cannot_replace_outcome(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "terminal-tool-immutable.sqlite3")
+    task = store.create_task("Immutable tool outcome", "keep the first final result")
+    execution_id = store.begin_tool(task["id"], "workspace.read_file", {"path": "safe.txt"})
+    store.finish_tool(
+        execution_id, "succeeded", result={"content": "original"}, error="original note"
+    )
+
+    store.finish_tool(
+        execution_id, "succeeded", result={"content": "late"}, error="late note"
+    )
+
+    saved = store.list_tool_executions(task["id"])[0]
+    assert saved["status"] == "succeeded"
+    assert json.loads(saved["result_json"]) == {"content": "original"}
+    assert saved["error_text"] == "original note"
+
+
+def test_terminal_workflow_same_state_update_cannot_replace_checkpoint(tmp_path: Path):
+    import json
+
+    store = TaskStore(tmp_path / "terminal-workflow-immutable.sqlite3")
+    workflow = store.create_workflow("Immutable workflow outcome", [])
+    store.update_workflow(
+        workflow["id"], "succeeded",
+        results={"tasks": [{"status": "succeeded"}], "qa_review": {"status": "succeeded"}},
+        error="original diagnostic",
+    )
+
+    store.update_workflow(
+        workflow["id"], "succeeded",
+        results={"tasks": [{"status": "failed"}], "qa_review": {"status": "failed"}},
+        error="late diagnostic",
+    )
+
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["status"] == "succeeded"
+    assert json.loads(saved["results_json"]) == {
+        "tasks": [{"status": "succeeded"}],
+        "qa_review": {"status": "succeeded"},
+    }
+    assert saved["error_text"] == "original diagnostic"
