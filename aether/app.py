@@ -687,6 +687,28 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "tool_calls": result.get("tool_calls", 0),
                 "tool_attempts": result.get("tool_attempts", 0),
             }
+        except asyncio.CancelledError:
+            saved_task = store.get_task(task_id)
+            if saved_task and saved_task["status"] in {"queued", "running"}:
+                store.set_task_status(
+                    task_id,
+                    "unknown",
+                    error="Workflow execution was cancelled; inspect task and tool journals before recovery.",
+                )
+            updated = {
+                **outcome,
+                "status": "unknown",
+                "error": "Workflow execution was cancelled; inspect task and tool journals before recovery.",
+            }
+            outcomes_by_index[plan_index] = updated
+            persist_checkpoint()
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Workflow execution was cancelled; task outcomes require inspection.",
+            )
+            raise
         except Exception as exc:
             saved_task = store.get_task(task_id)
             status = saved_task["status"] if saved_task else "failed"
@@ -799,6 +821,21 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "tool_calls": qa_result.get("tool_calls", 0),
                 "tool_attempts": qa_result.get("tool_attempts", 0),
             }
+        except asyncio.CancelledError:
+            saved_qa = store.get_task(qa["id"])
+            cancel_error = "Workflow QA review was cancelled; inspect its task journal before recovery."
+            if saved_qa and saved_qa["status"] in {"queued", "running"}:
+                store.set_task_status(qa["id"], "unknown", error=cancel_error)
+            review = {"task_id": qa["id"], "status": "unknown", "error": cancel_error}
+            checkpoint["qa_review"] = review
+            checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Workflow QA review was cancelled; outcome requires inspection.",
+            )
+            raise
         except Exception as exc:
             saved_qa = store.get_task(qa["id"])
             review = {
