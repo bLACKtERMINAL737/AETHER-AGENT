@@ -1,3 +1,4 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 
@@ -27,7 +28,15 @@ def client_and_providers(monkeypatch):
             reasoning=providers["reasoning"],
         ),
     )
-    with TestClient(app_module.app, base_url="http://127.0.0.1", headers={"Origin": "http://127.0.0.1", "Host": "127.0.0.1"}, client=("127.0.0.1", 12345)) as client:
+    with TestClient(app_module.app, base_url="http://127.0.0.1", headers={
+            "Origin": "http://127.0.0.1",
+            "Host": "127.0.0.1",
+            **(
+                {"Authorization": f"Bearer {os.environ['AETHER_API_TOKEN']}"}
+                if os.getenv("AETHER_API_TOKEN")
+                else {}
+            ),
+        }, client=("127.0.0.1", 12345)) as client:
         yield client, providers
 
 
