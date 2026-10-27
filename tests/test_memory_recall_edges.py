@@ -175,3 +175,30 @@ def test_memory_search_empty_and_whitespace_queries_return_no_results(tmp_path):
     assert store.search_memories("   ") == []
     assert store.search_memories("what did i ask") == []
 
+def test_memory_search_matches_complete_words_not_substrings(tmp_path):
+    from aether.store import TaskStore
+
+    store = TaskStore(tmp_path / "memory.sqlite3")
+    store.add_memory(category="note", content="The party starts at noon")
+    store.add_memory(category="note", content="A piece of art is on the wall")
+
+    results = store.search_memories("art")
+
+    assert len(results) == 1
+    assert results[0]["content"] == "A piece of art is on the wall"
+
+
+def test_memory_search_matches_hyphenated_identifier_components(tmp_path):
+    from aether.store import TaskStore
+
+    store = TaskStore(tmp_path / "memory.sqlite3")
+    fact = store.add_memory(
+        category="project",
+        content="AETHER-CLAW is the project identifier",
+        source="explicit_chat_request",
+    )
+
+    results = store.search_memories("CLAW")
+
+    assert [item["id"] for item in results] == [fact["id"]]
+
