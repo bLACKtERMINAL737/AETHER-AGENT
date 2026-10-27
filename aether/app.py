@@ -428,6 +428,16 @@ async def recover_agent_workflow(workflow_id: str):
     outcomes = checkpoint.get("tasks")
     if not isinstance(outcomes, list) or any(not isinstance(item, dict) for item in outcomes):
         raise HTTPException(status_code=409, detail="Workflow checkpoints are invalid; inspect the record manually.")
+    saved_plan = workflow.get("plan")
+    if (
+        not isinstance(saved_plan, list)
+        or any(not isinstance(item, dict) for item in saved_plan)
+        or len(saved_plan) != len(outcomes)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Workflow plan and task checkpoints disagree; inspect the record manually.",
+        )
 
     # Validate checkpoint structure before claiming recovery. These fields influence
     # task identity and dependency order, so reject inconsistent records rather than
@@ -446,6 +456,12 @@ async def recover_agent_workflow(workflow_id: str):
             status = outcome.get("status")
             if status not in allowed_task_statuses:
                 raise ValueError("Workflow checkpoint contains an invalid task status")
+            plan_item = saved_plan[index]
+            if (
+                outcome.get("title") != plan_item.get("title")
+                or outcome.get("depends_on", []) != plan_item.get("depends_on", [])
+            ):
+                raise ValueError("Workflow checkpoint does not match the saved plan")
             task_id = outcome.get("task_id")
             if not isinstance(task_id, str) or not task_id.strip() or task_id in seen_task_ids:
                 raise ValueError("Workflow checkpoint task IDs are missing or duplicated")
