@@ -155,8 +155,9 @@ class TaskStore:
             # writes remain allowed so callers can enrich the existing journal row.
             cursor = con.execute(
                 "UPDATE tasks SET status=?,updated_at=?,result_json=?,error_text=? "
-                "WHERE id=? AND (status IN ('queued','running') OR status=?)",
-                (status, utc_now(), encoded_result, error, task_id, status),
+                "WHERE id=? AND (status='queued' OR "
+                "(status='running' AND ? != 'queued') OR status=?)",
+                (status, utc_now(), encoded_result, error, task_id, status, status),
             )
             if cursor.rowcount == 0:
                 row = con.execute(
