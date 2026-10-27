@@ -462,28 +462,45 @@ async def recover_agent_workflow(workflow_id: str):
             detail="Workflow dependency checkpoint is invalid or cyclic; inspect the record manually.",
         ) from exc
 
-    # Preflight before claiming: queued checkpoint must match queued durable task.
-    # Never reset running/unknown/terminal tasks to force replay.
+    # Every checkpoint outcome must agree with its durable task journal. In particular,
+    # never trust a "succeeded" prerequisite in JSON if its task record is still queued.
+    # Running/unknown outcomes are accepted only as uncertain and are never replayed.
+    compatible_journal_statuses = {
+        "queued": {"queued"},
+        "running": {"running", "unknown"},
+        "succeeded": {"succeeded"},
+        "failed": {"failed"},
+        "unknown": {"unknown", "running"},
+        # A blocked task has not been claimed, so its durable record remains queued.
+        "blocked": {"queued"},
+    }
     for outcome in outcomes:
-        if outcome.get("status") != "queued":
-            continue
-        task_id = outcome.get("task_id")
-        task = store.get_task(task_id) if isinstance(task_id, str) else None
-        if task is None or task["status"] != "queued":
+        task_id = outcome["task_id"]
+        task = store.get_task(task_id)
+        if task is None or task.get("status") not in compatible_journal_statuses[outcome["status"]]:
             raise HTTPException(
                 status_code=409,
-                detail="A queued checkpoint does not match a queued task record; inspect task and tool journals before recovery.",
+                detail="Workflow checkpoint and durable task journal disagree; inspect both before recovery.",
             )
 
     qa_checkpoint = checkpoint.get("qa_review")
-    if isinstance(qa_checkpoint, dict) and qa_checkpoint.get("status") == "queued":
+    if isinstance(qa_checkpoint, dict):
+        qa_status = qa_checkpoint.get("status")
         qa_id = qa_checkpoint.get("task_id")
-        qa_task = store.get_task(qa_id) if isinstance(qa_id, str) else None
-        if qa_task is None or qa_task["status"] != "queued":
-            raise HTTPException(
-                status_code=409,
-                detail="The queued QA checkpoint does not match a queued task record; inspect it before recovery.",
-            )
+        if qa_status == "not_started":
+            # This state deliberately has no task ID and cannot be replayed.
+            if qa_id is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The not-started QA checkpoint unexpectedly contains a task ID; inspect it manually.",
+                )
+        else:
+            qa_task = store.get_task(qa_id)
+            if qa_task is None or qa_task.get("status") not in compatible_journal_statuses[qa_status]:
+                raise HTTPException(
+                    status_code=409,
+                    detail="QA checkpoint and durable task journal disagree; inspect both before recovery.",
+                )
 
     try:
         claimed = store.claim_workflow_recovery(workflow_id)

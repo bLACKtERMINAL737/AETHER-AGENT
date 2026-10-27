@@ -203,3 +203,51 @@ async def test_recovery_rejects_inconsistent_checkpoint_identity_before_claim(
     assert error.value.status_code == 409
     assert store.get_workflow(workflow["id"])["status"] == "unknown"
     assert store.get_task(task["id"])["status"] == "queued"
+
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_succeeded_checkpoint_when_task_is_still_queued(
+    tmp_path, monkeypatch
+):
+    store = TaskStore(tmp_path / "journal-mismatch.sqlite3")
+    monkeypatch.setattr(app_module, "store", store)
+    prerequisite = store.create_task("[research] Prerequisite", "Must actually have completed")
+    dependent = store.create_task("[research] Dependent", "Must not run if prerequisite is uncertain")
+    qa = store.create_task("[qa_security] Review", "Review completed work")
+    workflow = store.create_workflow(
+        "Reject journal mismatch",
+        [
+            {"title": "Prerequisite", "input": "Complete prerequisite", "role": "research"},
+            {"title": "Dependent", "input": "Use prerequisite", "role": "research", "depends_on": [0]},
+        ],
+    )
+    checkpoint = {
+        "tasks": [
+            {
+                "plan_index": 0, "task_id": prerequisite["id"], "title": "Prerequisite",
+                "status": "succeeded", "depends_on": [], "result": "fabricated checkpoint result",
+            },
+            {
+                "plan_index": 1, "task_id": dependent["id"], "title": "Dependent",
+                "status": "queued", "depends_on": [0],
+            },
+        ],
+        "qa_review": {"task_id": qa["id"], "status": "queued"},
+    }
+    store.update_workflow(workflow["id"], "unknown", results=checkpoint, error="simulated crash")
+    executed = []
+
+    async def should_not_run(task_id):
+        executed.append(task_id)
+        raise AssertionError("recovery must reject inconsistent checkpoint before task execution")
+
+    monkeypatch.setattr(app_module, "run_agent_task", should_not_run)
+    with pytest.raises(HTTPException) as error:
+        await app_module.recover_agent_workflow(workflow["id"])
+
+    assert error.value.status_code == 409
+    assert executed == []
+    assert store.get_task(prerequisite["id"])["status"] == "queued"
+    assert store.get_task(dependent["id"])["status"] == "queued"
+    assert store.get_workflow(workflow["id"])["status"] == "unknown"
