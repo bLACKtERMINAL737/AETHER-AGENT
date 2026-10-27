@@ -480,7 +480,13 @@ class TaskStore:
         """Search message text across conversations, ranked by matching query terms."""
         if limit <= 0:
             return []
-        terms = list(dict.fromkeys(term.casefold() for term in query.split() if term.strip()))
+        import re
+
+        terms = list(dict.fromkeys(
+            term.casefold()
+            for term in re.findall(r"\w+", query, flags=re.UNICODE)
+            if term.casefold()
+        ))
         if not terms:
             return []
         conditions = " OR ".join("instr(aether_casefold(m.content), aether_casefold(?)) > 0" for _ in terms)
@@ -495,7 +501,8 @@ class TaskStore:
         for row in rows:
             item = dict(row)
             haystack = item["content"].casefold()
-            score = sum(1 for term in terms if term in haystack)
+            haystack_terms = set(re.findall(r"\w+", haystack, flags=re.UNICODE))
+            score = sum(1 for term in terms if term in haystack_terms)
             if score:
                 ranked.append((score, item["created_at"], item))
         ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
