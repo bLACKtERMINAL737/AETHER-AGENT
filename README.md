@@ -225,7 +225,7 @@ The chat UI supports **Auto** and **Manual** model modes. Auto mode uses a local
 
 The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, AETHER CLAW raises the last provider error.
 
-Successful chat responses include `route`, `model`, `fallback_used`, and `attempts`. The attempt count includes calls made to both the selected and fallback providers. If no usable route is configured, the router raises a configuration error.
+Successful chat responses include `route`, `model`, `fallback_used`, `attempts`, and a sanitized `attempt_history` list. Each history entry records the route, total attempt number, outcome, and (for failures) exception type only; it deliberately excludes exception messages, prompts, response bodies, and credentials. The attempt count includes calls made to both the selected and fallback providers. If no usable route is configured, the router raises a configuration error.
 
 **Important:** a timeout or connection failure does not always prove that the remote provider stopped processing the request. A retry may therefore cause duplicate processing or billing, depending on the provider. Retries are bounded to limit this risk.
 

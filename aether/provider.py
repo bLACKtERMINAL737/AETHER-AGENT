@@ -397,6 +397,7 @@ class ModelRouter:
 
         last_error: Exception | None = None
         attempts = 0
+        attempt_history: list[dict[str, str | int]] = []
         for provider, provider_route in candidates:
             for attempt in range(self.max_attempts):
                 if attempts >= self.max_total_attempts:
@@ -408,15 +409,18 @@ class ModelRouter:
                         tool_specs=tool_specs, execute_tool=execute_tool,
                         max_tool_calls=max_tool_calls,
                     )
+                    attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "success"})
                     return {
                         **result,
                         "route": provider_route,
                         "model": provider.model or "unknown",
                         "fallback_used": provider_route == "fallback",
                         "attempts": attempts,
+                        "attempt_history": attempt_history,
                     }
                 except Exception as exc:
                     last_error = exc
+                    attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "failure", "error_type": type(exc).__name__})
                     logger.warning(
                         "Model request failed on route %s (attempt %s/%s): %s",
                         provider_route, attempts, self.max_total_attempts, type(exc).__name__,
@@ -442,7 +446,7 @@ class ModelRouter:
         memories: list[dict[str, object]] | None = None,
         model_route: ModelRoute | None = None,
         allow_fallback: bool = True,
-    ) -> dict[str, str | bool | int]:
+    ) -> dict[str, object]:
         selected, route = self._route(task_type, model_route=model_route)
         candidates: list[tuple[ModelProvider, str]] = [(selected, route)]
         if allow_fallback and self.fallback and self.fallback.configured and self.fallback is not selected:
@@ -450,6 +454,7 @@ class ModelRouter:
 
         last_error: Exception | None = None
         attempts = 0
+        attempt_history: list[dict[str, str | int]] = []
         for provider, provider_route in candidates:
             for attempt in range(self.max_attempts):
                 if attempts >= self.max_total_attempts:
@@ -461,15 +466,18 @@ class ModelRouter:
                         answer = await provider.chat(message, task_type, history=history, memories=memories)
                     else:
                         answer = await provider.chat(message, task_type)
+                    attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "success"})
                     return {
                         "answer": answer,
                         "route": provider_route,
                         "model": provider.model or "unknown",
                         "fallback_used": provider_route == "fallback",
                         "attempts": attempts,
+                        "attempt_history": attempt_history,
                     }
                 except Exception as exc:
                     last_error = exc
+                    attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "failure", "error_type": type(exc).__name__})
                     logger.warning(
                         "Model request failed on route %s (attempt %s/%s): %s",
                         provider_route, attempts, self.max_total_attempts, type(exc).__name__,
