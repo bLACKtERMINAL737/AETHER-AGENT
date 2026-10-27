@@ -131,6 +131,8 @@ def test_workspace_list_and_read_reject_sensitive_directory_paths(tmp_path: Path
         registry.execute("workspace.list_files", {"path": "credentials"})
     with pytest.raises(ToolError, match="excluded"):
         registry.execute("workspace.read_file", {"path": "credentials/notes.txt"})
+    with pytest.raises(ToolError, match="excluded"):
+        registry.execute("workspace.search_text", {"query": "private", "path": "credentials"})
 
 
 def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: Path):
