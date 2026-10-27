@@ -172,9 +172,17 @@ class ToolRegistry:
         if normalized in {
             "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
             "credentials", "credentials.json", "secrets.json",
+            ".npmrc", ".pypirc", ".netrc", ".dockercfg",
+            "config.json", "token", "tokens.json", "auth.json",
+            "service-account.json", "service_account.json",
+            "application_default_credentials.json", "auth.toml",
+            "credentials.toml", "kubeconfig", "known_hosts",
         }:
             return True
-        return Path(normalized).suffix in {".pem", ".key", ".p12", ".pfx", ".keystore"}
+        return Path(normalized).suffix in {
+            ".pem", ".key", ".p12", ".pfx", ".keystore",
+            ".jks", ".kdbx", ".asc", ".gpg", ".pgp",
+        }
 
     def list_files(self, path: str = ".") -> dict[str, Any]:
         target = self._safe_path(path)
