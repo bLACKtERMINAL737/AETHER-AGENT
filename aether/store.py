@@ -351,14 +351,16 @@ class TaskStore:
         stop_words = {
             "what", "which", "did", "do", "does", "i", "you", "my", "me",
             "the", "a", "an", "is", "was", "were", "to", "of", "for",
-            "in", "on", "that", "this", "please", "ask", "asked",
+            "in", "on", "that", "this", "please", "ask", "asked", "remember", "recall", "memorized", "saved",
         }
         terms = [
             term.casefold()
             for term in re.findall(r"[\w-]+", query, flags=re.UNICODE)
             if term.casefold() not in stop_words
         ]
-        if limit <= 0:
+        if limit <= 0 or not terms:
+            # Empty/stop-word-only queries must not match every explicit memory
+            # merely because the query resembles a natural-language recall request.
             return []
         candidates = self.list_memories(limit=500)
         recall_intent = bool(
