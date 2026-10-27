@@ -3,7 +3,7 @@ import logging
 import json
 import os
 import re
-from typing import Literal
+from typing import Any, Literal
 from pathlib import Path
 from ipaddress import ip_address
 from urllib.parse import urlsplit
@@ -18,7 +18,7 @@ from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
-from .agents import list_agent_roles, plan_subtasks
+from .agents import dependency_order, list_agent_roles, plan_subtasks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aether")
@@ -96,7 +96,7 @@ class AgentPlanRequest(BaseModel):
 
 class AgentDelegateRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=8_000)
-    subtasks: list[dict[str, str]] = Field(min_length=1, max_length=8)
+    subtasks: list[dict[str, Any]] = Field(min_length=1, max_length=8)
 
 
 class ToolRequest(BaseModel):
@@ -349,7 +349,8 @@ async def plan_agent_work(request: AgentPlanRequest):
         "Return only a JSON object with key subtasks, an array of 1 to 8 objects. "
         "Each object must contain title (max 120 chars), input (max 2000 chars), "
         "and role, one of planner, coding, qa_security, research, memory, monitor. "
-        "Keep each task narrow and actionable. Do not claim to execute tasks.\n\n"
+        "Optionally include depends_on as zero-based prerequisite task indexes; use [] when independent. "
+        "Dependencies must form an acyclic graph. Keep each task narrow and actionable. Do not claim to execute tasks.\n\n"
         f"USER GOAL:\n{request.goal}"
     )
     try:
@@ -449,6 +450,23 @@ async def recover_agent_workflow(workflow_id: str):
         for index, outcome in enumerate(outcomes):
             if outcome.get("status") != "queued":
                 continue
+            by_plan_index = {
+                item.get("plan_index", position): item
+                for position, item in enumerate(outcomes)
+            }
+            dependency_indexes = outcome.get("depends_on", [])
+            if any(
+                by_plan_index.get(dep, {}).get("status") != "succeeded"
+                for dep in dependency_indexes
+            ):
+                outcomes[index] = {
+                    **outcome,
+                    "status": "blocked",
+                    "error": "Prerequisite task did not succeed; recovery did not execute this task.",
+                }
+                checkpoint["tasks"] = outcomes
+                store.update_workflow(workflow_id, "running", results=checkpoint)
+                continue
             task_id = outcome["task_id"]
             try:
                 result = await run_agent_task(task_id)
@@ -535,8 +553,10 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     """Persist a workflow plan and each task/QA checkpoint while running sequentially."""
     route = "reasoning" if reasoning_provider.configured else "primary"
     prompt = (
-        "Return only JSON: {subtasks:[{title,input,role}]}. Create 1-4 tasks for the goal. "
-        "Roles must be coding, research, memory, or monitor. Keep tasks narrow. Do not claim execution.\n\n"
+        "Return only JSON: {subtasks:[{title,input,role,depends_on}]}. Create 1-4 tasks for the goal. "
+        "depends_on is an array of zero-based prerequisite task indexes, or [] if independent. "
+        "Dependencies must form an acyclic graph. Roles must be coding, research, memory, or monitor. "
+        "Keep tasks narrow. Do not claim execution.\n\n"
         + request.goal
     )
     try:
@@ -565,20 +585,52 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     checkpoint = {"tasks": [], "qa_review": None}
 
     try:
-        outcomes = []
-        for item in subtasks:
+        outcomes_by_index: dict[int, dict[str, Any]] = {}
+        outcomes: list[dict[str, Any]] = []
+        for plan_index in dependency_order(subtasks):
+            item = subtasks[plan_index]
+            dependencies = item.get("depends_on", [])
+            blocked_by = [
+                dep for dep in dependencies
+                if outcomes_by_index.get(dep, {}).get("status") != "succeeded"
+            ]
+            if blocked_by:
+                outcome = {
+                    "plan_index": plan_index,
+                    "title": item["title"],
+                    "role": item["role"],
+                    "depends_on": dependencies,
+                    "status": "blocked",
+                    "blocked_by": blocked_by,
+                    "error": "Prerequisite task(s) did not succeed; this task was not executed.",
+                }
+                outcomes_by_index[plan_index] = outcome
+                outcomes.append(outcome)
+                checkpoint = {"tasks": outcomes, "qa_review": None}
+                store.update_workflow(workflow_id, "running", results=checkpoint)
+                continue
+
+            prerequisite_results = {
+                str(dep): outcomes_by_index[dep].get("result", "")
+                for dep in dependencies
+            }
             task = store.create_task(
                 f"[{item['role']}] {item['title']}",
                 f"Workflow ID: {workflow_id}\n"
                 f"Parent goal: {request.goal}\n"
-                f"Assigned role: {item['role']}\nTask: {item['input']}",
+                f"Assigned role: {item['role']}\n"
+                f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\n"
+                f"Task: {item['input']}",
             )
             outcome = {
+                "plan_index": plan_index,
                 "task_id": task["id"],
                 "title": item["title"],
                 "role": item["role"],
+                "depends_on": dependencies,
                 "status": "queued",
             }
+            outcomes_by_index[plan_index] = outcome
             outcomes.append(outcome)
             checkpoint = {"tasks": outcomes, "qa_review": None}
             store.update_workflow(workflow_id, "running", results=checkpoint)
@@ -586,9 +638,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             try:
                 result = await run_agent_task(task["id"])
                 outcome = {
-                    "task_id": task["id"],
-                    "title": item["title"],
-                    "role": item["role"],
+                    **outcome,
                     "status": result["status"],
                     "result": result.get("result", ""),
                     "tool_calls": result.get("tool_calls", 0),
@@ -597,15 +647,13 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             except HTTPException as exc:
                 saved_task = store.get_task(task["id"])
                 outcome = {
-                    "task_id": task["id"],
-                    "title": item["title"],
-                    "role": item["role"],
+                    **outcome,
                     "status": saved_task["status"] if saved_task else "failed",
                     "error": exc.detail,
                 }
+            outcomes_by_index[plan_index] = outcome
             outcomes[-1] = outcome
             checkpoint = {"tasks": outcomes, "qa_review": None}
-            # Each completed specialist outcome is durable before the next task begins.
             store.update_workflow(workflow_id, "running", results=checkpoint)
 
         qa = store.create_task(

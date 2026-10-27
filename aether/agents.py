@@ -17,12 +17,12 @@ def list_agent_roles() -> list[dict[str, Any]]:
     return [{**role, "capabilities": list(role["capabilities"])} for role in _AGENT_ROLES]
 
 
-def plan_subtasks(value: Any) -> list[dict[str, str]]:
-    """Validate untrusted planner output before creating any durable task records."""
+def plan_subtasks(value: Any) -> list[dict[str, Any]]:
+    """Validate a bounded task plan and its zero-based dependency graph."""
     if not isinstance(value, list) or not 1 <= len(value) <= 8:
         raise ValueError("Plan must contain between 1 and 8 subtasks")
-    validated: list[dict[str, str]] = []
-    for item in value:
+    validated: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
         if not isinstance(item, dict):
             raise ValueError("Each subtask must be an object")
         title, task_input, role = item.get("title"), item.get("input"), item.get("role")
@@ -32,5 +32,38 @@ def plan_subtasks(value: Any) -> list[dict[str, str]]:
             raise ValueError("Each subtask input must be 1 to 2000 characters")
         if not isinstance(role, str) or role not in _ALLOWED_ROLES:
             raise ValueError("Each subtask must use a registered agent role")
-        validated.append({"title": title.strip(), "input": task_input.strip(), "role": role})
+        dependencies = item.get("depends_on", [])
+        if (not isinstance(dependencies, list)
+                or any(type(dep) is not int for dep in dependencies)
+                or len(dependencies) > 7
+                or len(set(dependencies)) != len(dependencies)
+                or any(dep < 0 or dep >= len(value) or dep == index for dep in dependencies)):
+            raise ValueError(f"Subtask {index} has invalid depends_on indexes")
+        validated.append({"title": title.strip(), "input": task_input.strip(),
+                          "role": role, "depends_on": sorted(dependencies)})
+    remaining = {i: set(item["depends_on"]) for i, item in enumerate(validated)}
+    completed: set[int] = set()
+    while remaining:
+        ready = [i for i, deps in remaining.items() if deps <= completed]
+        if not ready:
+            raise ValueError("Subtask dependencies must form an acyclic graph")
+        for i in ready:
+            completed.add(i)
+            del remaining[i]
     return validated
+
+
+def dependency_order(subtasks: list[dict[str, Any]]) -> list[int]:
+    """Return a stable topological order for an already validated plan."""
+    remaining = {i: set(item.get("depends_on", [])) for i, item in enumerate(subtasks)}
+    completed: set[int] = set()
+    order: list[int] = []
+    while remaining:
+        ready = [i for i, deps in remaining.items() if deps <= completed]
+        if not ready:
+            raise ValueError("Subtask dependencies must form an acyclic graph")
+        for i in ready:
+            order.append(i)
+            completed.add(i)
+            del remaining[i]
+    return order

@@ -64,7 +64,10 @@ async def test_orchestrator_persists_plan_tasks_and_qa_checkpoint(tmp_path, monk
     saved = store.get_workflow(result["workflow_id"])
     assert saved is not None
     assert saved["status"] == "succeeded"
-    assert saved["plan"] == router.plan["subtasks"]
+    assert saved["plan"] == [
+        {**item, "depends_on": item.get("depends_on", [])}
+        for item in router.plan["subtasks"]
+    ]
     assert [item["status"] for item in saved["results"]["tasks"]] == [
         "succeeded", "succeeded"
     ]
@@ -123,3 +126,43 @@ def test_workflow_read_endpoints_return_saved_state_and_validate_ids(
     with pytest.raises(HTTPException) as bad_limit:
         app_module.list_agent_workflows(limit=0)
     assert bad_limit.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on_failure(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    router.plan = {
+        "subtasks": [
+            {"title": "Publish summary", "input": "Summarize findings", "role": "coding", "depends_on": [2]},
+            {"title": "Independent check", "input": "Check independently", "role": "monitor"},
+            {"title": "Gather evidence", "input": "Gather evidence", "role": "research"},
+        ]
+    }
+    execution_order = []
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        execution_order.append(task["title"])
+        store.claim_task(task_id)
+        if task["title"].startswith("[research]"):
+            store.set_task_status(task_id, "failed", error="simulated failure")
+            return {"task_id": task_id, "status": "failed", "result": "", "tool_calls": 0, "tool_attempts": 0}
+        store.set_task_status(task_id, "succeeded", result={"answer": "ok"})
+        return {"task_id": task_id, "status": "succeeded", "result": "ok", "tool_calls": 0, "tool_attempts": 0}
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Gather evidence then summarize")
+    )
+
+    assert any(title.startswith("[research] Gather evidence") for title in execution_order)
+    assert any(title.startswith("[monitor] Independent check") for title in execution_order)
+    assert not any(title.startswith("[coding] Publish summary") for title in execution_order)
+    saved = store.get_workflow(result["workflow_id"])
+    by_title = {item["title"]: item for item in saved["results"]["tasks"]}
+    assert by_title["Gather evidence"]["status"] == "failed"
+    assert by_title["Publish summary"]["status"] == "blocked"
+    assert by_title["Publish summary"]["blocked_by"] == [2]
+    assert result["status"] == "partial"
