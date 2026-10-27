@@ -55,23 +55,23 @@ class ToolRegistry:
         self._tools: dict[str, tuple[type[BaseModel], Callable[..., Any], str]] = {
             "workspace.list_files": (
                 ListFilesInput, self.list_files,
-                "List directory entries in the approved workspace. Use only when the user asks " 
-                "for a directory listing or you need to discover an unknown path. The path must " 
+                "List directory entries in the approved workspace. Use only when the user asks "
+                "for a directory listing or you need to discover an unknown path. The path must "
                 "be a directory; do not use this tool to read a file's contents.",
             ),
             "workspace.search_text": (
                 SearchTextInput, self.search_text,
-                "Find occurrences of a non-empty text query within files under an existing " 
-                "workspace directory. Use for searching across files, not for reading a known " 
+                "Find occurrences of a non-empty text query within files under an existing "
+                "workspace directory. Use for searching across files, not for reading a known "
                 "file. The path must be a directory, never a file path.",
             ),
             "workspace.read_file": (
                 ReadFileInput,
                 self.read_file,
-                "READ A SPECIFIC FILE: when the user asks what a named file contains, asks to " 
-                "read/inspect/summarize/quote a file, or requests its lines, call this tool with " 
-                "the file's relative path. This returns the actual file contents. Do not substitute " 
-                "workspace.list_files or workspace.search_text for reading a known file, and never " 
+                "READ A SPECIFIC FILE: when the user asks what a named file contains, asks to "
+                "read/inspect/summarize/quote a file, or requests its lines, call this tool with "
+                "the file's relative path. This returns the actual file contents. Do not substitute "
+                "workspace.list_files or workspace.search_text for reading a known file, and never "
                 "guess contents. If the read fails, report the error.",
             ),
             "web.search": (
