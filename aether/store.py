@@ -374,8 +374,13 @@ class TaskStore:
         for item in candidates:
             haystack = (
                 item["category"] + " " + item["content"] + " " + " ".join(item["tags"])
-            ).casefold()
-            haystack_terms = set(re.findall(r"\w+", haystack, flags=re.UNICODE))
+            )
+            # Tokenize before casefolding so Unicode characters such as dotted İ
+            # remain part of a searchable token.
+            haystack_terms = {
+                token.casefold()
+                for token in re.findall(r"\w+", haystack, flags=re.UNICODE)
+            }
             score = sum(1 for term in terms if term in haystack_terms)
             # Natural-language recall questions may not contain the saved value.
             # Give explicit user-requested memories a modest boost for those queries.
