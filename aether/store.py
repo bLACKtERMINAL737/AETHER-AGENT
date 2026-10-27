@@ -148,13 +148,25 @@ class TaskStore:
     def set_task_status(self, task_id: str, status: str, result: Any = None, error: str | None = None) -> None:
         if status not in STATUSES:
             raise ValueError("Invalid task status")
+        encoded_result = json.dumps(result, ensure_ascii=False) if result is not None else None
         with self.connect() as con:
+            # Queued/running work may be finalized, but a terminal or uncertain
+            # task must never be silently reopened by a stale request. Same-state
+            # writes remain allowed so callers can enrich the existing journal row.
             cursor = con.execute(
-                "UPDATE tasks SET status=?,updated_at=?,result_json=?,error_text=? WHERE id=?",
-                (status, utc_now(), json.dumps(result, ensure_ascii=False) if result is not None else None, error, task_id),
+                "UPDATE tasks SET status=?,updated_at=?,result_json=?,error_text=? "
+                "WHERE id=? AND (status IN ('queued','running') OR status=?)",
+                (status, utc_now(), encoded_result, error, task_id, status),
             )
             if cursor.rowcount == 0:
-                raise KeyError("Task not found")
+                row = con.execute(
+                    "SELECT status FROM tasks WHERE id=?", (task_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError("Task not found")
+                raise ValueError(
+                    f"Invalid task status transition from {row['status']} to {status}"
+                )
 
     def create_workflow(self, goal: str, plan: list[dict[str, Any]]) -> dict[str, Any]:
         """Persist a workflow plan before any specialist task starts."""
