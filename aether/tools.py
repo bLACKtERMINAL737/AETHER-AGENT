@@ -152,8 +152,15 @@ class ToolRegistry:
             raise ToolError(f"Invalid tool input: {exc.errors(include_url=False)}") from exc
         return fn(**args.model_dump())
 
+    @staticmethod
+    def _is_credential_path(relative: Path) -> bool:
+        excluded = {".ssh", ".aws", ".azure", ".gnupg"}
+        return any(part.casefold() in excluded for part in relative.parts)
+
     def list_files(self, path: str = ".") -> dict[str, Any]:
         target = self._safe_path(path)
+        if self._is_credential_path(target.relative_to(self.workspace)):
+            raise ToolError("Path is excluded because it may contain credentials")
         if not target.exists():
             raise ToolError("Path does not exist")
         if not target.is_dir():
@@ -169,6 +176,8 @@ class ToolRegistry:
         self, path: str, start_line: int = 1, max_lines: int = 200
     ) -> dict[str, Any]:
         target = self._safe_path(path)
+        if self._is_credential_path(target.relative_to(self.workspace)):
+            raise ToolError("Path is excluded because it may contain credentials")
         if not target.exists():
             raise ToolError("File does not exist")
         if not target.is_file():

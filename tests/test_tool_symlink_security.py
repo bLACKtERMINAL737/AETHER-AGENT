@@ -134,3 +134,34 @@ def test_search_rejects_explicit_credential_directory_path(tmp_path: Path):
         ToolRegistry(workspace).execute(
             "workspace.search_text", {"query": "token", "path": ".AWS"}
         )
+
+
+
+def test_read_rejects_direct_credential_directory_path(tmp_path: Path):
+    import pytest
+    from aether.tools import ToolError
+
+    workspace = tmp_path / "workspace"
+    secret_dir = workspace / ".AWS"
+    secret_dir.mkdir(parents=True)
+    (secret_dir / "credentials.json").write_text('{"token": "secret"}', encoding="utf-8")
+
+    with pytest.raises(ToolError, match="may contain credentials"):
+        ToolRegistry(workspace).execute(
+            "workspace.read_file", {"path": ".AWS/credentials.json"}
+        )
+
+
+def test_list_rejects_direct_credential_directory_path(tmp_path: Path):
+    import pytest
+    from aether.tools import ToolError
+
+    workspace = tmp_path / "workspace"
+    secret_dir = workspace / ".SSH"
+    secret_dir.mkdir(parents=True)
+    (secret_dir / "id_ed25519").write_text("private material", encoding="utf-8")
+
+    with pytest.raises(ToolError, match="may contain credentials"):
+        ToolRegistry(workspace).execute(
+            "workspace.list_files", {"path": ".SSH"}
+        )
