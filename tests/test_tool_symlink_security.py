@@ -71,3 +71,35 @@ def test_list_files_skips_symlinked_file_and_directory(tmp_path: Path):
     assert "real.txt" in names
     assert "linked-file.txt" not in names
     assert "linked-dir" not in names
+
+
+
+def test_read_rejects_symlink_to_file_inside_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    target = workspace / "actual.txt"
+    target.write_text("secret target", encoding="utf-8")
+    (workspace / "alias.txt").symlink_to(target)
+
+    registry = ToolRegistry(workspace)
+    from aether.tools import ToolError
+    import pytest
+
+    with pytest.raises(ToolError, match="Symlink paths are not supported"):
+        registry.execute("workspace.read_file", {"path": "alias.txt"})
+
+
+def test_read_rejects_symlinked_parent_directory_inside_workspace(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    real_dir = workspace / "real"
+    real_dir.mkdir()
+    (real_dir / "notes.txt").write_text("secret target", encoding="utf-8")
+    (workspace / "alias-dir").symlink_to(real_dir, target_is_directory=True)
+
+    registry = ToolRegistry(workspace)
+    from aether.tools import ToolError
+    import pytest
+
+    with pytest.raises(ToolError, match="Symlink paths are not supported"):
+        registry.execute("workspace.read_file", {"path": "alias-dir/notes.txt"})
