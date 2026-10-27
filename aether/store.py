@@ -480,7 +480,13 @@ class TaskStore:
         """Search message text across conversations, ranked by matching query terms."""
         if limit <= 0:
             return []
-        terms = list(dict.fromkeys(term.casefold() for term in query.split() if term.strip()))
+        import re
+
+        terms = list(dict.fromkeys(
+            term.casefold()
+            for term in re.findall(r"\w+", query, flags=re.UNICODE)
+            if term.casefold()
+        ))
         if not terms:
             return []
         conditions = " OR ".join("instr(aether_casefold(m.content), aether_casefold(?)) > 0" for _ in terms)
@@ -494,8 +500,14 @@ class TaskStore:
         ranked = []
         for row in rows:
             item = dict(row)
-            haystack = item["content"].casefold()
-            score = sum(1 for term in terms if term in haystack)
+            # Tokenize before casefolding: Unicode casefolding can introduce
+            # combining marks (for example, İ -> i + combining dot), which
+            # Python's \\w pattern does not include when scanning folded text.
+            haystack_terms = {
+                token.casefold()
+                for token in re.findall(r"\w+", item["content"], flags=re.UNICODE)
+            }
+            score = sum(1 for term in terms if term in haystack_terms)
             if score:
                 ranked.append((score, item["created_at"], item))
         ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)

@@ -272,3 +272,34 @@ def test_claim_task_raises_for_missing_task(tmp_path: Path):
     store = TaskStore(tmp_path / "claim-missing.sqlite3")
     with pytest.raises(KeyError, match="Task not found"):
         store.claim_task("missing-id")
+
+def test_session_search_matches_complete_words_not_substrings(tmp_path: Path):
+    store = TaskStore(tmp_path / "session-search.sqlite3")
+    session = store.create_session("Word boundary search")
+    store.add_session_message(session["id"], "user", "The party starts at noon.")
+    store.add_session_message(session["id"], "assistant", "A piece of art is on the wall.")
+
+    results = store.search_session_messages("art")
+
+    assert len(results) == 1
+    assert results[0]["content"] == "A piece of art is on the wall."
+
+
+def test_session_search_finds_hyphenated_identifier_components(tmp_path: Path):
+    store = TaskStore(tmp_path / "session-search.sqlite3")
+    session = store.create_session("Identifier search")
+    store.add_session_message(session["id"], "user", "The project is AETHER-CLAW.")
+
+    results = store.search_session_messages("CLAW")
+
+    assert len(results) == 1
+    assert results[0]["content"] == "The project is AETHER-CLAW."
+
+
+def test_session_search_ignores_punctuation_only_query(tmp_path: Path):
+    store = TaskStore(tmp_path / "session-search.sqlite3")
+    session = store.create_session("Punctuation search")
+    store.add_session_message(session["id"], "user", "A useful saved conversation.")
+
+    assert store.search_session_messages("... --- !!!") == []
+
