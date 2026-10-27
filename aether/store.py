@@ -271,11 +271,26 @@ class TaskStore:
             raise ValueError("Invalid final tool status")
         with self.connect() as con:
             cursor = con.execute(
-                "UPDATE tool_executions SET status=?,updated_at=?,result_json=?,error_text=? WHERE id=?",
-                (status, utc_now(), json.dumps(result, ensure_ascii=False) if result is not None else None, error, execution_id),
+                "UPDATE tool_executions SET status=?,updated_at=?,result_json=?,error_text=? "
+                "WHERE id=? AND (status='running' OR status=?)",
+                (
+                    status,
+                    utc_now(),
+                    json.dumps(result, ensure_ascii=False) if result is not None else None,
+                    error,
+                    execution_id,
+                    status,
+                ),
             )
             if cursor.rowcount == 0:
-                raise KeyError("Tool execution not found")
+                row = con.execute(
+                    "SELECT status FROM tool_executions WHERE id=?", (execution_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError("Tool execution not found")
+                raise ValueError(
+                    f"Invalid tool execution status transition from {row['status']} to {status}"
+                )
 
     def list_tool_executions(self, task_id: str) -> list[dict[str, Any]]:
         with self.connect() as con:
