@@ -316,3 +316,96 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
     assert "timeout" in by_title["Slow prerequisite"]["error"].lower()
     assert by_title["Must wait"]["status"] == "blocked"
     assert saved["results"]["qa_review"]["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_respects_configured_concurrency_limit(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("AETHER_AGENT_MAX_CONCURRENCY", "2")
+    router.plan = {
+        "subtasks": [
+            {"title": f"Bounded task {index}", "input": "Run safely", "role": "research"}
+            for index in range(4)
+        ]
+    }
+    active = 0
+    peak_active = 0
+    started = []
+    lock = asyncio.Lock()
+    release_batch = asyncio.Event()
+
+    async def fake_run(task_id):
+        nonlocal active, peak_active
+        task = store.get_task(task_id)
+        if task["title"].startswith("[qa_security]"):
+            store.claim_task(task_id)
+            store.set_task_status(task_id, "succeeded", result={"answer": "QA complete"})
+            return {
+                "task_id": task_id, "status": "succeeded", "result": "QA complete",
+                "tool_calls": 0, "tool_attempts": 0,
+            }
+        async with lock:
+            active += 1
+            peak_active = max(peak_active, active)
+            started.append(task["title"])
+            if len(started) >= 2:
+                release_batch.set()
+        await asyncio.wait_for(release_batch.wait(), timeout=2)
+        await asyncio.sleep(0.01)
+        store.claim_task(task_id)
+        store.set_task_status(task_id, "succeeded", result={"answer": task["title"]})
+        async with lock:
+            active -= 1
+        return {
+            "task_id": task_id, "status": "succeeded", "result": task["title"],
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Respect configured concurrency")
+    )
+
+    assert result["status"] == "succeeded"
+    assert peak_active == 2
+    assert len(started) == 4
+    assert result["max_concurrency"] == 2
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [("0", 1), ("1", 1), ("3", 3), ("99", 3), ("invalid", 3)],
+)
+def test_workflow_concurrency_configuration_is_clamped(
+    tmp_path, monkeypatch, configured, expected
+):
+    monkeypatch.setenv("AETHER_AGENT_MAX_CONCURRENCY", configured)
+    # The orchestration response exposes the effective safe limit. Reuse the
+    # async orchestration test path through a synchronous pytest wrapper.
+    import asyncio
+
+    store, router = configure(monkeypatch, tmp_path)
+    router.plan = {
+        "subtasks": [
+            {"title": "Single task", "input": "Run once", "role": "research"}
+        ]
+    }
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        store.claim_task(task_id)
+        store.set_task_status(task_id, "succeeded", result={"answer": task["title"]})
+        return {
+            "task_id": task_id, "status": "succeeded", "result": task["title"],
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = asyncio.run(
+        app_module.orchestrate_agent_work(
+            app_module.AgentPlanRequest(goal="Check safe concurrency setting")
+        )
+    )
+    assert result["max_concurrency"] == expected
