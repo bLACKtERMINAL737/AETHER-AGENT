@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -166,3 +167,95 @@ async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on
     assert by_title["Publish summary"]["status"] == "blocked"
     assert by_title["Publish summary"]["blocked_by"] == [2]
     assert result["status"] == "partial"
+
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_runs_independent_tasks_concurrently_with_a_hard_cap(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    router.plan = {
+        "subtasks": [
+            {"title": f"Independent {index}", "input": "Inspect independently", "role": "research"}
+            for index in range(4)
+        ]
+    }
+    active = 0
+    peak_active = 0
+    started = []
+    lock = asyncio.Lock()
+    release_batch = asyncio.Event()
+
+    async def fake_run(task_id):
+        nonlocal active, peak_active
+        task = store.get_task(task_id)
+        async with lock:
+            active += 1
+            peak_active = max(peak_active, active)
+            started.append(task["title"])
+            if len(started) >= 3:
+                release_batch.set()
+        await asyncio.wait_for(release_batch.wait(), timeout=2)
+        await asyncio.sleep(0.01)
+        store.claim_task(task_id)
+        store.set_task_status(task_id, "succeeded", result={"answer": task["title"]})
+        async with lock:
+            active -= 1
+        return {
+            "task_id": task_id, "status": "succeeded", "result": task["title"],
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Run independent checks")
+    )
+
+    assert result["status"] == "succeeded"
+    assert peak_active == 3
+    assert len(started) == 4
+    assert [item["plan_index"] for item in result["tasks"]] == [0, 1, 2, 3]
+    assert result["max_concurrency"] == 3
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_waits_for_all_prerequisites_before_dependent_task(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    router.plan = {
+        "subtasks": [
+            {"title": "Prerequisite A", "input": "A", "role": "research"},
+            {"title": "Prerequisite B", "input": "B", "role": "monitor"},
+            {"title": "Dependent C", "input": "Use A and B", "role": "coding", "depends_on": [0, 1]},
+        ]
+    }
+    completed = set()
+    completion_order = []
+    lock = asyncio.Lock()
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        title = task["title"]
+        if title.startswith("[coding]"):
+            assert {"[research] Prerequisite A", "[monitor] Prerequisite B"} <= completed
+        store.claim_task(task_id)
+        await asyncio.sleep(0.01)
+        store.set_task_status(task_id, "succeeded", result={"answer": title})
+        async with lock:
+            completed.add(title)
+            completion_order.append(title)
+        return {
+            "task_id": task_id, "status": "succeeded", "result": title,
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Run dependent checks safely")
+    )
+
+    assert result["status"] == "succeeded"
+    assert completion_order.index("[coding] Dependent C") > completion_order.index("[research] Prerequisite A")
+    assert completion_order.index("[coding] Dependent C") > completion_order.index("[monitor] Prerequisite B")
