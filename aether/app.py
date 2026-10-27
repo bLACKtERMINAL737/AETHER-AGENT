@@ -717,12 +717,16 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "failures": failures,
         }
 
-    def persist_checkpoint() -> None:
+    def persist_checkpoint(
+        status: str = "running", error: str | None = None
+    ) -> None:
         checkpoint["tasks"] = ordered_outcomes()
         checkpoint["diagnostics"] = build_diagnostics(
             checkpoint["tasks"], checkpoint.get("qa_review")
         )
-        store.update_workflow(workflow_id, "running", results=checkpoint)
+        store.update_workflow(
+            workflow_id, status, results=checkpoint, error=error
+        )
 
     async def run_task_with_timeout(task_id: str) -> dict[str, Any]:
         try:
@@ -766,11 +770,11 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "error": "Workflow execution was cancelled; inspect task and tool journals before recovery.",
             }
             outcomes_by_index[plan_index] = updated
-            persist_checkpoint()
-            store.update_workflow(
-                workflow_id,
+            # Save the uncertain task outcome and transition the workflow to unknown
+            # in the same checkpoint write. A later "running" checkpoint would
+            # incorrectly reopen a workflow that has already been marked uncertain.
+            persist_checkpoint(
                 "unknown",
-                results=checkpoint,
                 error="Workflow execution was cancelled; task outcomes require inspection.",
             )
             raise
