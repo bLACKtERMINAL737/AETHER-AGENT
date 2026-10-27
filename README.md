@@ -144,7 +144,7 @@ The agent endpoints have different execution guarantees:
 
 - `POST /agents/plan` asks the configured model for a bounded plan and does not execute it.
 - `POST /agents/delegate` validates a supplied plan and creates queued task records; it does not run them.
-- `POST /agents/orchestrate` validates a model-generated plan and dependency graph, stores a durable workflow record, executes tasks in stable dependency order, blocks downstream tasks when prerequisites fail, and checkpoints each result plus a final QA/security review.
+- `POST /agents/orchestrate` validates a model-generated plan and dependency graph, stores a durable workflow record, runs up to three dependency-ready specialist tasks concurrently, blocks downstream tasks when prerequisites fail, and checkpoints each task result plus a final QA/security review.
 - `GET /agents/workflows?limit=50` lists recent workflow runs.
 - `GET /agents/workflows/{workflow_id}` returns the saved plan, task checkpoints, QA result, timestamps, and workflow status.
 - `POST /agents/workflows/{workflow_id}/recover` explicitly continues an interrupted workflow only when its recorded queued tasks are still queued in the task journal.
@@ -205,7 +205,7 @@ Memory is explicit and local; the application does not silently infer or save me
 
 - SQLite WAL and transactions are used for local persistence.
 - Interrupted in-flight tasks, tool executions, and running agent workflows are marked `unknown` rather than replayed automatically.
-- Agent workflow plans, dependency graphs, task outcomes, and QA checkpoints are persisted in SQLite and exposed through read-only workflow endpoints. Cycles and invalid dependency indexes are rejected before task creation.
+- Agent workflow plans, dependency graphs, task outcomes, and QA checkpoints are persisted in SQLite and exposed through read-only workflow endpoints. Cycles and invalid dependency indexes are rejected before task creation. Fresh orchestration runs at most three independent tasks concurrently; dependent work waits for all prerequisites to succeed. Explicit recovery remains sequential and never replays running, failed, succeeded, or unknown tasks.
 - Coding proposal application verifies original file hashes before replacing files.
 - Proposal state transitions are checked to prevent invalid approval/rejection and duplicate application.
 - Sandbox tests run without network access and do not pull images at runtime.
