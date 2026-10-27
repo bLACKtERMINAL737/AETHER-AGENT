@@ -167,6 +167,15 @@ async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on
     assert by_title["Publish summary"]["status"] == "blocked"
     assert by_title["Publish summary"]["blocked_by"] == [2]
     assert result["status"] == "partial"
+    diagnostics = result["diagnostics"]
+    assert diagnostics["task_counts"]["failed"] == 1
+    assert diagnostics["task_counts"]["blocked"] == 1
+    assert diagnostics["failure_count"] == 2
+    assert {item["category"] for item in diagnostics["failures"]} == {
+        "task_failed", "dependency_blocked"
+    }
+    saved_diagnostics = store.get_workflow(result["workflow_id"])["results"]["diagnostics"]
+    assert saved_diagnostics == diagnostics
 
 
 
@@ -316,6 +325,10 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
     assert "timeout" in by_title["Slow prerequisite"]["error"].lower()
     assert by_title["Must wait"]["status"] == "blocked"
     assert saved["results"]["qa_review"]["status"] == "succeeded"
+    diagnostic_categories = {
+        item["category"] for item in saved["results"]["diagnostics"]["failures"]
+    }
+    assert diagnostic_categories == {"timeout", "dependency_blocked"}
 
 
 @pytest.mark.asyncio

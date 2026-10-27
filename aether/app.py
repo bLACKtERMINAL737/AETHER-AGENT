@@ -596,13 +596,67 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     workflow_id = workflow["id"]
     outcomes_by_index: dict[int, dict[str, Any]] = {}
     pending = set(range(len(subtasks)))
-    checkpoint: dict[str, Any] = {"tasks": [], "qa_review": None}
+    checkpoint: dict[str, Any] = {"tasks": [], "qa_review": None, "diagnostics": {}}
 
     def ordered_outcomes() -> list[dict[str, Any]]:
         return [outcomes_by_index[index] for index in sorted(outcomes_by_index)]
 
+    def build_diagnostics(
+        task_outcomes: list[dict[str, Any]],
+        qa_review: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Create a compact, durable summary without discarding individual outcomes."""
+        statuses = ("queued", "running", "succeeded", "failed", "unknown", "blocked")
+        counts = {
+            status: sum(1 for item in task_outcomes if item.get("status") == status)
+            for status in statuses
+        }
+        failures = []
+        for item in task_outcomes:
+            status = item.get("status")
+            if status in {"failed", "unknown", "blocked"}:
+                reason = item.get("error")
+                if not reason and status == "blocked":
+                    reason = "One or more prerequisites did not succeed."
+                if not reason and status == "unknown":
+                    reason = "Execution outcome is uncertain; inspect task and tool journals."
+                if not reason:
+                    reason = "Task did not succeed."
+                failures.append({
+                    "plan_index": item.get("plan_index"),
+                    "task_id": item.get("task_id"),
+                    "title": item.get("title", "Untitled task"),
+                    "status": status,
+                    "category": (
+                        "timeout" if "timeout" in str(reason).lower()
+                        else "dependency_blocked" if status == "blocked"
+                        else "outcome_unknown" if status == "unknown"
+                        else "task_failed"
+                    ),
+                    "reason": str(reason)[:500],
+                })
+        qa_status = qa_review.get("status") if isinstance(qa_review, dict) else None
+        if qa_status and qa_status != "succeeded":
+            qa_reason = qa_review.get("error") or "QA review did not succeed."
+            failures.append({
+                "task_id": qa_review.get("task_id"),
+                "title": "QA/security review",
+                "status": qa_status,
+                "category": "qa_review_failed",
+                "reason": str(qa_reason)[:500],
+            })
+        return {
+            "task_counts": counts,
+            "qa_status": qa_status,
+            "failure_count": len(failures),
+            "failures": failures,
+        }
+
     def persist_checkpoint() -> None:
         checkpoint["tasks"] = ordered_outcomes()
+        checkpoint["diagnostics"] = build_diagnostics(
+            checkpoint["tasks"], checkpoint.get("qa_review")
+        )
         store.update_workflow(workflow_id, "running", results=checkpoint)
 
     async def run_task_with_timeout(task_id: str) -> dict[str, Any]:
@@ -753,6 +807,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "error": exc.detail if isinstance(exc, HTTPException) else str(exc),
             }
         checkpoint["qa_review"] = review
+        checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
         all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded"
         final_status = "succeeded" if all_ok else "partial"
         store.update_workflow(
@@ -771,6 +826,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "approval_required_before_changes": True,
             "max_concurrency": max_concurrency,
             "task_timeout_seconds": task_timeout_seconds,
+            "diagnostics": checkpoint["diagnostics"],
         }
     except Exception:
         # Keep already persisted checkpoints; never automatically replay a workflow
