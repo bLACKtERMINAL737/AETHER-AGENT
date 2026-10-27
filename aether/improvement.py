@@ -65,7 +65,9 @@ def parse_pytest_evidence(result: dict[str, Any]) -> TestEvidence | None:
         return None
     total = sum(counts.values())
     failures = counts["failed"] + counts["error"]
-    if total <= 0:
+    # A green process exit is not sufficient when pytest ran no passing tests.
+    # All-skipped or all-xfailed runs must not authorize a self-improvement.
+    if total <= 0 or counts["passed"] == 0:
         return None
     passed = bool(result.get("passed")) and failures == 0
     if not passed and failures == 0:
