@@ -147,3 +147,16 @@ def test_origin_validation_rejects_empty_userinfo_and_zero_port(origin):
 
 def test_origin_validation_rejects_zero_port_in_request_host():
     assert not _origin_is_local("http://127.0.0.1", "127.0.0.1:0", "http")
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/docs", "/openapi.json", "/redoc"])
+async def test_api_documentation_routes_require_authentication(monkeypatch, path):
+    app = make_app(monkeypatch)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.get(path)
+
+    assert response.status_code == 401
