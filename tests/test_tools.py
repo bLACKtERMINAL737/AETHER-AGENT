@@ -121,6 +121,18 @@ def test_workspace_search_excludes_sensitive_named_directories(tmp_path: Path):
     assert [match["file"] for match in result["matches"]] == ["docs/notes.txt"]
 
 
+def test_workspace_list_and_read_reject_sensitive_directory_paths(tmp_path: Path):
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    (credentials / "notes.txt").write_text("private note", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    with pytest.raises(ToolError, match="excluded"):
+        registry.execute("workspace.list_files", {"path": "credentials"})
+    with pytest.raises(ToolError, match="excluded"):
+        registry.execute("workspace.read_file", {"path": "credentials/notes.txt"})
+
+
 def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: Path):
     registry = ToolRegistry(tmp_path)
     descriptions = {item["name"]: item["description"] for item in registry.describe()}
