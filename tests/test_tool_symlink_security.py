@@ -103,3 +103,34 @@ def test_read_rejects_symlinked_parent_directory_inside_workspace(tmp_path: Path
 
     with pytest.raises(ToolError, match="Symlink paths are not supported"):
         registry.execute("workspace.read_file", {"path": "alias-dir/notes.txt"})
+
+
+
+def test_search_excludes_credential_directories_case_insensitively(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    for relative in (".SSH/private.json", ".AWS/credentials.json",
+                     ".Azure/tokens.json", ".GNUPG/private.json"):
+        path = workspace / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"needle": "secret-value"}', encoding="utf-8")
+    (workspace / "safe.json").write_text('{"needle": "safe-value"}', encoding="utf-8")
+
+    result = ToolRegistry(workspace).execute("workspace.search_text", {"query": "needle"})
+
+    assert [match["file"] for match in result["matches"]] == ["safe.json"]
+
+
+def test_search_rejects_explicit_credential_directory_path(tmp_path: Path):
+    import pytest
+    from aether.tools import ToolError
+
+    workspace = tmp_path / "workspace"
+    secret_dir = workspace / ".AWS"
+    secret_dir.mkdir(parents=True)
+    (secret_dir / "tokens.json").write_text('{"token": "secret"}', encoding="utf-8")
+
+    with pytest.raises(ToolError, match="may contain credentials"):
+        ToolRegistry(workspace).execute(
+            "workspace.search_text", {"query": "token", "path": ".AWS"}
+        )

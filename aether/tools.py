@@ -196,8 +196,23 @@ class ToolRegistry:
             raise ToolError("Search path must be an existing directory")
         matches = []
         allowed = {".py", ".txt", ".md", ".json", ".toml", ".yaml", ".yml", ".js", ".ts", ".html", ".css", ".c", ".cpp", ".h"}
+        excluded_dirs = {
+            ".git", ".venv", "node_modules", "__pycache__",
+            ".ssh", ".aws", ".azure", ".gnupg",
+        }
+        excluded_dirs = {name.casefold() for name in excluded_dirs}
+        try:
+            relative_parts = target.relative_to(self.workspace).parts
+        except ValueError as exc:
+            raise ToolError("Search path escapes the configured workspace") from exc
+        if any(part.casefold() in excluded_dirs for part in relative_parts):
+            raise ToolError("Search path is excluded because it may contain credentials")
         for root, dirs, names in os.walk(target, followlinks=False):
-            dirs[:] = [d for d in dirs if d not in {".git", ".venv", "node_modules", "__pycache__"} and not (Path(root) / d).is_symlink()]
+            dirs[:] = [
+                d for d in dirs
+                if d.casefold() not in excluded_dirs
+                and not (Path(root) / d).is_symlink()
+            ]
             for name in names:
                 file_path = Path(root) / name
                 if file_path.suffix.lower() not in allowed:
