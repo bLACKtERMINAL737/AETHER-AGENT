@@ -30,15 +30,20 @@ def _origin_is_local(origin: str, request_host: str, request_scheme: str | None 
         request_name = parsed_request.hostname
         if not parsed_origin.scheme or not origin_host or not request_name:
             return False
-        if parsed_origin.username or parsed_origin.password or parsed_origin.path not in {"", "/"}:
+        # Reject any userinfo syntax, including empty username/password forms.
+        if "@" in parsed_origin.netloc or parsed_origin.username is not None or parsed_origin.password is not None:
+            return False
+        if parsed_origin.path not in {"", "/"}:
             return False
         if parsed_origin.query or parsed_origin.fragment:
             return False
         if request_scheme and parsed_origin.scheme.lower() != request_scheme.lower():
             return False
         default_port = 443 if parsed_origin.scheme.lower() == "https" else 80
-        origin_port = parsed_origin.port or default_port
-        request_port = parsed_request.port or default_port
+        origin_port = parsed_origin.port if parsed_origin.port is not None else default_port
+        request_port = parsed_request.port if parsed_request.port is not None else default_port
+        if origin_port == 0 or request_port == 0:
+            return False
         return (
             _is_loopback(origin_host)
             and _is_loopback(request_name)
