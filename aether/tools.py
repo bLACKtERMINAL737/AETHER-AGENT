@@ -181,11 +181,6 @@ class ToolRegistry:
             return True
         if normalized in {".docker", ".kube", ".aws", ".azure", ".config"}:
             return True
-        if normalized == "config" and any(
-            parent.casefold() in {".ssh", ".aws", ".azure", ".docker", ".kube"}
-            for parent in Path(name).parts[:-1]
-        ):
-            return True
         return Path(normalized).suffix in {
             ".pem", ".key", ".p12", ".pfx", ".keystore",
             ".jks", ".kdbx", ".asc", ".gpg", ".pgp",
