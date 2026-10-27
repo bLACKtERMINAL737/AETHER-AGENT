@@ -7,6 +7,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Local FastAPI service** with OpenAPI documentation and a lightweight review UI.
 - **Local API protection** with an optional shared bearer-style token and same-origin checks for state-changing requests.
 - **Persistent task journal** backed by SQLite, including explicit tool-execution states and crash-safe handling of interrupted work.
+- **Durable agent workflows** that persist the validated plan, specialist task IDs/results, and final QA checkpoint, with read endpoints for later inspection.
 - **Task Journal UI panel** to create local task records, review statuses, and inspect recorded tool-execution details using the existing task API. Creating a record does not automatically execute the task.
 - **Workspace tools** for listing files and searching text while preventing paths from escaping the configured workspace.
 - **Auto and Manual model modes**: Auto locally classifies task intent and selects a configured route; Manual lets the user explicitly select a configured route. Neither mode exposes credentials.
@@ -137,6 +138,18 @@ Open these local URLs:
 - API documentation: http://127.0.0.1:8000/docs
 - Health check: http://127.0.0.1:8000/health
 
+## Agent workflows
+
+The agent endpoints have different execution guarantees:
+
+- `POST /agents/plan` asks the configured model for a bounded plan and does not execute it.
+- `POST /agents/delegate` validates a supplied plan and creates queued task records; it does not run them.
+- `POST /agents/orchestrate` validates a model-generated plan, stores a durable workflow record, runs specialist tasks sequentially, and checkpoints each task result plus a final QA/security review.
+- `GET /agents/workflows?limit=50` lists recent workflow runs.
+- `GET /agents/workflows/{workflow_id}` returns the saved plan, task checkpoints, QA result, timestamps, and workflow status.
+
+A completed workflow is marked `succeeded` only when every specialist task and the final QA task succeeds; otherwise it is marked `partial`. An interrupted running workflow is marked `unknown` at startup and its checkpoints are retained for inspection. **Workflows are not automatically resumed or replayed yet.** Review the saved checkpoints before any manual recovery. Orchestration uses the existing read-only workspace/public-web tools; it does not modify project files. Code changes still require the separate approval-gated coding workflow.
+
 ## Coding workflow
 
 1. Place the project you want to work on inside the configured workspace.
@@ -190,7 +203,8 @@ Memory is explicit and local; the application does not silently infer or save me
 ## Reliability notes
 
 - SQLite WAL and transactions are used for local persistence.
-- Interrupted in-flight tasks and tool executions are marked `unknown` rather than replayed automatically.
+- Interrupted in-flight tasks, tool executions, and running agent workflows are marked `unknown` rather than replayed automatically.
+- Agent workflow plans, task outcomes, and QA checkpoints are persisted in SQLite and exposed through read-only workflow endpoints.
 - Coding proposal application verifies original file hashes before replacing files.
 - Proposal state transitions are checked to prevent invalid approval/rejection and duplicate application.
 - Sandbox tests run without network access and do not pull images at runtime.
@@ -221,7 +235,7 @@ Run the suite locally:
 python -m pytest -q
 ```
 
-The latest local verification on the development branch reported **40 passed**. GitHub Actions is also configured; check the branch's Actions page for its current CI status.
+The last reported local verification on `main` before the durable-workflow checkpoint changes was **405 passed**. Run the suite on your current branch before merging; GitHub Actions is also configured.
 
 ## Current development priorities
 
