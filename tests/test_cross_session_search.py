@@ -36,3 +36,25 @@ def test_cross_session_search_empty_query_returns_no_results(tmp_path):
     store = TaskStore(tmp_path / "cross-session-search.sqlite3")
 
     assert store.search_session_messages("   ") == []
+
+ 
+def test_cross_session_search_casefolds_unicode_consistently(tmp_path):
+    store = TaskStore(tmp_path / "unicode-cross-session-search.sqlite3")
+    session = store.create_session("Unicode search")
+    store.add_session_message(session["id"], "user", "The road passes through Straße.")
+
+    results = store.search_session_messages("STRASSE", limit=10)
+
+    assert len(results) == 1
+    assert "Straße" in results[0]["content"]
+
+
+def test_cross_session_search_handles_unicode_casefolding_in_non_latin_text(tmp_path):
+    store = TaskStore(tmp_path / "unicode-cross-session-search.sqlite3")
+    session = store.create_session("Unicode search")
+    store.add_session_message(session["id"], "user", "İstanbul is a city.")
+
+    results = store.search_session_messages("İSTANBUL", limit=10)
+
+    assert len(results) == 1
+    assert "İstanbul" in results[0]["content"]

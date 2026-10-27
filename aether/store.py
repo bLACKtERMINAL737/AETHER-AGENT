@@ -52,6 +52,15 @@ class TaskStore:
     def connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path, timeout=10)
         con.row_factory = sqlite3.Row
+        # SQLite's built-in lower() is ASCII-only unless built with ICU.
+        # Register Python casefold so cross-session search handles Unicode
+        # consistently with the ranking logic below.
+        con.create_function(
+            "aether_casefold",
+            1,
+            lambda value: value.casefold() if isinstance(value, str) else "",
+            deterministic=True,
+        )
         con.execute("PRAGMA foreign_keys=ON")
         con.execute("PRAGMA busy_timeout=10000")
         return con
@@ -466,7 +475,7 @@ class TaskStore:
         terms = list(dict.fromkeys(term.casefold() for term in query.split() if term.strip()))
         if not terms:
             return []
-        conditions = " OR ".join("instr(lower(m.content), lower(?)) > 0" for _ in terms)
+        conditions = " OR ".join("instr(aether_casefold(m.content), aether_casefold(?)) > 0" for _ in terms)
         with self.connect() as con:
             rows = con.execute(
                 "SELECT m.id, m.session_id, s.title AS session_title, m.role, "
