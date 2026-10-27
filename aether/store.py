@@ -351,7 +351,7 @@ class TaskStore:
         stop_words = {
             "what", "which", "did", "do", "does", "i", "you", "my", "me",
             "the", "a", "an", "is", "was", "were", "to", "of", "for",
-            "in", "on", "that", "this", "please", "ask", "asked",
+            "in", "on", "that", "this", "please", "ask", "asked", "remember", "recall", "memorized", "saved",
         }
         terms = [
             term.casefold()
