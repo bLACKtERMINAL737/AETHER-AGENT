@@ -17,7 +17,10 @@ class DockerTestSandbox:
     The image must be built locally ahead of time. No image pulls occur at run time.
     This reduces exposure but is not a substitute for a patched host/container runtime.
     """
-    EXCLUDED_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data"}
+    EXCLUDED_DIRS = {
+        ".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data",
+        ".ssh", ".aws", ".azure", ".gnupg",
+    }
     EXCLUDED_FILES = {".env", ".env.local", ".env.production", ".env.development",
                       "id_rsa", "id_ed25519", "credentials", "credentials.json"}
     EXCLUDED_SUFFIXES = {
