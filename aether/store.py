@@ -155,8 +155,8 @@ class TaskStore:
             # writes remain allowed so callers can enrich the existing journal row.
             cursor = con.execute(
                 "UPDATE tasks SET status=?,updated_at=?,"
-                "result_json=CASE WHEN status=? THEN COALESCE(?,result_json) ELSE ? END,"
-                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
+                "result_json=CASE WHEN status=? THEN COALESCE(result_json,?) ELSE ? END,"
+                "error_text=CASE WHEN status=? THEN COALESCE(error_text,?) ELSE ? END "
                 "WHERE id=? AND (status='queued' OR "
                 "(status='running' AND ? != 'queued') OR status=?)",
                 (
@@ -252,11 +252,12 @@ class TaskStore:
             # -> running transition. Completed workflows cannot be reopened.
             cursor = con.execute(
                 "UPDATE agent_workflows SET status=?,updated_at=?,"
-                "results_json=COALESCE(?,results_json),"
-                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
+                "results_json=CASE WHEN status IN ('succeeded','partial','failed','unknown') "
+                "THEN COALESCE(results_json,?) ELSE COALESCE(?,results_json) END,"
+                "error_text=CASE WHEN status=? THEN COALESCE(error_text,?) ELSE ? END "
                 "WHERE id=? AND (status='running' OR status=?)",
                 (
-                    status, utc_now(), encoded_results,
+                    status, utc_now(), encoded_results, encoded_results,
                     status, error, error,
                     workflow_id, status,
                 ),
@@ -284,8 +285,8 @@ class TaskStore:
         with self.connect() as con:
             cursor = con.execute(
                 "UPDATE tool_executions SET status=?,updated_at=?,"
-                "result_json=CASE WHEN status=? THEN COALESCE(?,result_json) ELSE ? END,"
-                "error_text=CASE WHEN status=? THEN COALESCE(?,error_text) ELSE ? END "
+                "result_json=CASE WHEN status=? THEN COALESCE(result_json,?) ELSE ? END,"
+                "error_text=CASE WHEN status=? THEN COALESCE(error_text,?) ELSE ? END "
                 "WHERE id=? AND (status='running' OR status=?)",
                 (
                     status,
