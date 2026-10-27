@@ -80,6 +80,30 @@ def test_read_file_rejects_directory(tmp_path: Path):
         registry.execute("workspace.read_file", {"path": "."})
 
 
+def test_workspace_tools_exclude_common_secret_files_but_allow_env_examples(tmp_path: Path):
+    (tmp_path / ".env").write_text("API_KEY=secret-value", encoding="utf-8")
+    (tmp_path / ".env.example").write_text("API_KEY=replace-me", encoding="utf-8")
+    (tmp_path / "id_rsa").write_text("private-key-material", encoding="utf-8")
+    (tmp_path / "credentials.json").write_text('{"token":"secret-value"}', encoding="utf-8")
+    (tmp_path / "server.pem").write_text("certificate-material", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("ordinary workspace note", encoding="utf-8")
+    registry = ToolRegistry(tmp_path)
+
+    listed = {entry["name"] for entry in registry.execute("workspace.list_files", {"path": "."})["entries"]}
+    assert ".env" not in listed
+    assert "id_rsa" not in listed
+    assert "credentials.json" not in listed
+    assert "server.pem" not in listed
+    assert ".env.example" in listed
+
+    for path in (".env", "id_rsa", "credentials.json", "server.pem"):
+        with pytest.raises(ToolError, match="excluded"):
+            registry.execute("workspace.read_file", {"path": path})
+
+    search = registry.execute("workspace.search_text", {"query": "secret-value"})
+    assert all(match["file"] not in {".env", "credentials.json"} for match in search["matches"])
+
+
 def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path: Path):
     registry = ToolRegistry(tmp_path)
     descriptions = {item["name"]: item["description"] for item in registry.describe()}
