@@ -36,6 +36,7 @@ AETHER CLAW is an evolving MVP, not a production-ready autonomous agent.
 - Proposal changes require review and explicit approval. Applying a proposal checks the original file state to detect stale files.
 - The Docker test runner is disabled by default. When enabled, it uses a prebuilt image, disables networking, drops Linux capabilities, runs as a non-root user, sets resource limits, uses a read-only container root, and tests a disposable workspace snapshot.
 - Docker is an additional isolation layer, not a perfect security boundary. Keep Docker and the host updated, and do not run hostile workloads on a sensitive machine.
+- Native tool calls are rejected if their names are not registered for the request; malformed or non-object JSON arguments are returned as a safe tool error without invoking the tool callback. Tool execution exception details are redacted before being sent back to the model.
 - Saved-memory retrieval is opt-in for each chat request. Retrieved records are passed as untrusted reference data, not instructions. Do not store secrets in chat or memory.
 - Auto routing uses a local task-intent heuristic and configured task specialists; a reasoning specialist is optional. Automatic benchmark-driven cost/latency optimization and a dynamic provider catalog are not implemented yet.
 - Do not commit API keys, access tokens, or other secrets.
