@@ -750,8 +750,8 @@ def test_terminal_workflow_same_state_update_cannot_replace_checkpoint(tmp_path:
     saved = store.get_workflow(workflow["id"])
     assert saved is not None
     assert saved["status"] == "succeeded"
-    assert json.loads(saved["results_json"]) == {
+    assert saved["results"] == {
         "tasks": [{"status": "succeeded"}],
         "qa_review": {"status": "succeeded"},
     }
-    assert saved["error_text"] == "original diagnostic"
+    assert saved["error"] == "original diagnostic"
