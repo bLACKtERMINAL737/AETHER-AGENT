@@ -157,8 +157,12 @@ class TaskStore:
         if status not in {"succeeded", "failed", "unknown"}:
             raise ValueError("Invalid final tool status")
         with self.connect() as con:
-            con.execute("UPDATE tool_executions SET status=?,updated_at=?,result_json=?,error_text=? WHERE id=?",
-                        (status, utc_now(), json.dumps(result, ensure_ascii=False) if result is not None else None, error, execution_id))
+            cursor = con.execute(
+                "UPDATE tool_executions SET status=?,updated_at=?,result_json=?,error_text=? WHERE id=?",
+                (status, utc_now(), json.dumps(result, ensure_ascii=False) if result is not None else None, error, execution_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError("Tool execution not found")
 
     def list_tool_executions(self, task_id: str) -> list[dict[str, Any]]:
         with self.connect() as con:
