@@ -361,12 +361,13 @@ async function refreshSessions(){
  }catch(e){setStatus("chatStatus",e.message,"bad");}
 }
 async function openSession(sessionId){
- if(!sessionId){currentSessionId=null;renderChatMessages([]);return;}
+ if(!sessionId){currentSessionId=null;renderChatMessages([]);return true;}
  try{
   const session=await api("/sessions/"+encodeURIComponent(sessionId)+"?limit=200");
   currentSessionId=session.id;renderChatMessages(session.messages||[]);
   setStatus("chatStatus","Loaded saved conversation.","good");
- }catch(e){setStatus("chatStatus",e.message,"bad");}
+  return true;
+ }catch(e){setStatus("chatStatus",e.message,"bad");return false;}
 }
 $("sessionSelect").onchange=()=>openSession($("sessionSelect").value);
 $("newSession").onclick=()=>{
@@ -400,7 +401,18 @@ async function sendChat(){
   })});
   currentSessionId=result.session_id;$("sessionSelect").value=currentSessionId;
   $("chatInput").value="";
-  await openSession(currentSessionId);await refreshSessions();$("sessionSelect").value=currentSessionId;
+  const historyLoaded=await openSession(currentSessionId);
+  await refreshSessions();$("sessionSelect").value=currentSessionId;
+  if(!historyLoaded){
+   // The chat request succeeded even if the follow-up history fetch failed.
+   // Keep the new answer visible rather than silently leaving the old transcript.
+   renderChatMessages([
+    {role:"user",content:message},
+    {role:"assistant",content:result.answer||"The reply was generated, but its text was not returned to the interface."}
+   ]);
+   setStatus("chatStatus","Reply generated. Saved history could not be refreshed, so only this turn is shown; reopen the conversation to load its full history.","bad");
+   return;
+  }
   setStatus("chatStatus",result.mode.toUpperCase()+" · "+result.task_type+" · "+result.route+" ("+result.model+"). Fallback used: "+(result.fallback_used?"yes":"no")+". Saved memory used: "+(result.memory_context_used?"yes":"no")+".","good");
  }catch(e){setStatus("chatStatus",e.message,"bad");await refreshSessions();}
  finally{$("sendChat").disabled=false;}
