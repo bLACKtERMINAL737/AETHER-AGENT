@@ -63,7 +63,7 @@ async def test_chat_does_not_run_tool_if_journal_creation_fails(tmp_path, monkey
         app_module.ChatRequest(message="Read notes.txt")
     )
 
-    assert "could not be safely journaled" in router.tool_error
+    assert "outcome may be uncertain" in router.tool_error
     assert tools.executions == []
     task = store.get_task(result["task_id"])
     assert task["status"] == "unknown"
