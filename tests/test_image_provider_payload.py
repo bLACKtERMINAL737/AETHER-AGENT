@@ -37,7 +37,8 @@ async def test_basic_chat_sends_multimodal_openai_compatible_content(monkeypatch
 
     monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
-    image_data_url = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\nexample").decode("ascii")
+    png_bytes = bytes.fromhex("89504e470d0a1a0a") + b"example"
+    image_data_url = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
 
     answer = await provider.chat("What is shown?", image_data_url=image_data_url)
 
