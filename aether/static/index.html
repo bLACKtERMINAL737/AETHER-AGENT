@@ -106,6 +106,23 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     <div id="memoryResults" class="files"></div>
   </section>
 
+  <section class="panel" style="margin-top:16px" aria-labelledby="workflowsHeading">
+    <div class="top"><div><h2 id="workflowsHeading">Agent Workflows</h2><div class="muted">Inspect durable multi-step runs. Recovery is explicit and only available for interrupted workflows.</div></div><button id="refreshWorkflows">Refresh workflows</button></div>
+    <div class="task-grid">
+      <div>
+        <div id="workflowList" class="task-list"><div class="muted">Loading workflows…</div></div>
+        <div id="workflowStatus" class="status" role="status"></div>
+      </div>
+      <div>
+        <h2>Selected workflow</h2>
+        <div id="workflowDetailHint" class="muted">Select a workflow to inspect its plan, task checkpoints, and QA result.</div>
+        <pre id="workflowDetail" class="task-detail" hidden></pre>
+        <div class="actions"><button id="recoverWorkflow" class="primary" disabled>Recover interrupted workflow</button></div>
+        <div class="muted small">Recovery may execute tasks still queued in the saved checkpoint. Review the workflow details first.</div>
+      </div>
+    </div>
+  </section>
+
   <section class="panel" style="margin-top:16px" aria-labelledby="tasksHeading">
     <div class="top"><div><h2 id="tasksHeading">Task Journal</h2><div class="muted">Review durable task records and tool execution outcomes.</div></div><button id="refreshTasks">Refresh tasks</button></div>
     <div class="task-grid">
@@ -382,6 +399,55 @@ $("runTests").onclick=async()=>{
  finally{$("runTests").disabled=false;}
 };
 
+let selectedWorkflowId = null;
+let selectedWorkflowStatus = null;
+async function refreshWorkflows(){
+  const list=$("workflowList");
+  list.textContent="Loading workflows…";
+  try{
+    const data=await api("/agents/workflows?limit=100");
+    const workflows=data.workflows||[];
+    list.replaceChildren();
+    if(!workflows.length){list.textContent="No agent workflows yet.";setStatus("workflowStatus","No workflow records found.");return;}
+    for(const workflow of workflows){
+      const item=document.createElement("button");
+      item.type="button";item.className="task-item";item.style.textAlign="left";
+      const head=document.createElement("div");head.className="task-head";
+      const title=document.createElement("strong");title.textContent=workflow.goal||workflow.id||"Untitled workflow";
+      const state=document.createElement("span");state.className="task-state "+String(workflow.status||"unknown");state.textContent=workflow.status||"unknown";
+      const meta=document.createElement("div");meta.className="muted";meta.style.marginTop="6px";meta.textContent=(workflow.id||"")+(workflow.updated_at?" · Updated "+workflow.updated_at:"");
+      head.append(title,state);item.append(head,meta);
+      item.onclick=()=>loadWorkflowDetail(workflow.id);
+      list.append(item);
+    }
+    setStatus("workflowStatus",workflows.length+" workflow(s) loaded.","good");
+  }catch(e){list.textContent="Could not load workflows.";setStatus("workflowStatus",e.message,"bad");}
+}
+async function loadWorkflowDetail(id){
+  try{
+    const workflow=await api("/agents/workflows/"+encodeURIComponent(id));
+    selectedWorkflowId=workflow.id||id;selectedWorkflowStatus=workflow.status;
+    $("workflowDetail").hidden=false;
+    $("workflowDetailHint").textContent="Workflow ID: "+selectedWorkflowId+" · Status: "+(selectedWorkflowStatus||"unknown");
+    $("workflowDetail").textContent=JSON.stringify(workflow,null,2);
+    $("recoverWorkflow").disabled=selectedWorkflowStatus!=="unknown";
+    setStatus("workflowStatus",selectedWorkflowStatus==="unknown"?"Interrupted workflow selected. Review its checkpoints before recovery.":"Workflow details loaded.");
+  }catch(e){setStatus("workflowStatus",e.message,"bad");}
+}
+$("refreshWorkflows").onclick=refreshWorkflows;
+$("recoverWorkflow").onclick=async()=>{
+  if(!selectedWorkflowId||selectedWorkflowStatus!=="unknown")return;
+  if(!confirm("Recover this interrupted workflow? Only tasks still queued in the saved checkpoint may execute. Review the workflow details first."))return;
+  $("recoverWorkflow").disabled=true;setStatus("workflowStatus","Requesting explicit workflow recovery…");
+  try{
+    const result=await api("/agents/workflows/"+encodeURIComponent(selectedWorkflowId)+"/recover",{method:"POST",body:"{}"});
+    $("workflowDetail").textContent=JSON.stringify(result,null,2);
+    setStatus("workflowStatus","Recovery request completed. Refresh the workflow to inspect its persisted status.","good");
+    await refreshWorkflows();
+    await loadWorkflowDetail(selectedWorkflowId);
+  }catch(e){setStatus("workflowStatus",e.message,"bad");$("recoverWorkflow").disabled=false;}
+};
+
 async function refreshTasks(){
   const list=$("taskList");
   list.textContent="Loading tasks…";
@@ -429,6 +495,7 @@ refreshFiles();
 loadMemories();
 loadModelRoutes();
 refreshSessions();
+refreshWorkflows();
 </script>
 </body>
 </html>
