@@ -545,3 +545,41 @@ async def test_orchestrator_reports_normalized_timeout_for_nonfinite_config(
 
     assert result["status"] == "succeeded"
     assert result["task_timeout_seconds"] == 120.0
+
+
+@pytest.mark.asyncio
+async def test_qa_timeout_preserves_durable_error_diagnostic(tmp_path, monkeypatch):
+    store, _router = configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "1")
+    qa_started = asyncio.Event()
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert task is not None
+        assert store.claim_task(task_id)
+        if task["title"].startswith("[qa_security]"):
+            qa_started.set()
+            await asyncio.Event().wait()
+        store.set_task_status(task_id, "succeeded", result={"answer": "reviewed"})
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "result": "reviewed",
+            "tool_calls": 0,
+            "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Inspect the repository and review its risks")
+    )
+
+    assert qa_started.is_set()
+    assert result["status"] == "partial"
+    qa = result["qa_review"]
+    assert qa["status"] == "unknown"
+    assert qa["error"]
+    saved_task = store.get_task(qa["task_id"])
+    assert saved_task is not None
+    assert saved_task["status"] == "unknown"
+    assert saved_task["error_text"]
