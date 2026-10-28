@@ -8,6 +8,7 @@ from starlette.responses import JSONResponse
 
 EXEMPT_PATHS = {"/health", "/ui", "/ui/"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
 
 
 def _is_loopback(host: str | None) -> bool:
@@ -68,7 +69,17 @@ class LocalAPIProtection:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
-            await self.app(scope, receive, send)
+            # Reject oversized declared bodies before FastAPI parses JSON or base64.
+        # Do not consume or wrap ASGI receive(), which can corrupt request streams.
+        # Configure the reverse proxy/server too for chunked bodies without a length.
+        if not exempt:
+            raw_length = headers.get("content-length", "")
+            if raw_length.isdecimal() and int(raw_length) > MAX_REQUEST_BODY_BYTES:
+                response = JSONResponse({"detail": "Request body too large"}, status_code=413)
+                await response(scope, receive, send)
+                return
+
+        await self.app(scope, receive, send)
             return
 
         path = scope.get("path", "")
