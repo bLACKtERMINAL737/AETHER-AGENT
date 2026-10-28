@@ -108,6 +108,13 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       <button id="newSession">New chat</button><button id="deleteSession">Delete chat</button>
     </div>
     <div id="chatMessages" class="files" style="max-height:360px;min-height:80px" aria-live="polite"><div class="muted">Start a conversation below.</div></div>
+    <div class="chat-image-controls" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 2px">
+      <button id="attachImage" type="button" aria-label="Attach an image">＋ Image</button>
+      <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+      <span id="imageStatus" class="muted small" aria-live="polite">PNG, JPEG or WebP · up to 600 KB</span>
+      <button id="removeImage" type="button" hidden>Remove image</button>
+    </div>
+    <div id="imagePreview" hidden style="margin:4px 0 10px"><img id="imagePreviewImg" alt="Selected image preview" style="max-width:180px;max-height:140px;border-radius:12px;border:1px solid #394451"></div>
     <div class="chat-composer" role="group" aria-label="Message composer">
       <label class="sr-only" for="chatInput">Message</label>
       <textarea id="chatInput" maxlength="20000" placeholder="Message AETHER CLAW…" aria-label="Message AETHER CLAW"></textarea>
@@ -399,15 +406,43 @@ $("deleteSession").onclick=async()=>{
   setStatus("chatStatus","Conversation deleted.","good");
  }catch(e){setStatus("chatStatus",e.message,"bad");}
 };
+let selectedImageDataUrl=null;
+$("attachImage").onclick=()=>$("imageInput").click();
+$("imageInput").addEventListener("change",()=>{
+ const file=$("imageInput").files&&$("imageInput").files[0];
+ if(!file)return;
+ if(!["image/png","image/jpeg","image/webp"].includes(file.type)){
+  setStatus("chatStatus","Choose a PNG, JPEG or WebP image.","bad");$("imageInput").value="";return;
+ }
+ if(file.size>600*1024){
+  setStatus("chatStatus","Image is too large. Maximum size is 600 KB.","bad");$("imageInput").value="";return;
+ }
+ const reader=new FileReader();
+ reader.onload=()=>{
+  if(typeof reader.result!=="string")return;
+  selectedImageDataUrl=reader.result;
+  $("imagePreviewImg").src=selectedImageDataUrl;$("imagePreview").hidden=false;
+  $("removeImage").hidden=false;$("imageStatus").textContent=file.name;
+  setStatus("chatStatus","Image attached. Choose a vision-capable model route to analyze it.","good");
+ };
+ reader.onerror=()=>setStatus("chatStatus","Could not read the selected image.","bad");
+ reader.readAsDataURL(file);
+});
+$("removeImage").onclick=()=>{
+ selectedImageDataUrl=null;$("imageInput").value="";$("imagePreviewImg").removeAttribute("src");
+ $("imagePreview").hidden=true;$("removeImage").hidden=true;$("imageStatus").textContent="PNG, JPEG or WebP · up to 600 KB";
+};
 async function sendChat(){
  if($("sendChat").disabled)return;
- const message=$("chatInput").value.trim();
- if(!message){setStatus("chatStatus","Enter a message first.","bad");return;}
+ const imageForRequest=selectedImageDataUrl;
+ const message=$("chatInput").value.trim()||(imageForRequest?"Please describe and analyze this image.":"");
+ if(!message){setStatus("chatStatus","Enter a message or attach an image first.","bad");return;}
  const viewGeneration=sessionLoadGeneration;
  $("sendChat").disabled=true;setStatus("chatStatus","AETHER CLAW is thinking…");
  try{
   const result=await api("/chat",{method:"POST",body:JSON.stringify({
-   message,
+   message: imageForRequest ? message+"\n[Image attached]" : message,
+   ...(imageForRequest?{image_data_url:imageForRequest}:{}),
    mode:$("modelMode").value,
    task_type:$("taskType").value,
    model_route:$("modelMode").value === "manual" ? $("modelRoute").value : null,
@@ -420,6 +455,7 @@ async function sendChat(){
   if(viewGeneration!==sessionLoadGeneration){await refreshSessions();return;}
   currentSessionId=result.session_id;$("sessionSelect").value=currentSessionId;
   $("chatInput").value="";
+  if(imageForRequest && selectedImageDataUrl===imageForRequest)$("removeImage").click();
   const historyLoaded=await openSession(currentSessionId);
   const sessionsRefreshed=await refreshSessions();$("sessionSelect").value=currentSessionId;
   if(!historyLoaded){
