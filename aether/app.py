@@ -739,9 +739,25 @@ async def recover_agent_workflow(workflow_id: str):
             "recovery": "explicit; only previously queued and checkpointed tasks were executed",
         }
     except asyncio.CancelledError:
-        # Cancellation is a BaseException on supported Python versions, so it must
-        # be handled explicitly to persist an uncertain recovery checkpoint.
+        # Reconcile the in-memory checkpoint with durable task journals before
+        # persisting interruption: a task may have been claimed just before cancel.
         try:
+            for outcome in outcomes:
+                task = store.get_task(outcome["task_id"])
+                if task and task.get("status") in {"running", "unknown"}:
+                    outcome["status"] = "unknown"
+                    outcome["error"] = (
+                        "Recovery was interrupted while this task was running; "
+                        "inspect task and tool journals before retrying."
+                    )
+            qa_checkpoint = checkpoint.get("qa_review")
+            if isinstance(qa_checkpoint, dict) and isinstance(qa_checkpoint.get("task_id"), str):
+                qa_task = store.get_task(qa_checkpoint["task_id"])
+                if qa_task and qa_task.get("status") in {"running", "unknown"}:
+                    qa_checkpoint["status"] = "unknown"
+                    qa_checkpoint["error"] = (
+                        "Recovery was interrupted during QA; inspect task and tool journals before retrying."
+                    )
             store.update_workflow(
                 workflow_id,
                 "unknown",
@@ -753,6 +769,22 @@ async def recover_agent_workflow(workflow_id: str):
         raise
     except Exception:
         try:
+            for outcome in outcomes:
+                task = store.get_task(outcome["task_id"])
+                if task and task.get("status") in {"running", "unknown"}:
+                    outcome["status"] = "unknown"
+                    outcome["error"] = (
+                        "Recovery was interrupted while this task was running; "
+                        "inspect task and tool journals before retrying."
+                    )
+            qa_checkpoint = checkpoint.get("qa_review")
+            if isinstance(qa_checkpoint, dict) and isinstance(qa_checkpoint.get("task_id"), str):
+                qa_task = store.get_task(qa_checkpoint["task_id"])
+                if qa_task and qa_task.get("status") in {"running", "unknown"}:
+                    qa_checkpoint["status"] = "unknown"
+                    qa_checkpoint["error"] = (
+                        "Recovery was interrupted during QA; inspect task and tool journals before retrying."
+                    )
             store.update_workflow(
                 workflow_id,
                 "unknown",
