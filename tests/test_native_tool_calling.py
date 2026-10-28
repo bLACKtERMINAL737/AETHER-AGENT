@@ -789,7 +789,7 @@ async def test_provider_tool_call_batch_over_five_is_rejected_before_execution(m
     ]
     monkeypatch.setattr(
         "aether.provider.httpx.AsyncClient",
-        lambda *_a, **_kw: FakeAsyncClient([completion(tool_calls=tool_calls)], calls),
+        lambda *_a, **_kw: FakeAsyncClient([completion(tool_calls=tool_calls), completion(content="Stopped safely.")], calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
@@ -808,6 +808,7 @@ async def test_provider_tool_call_batch_over_five_is_rejected_before_execution(m
     result = await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
     assert result["tool_calls"] == 5
     assert len(executed) == 5
+    assert len(calls) == 2
 
 
 @pytest.mark.asyncio
