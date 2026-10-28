@@ -1492,6 +1492,19 @@ async def chat(request: ChatRequest):
                     max_tool_calls=5,
                     **({"image_data_url": request.image_data_url} if request.image_data_url else {}),
                 )
+            except asyncio.CancelledError:
+                # The tool journal remains authoritative for completed child tools,
+                # but the parent chat turn has no final model response.
+                if tool_task["id"] is not None:
+                    try:
+                        store.set_task_status(
+                            tool_task["id"],
+                            "unknown",
+                            error="Chat request was cancelled; inspect tool records before retrying.",
+                        )
+                    except Exception:
+                        logger.exception("Could not persist cancelled native chat task")
+                raise
             except Exception:
                 # The tool journal records each tool's own outcome. If the model
                 # fails after a tool ran, mark the parent chat-tool task as failed
