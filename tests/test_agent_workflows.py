@@ -583,3 +583,28 @@ async def test_qa_timeout_preserves_durable_error_diagnostic(tmp_path, monkeypat
     assert saved_task is not None
     assert saved_task["status"] == "unknown"
     assert saved_task["error_text"]
+
+
+@pytest.mark.parametrize(
+    ("exception", "phase", "expected"),
+    [
+        (RuntimeError("secret token should not leak"), "Agent task", "RuntimeError"),
+        (ValueError("private path /Users/alice/private"), "QA review", "ValueError"),
+        (TimeoutError(), "QA review", "timed out"),
+    ],
+)
+def test_workflow_exception_diagnostics_are_safe_and_actionable(
+    exception, phase, expected
+):
+    message = app_module.workflow_exception_diagnostic(exception, phase=phase)
+    assert expected.lower() in message.lower()
+    assert "secret token" not in message
+    assert "/Users/alice/private" not in message
+    assert len(message) <= 1000
+
+
+def test_http_exception_detail_is_preserved_in_workflow_diagnostics():
+    error = HTTPException(status_code=504, detail="Agent task timed out safely")
+    assert app_module.workflow_exception_diagnostic(
+        error, phase="Agent task"
+    ) == "Agent task timed out safely"
