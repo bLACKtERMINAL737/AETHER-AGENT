@@ -231,9 +231,16 @@ class ModelProvider:
                         if not isinstance(result, dict):
                             result = {"result": result}
                     except Exception as exc:
-                        # Do not send arbitrary exception text (which may contain
-                        # local paths, tokens, or provider data) back to the model.
-                        result = {"error": f"Tool execution failed ({type(exc).__name__})."}
+                        # Preserve the sanitized error in the conversation so the model
+                        # can explain the failure rather than guessing missing content.
+                        logger.warning(
+                            "Native chat tool %s failed: %s", name, type(exc).__name__
+                        )
+                        result = {
+                            "error": f"Tool execution failed ({type(exc).__name__}).",
+                            "tool": name,
+                            "retryable": False,
+                        }
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
