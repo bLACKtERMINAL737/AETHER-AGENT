@@ -237,7 +237,7 @@ class ModelProvider:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": json.dumps(result, ensure_ascii=False, default=str)[:12000],
+                    "content": _tool_result_message(result),
                 })
             if rounds >= max_tool_calls + 1:
                 # Do not loop forever if a provider ignores the no-tools follow-up.
@@ -310,6 +310,28 @@ class ModelProvider:
             return content
         except (KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("Provider returned an unexpected chat completion response") from exc
+
+
+def _tool_result_message(result: dict[str, object], max_chars: int = 12_000) -> str:
+    """Serialize tool output as valid, bounded JSON for the model conversation."""
+    try:
+        encoded = json.dumps(result, ensure_ascii=False, default=str)
+    except (TypeError, ValueError, RecursionError):
+        return json.dumps(
+            {"error": "Tool result could not be serialized safely."},
+            ensure_ascii=False,
+        )
+    if len(encoded) > max_chars:
+        # Never slice JSON text: truncating a serialized object can create an
+        # invalid tool message and leak a misleading partial result to the model.
+        return json.dumps(
+            {
+                "error": "Tool result exceeded the response size limit and was omitted.",
+                "truncated": True,
+            },
+            ensure_ascii=False,
+        )
+    return encoded
 
 
 def _retryable(exc: Exception) -> bool:
