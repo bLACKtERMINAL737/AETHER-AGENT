@@ -709,6 +709,19 @@ async def recover_agent_workflow(workflow_id: str):
             "qa_review": checkpoint.get("qa_review"),
             "recovery": "explicit; only previously queued and checkpointed tasks were executed",
         }
+    except asyncio.CancelledError:
+        # Cancellation is a BaseException on supported Python versions, so it must
+        # be handled explicitly to persist an uncertain recovery checkpoint.
+        try:
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Recovery was cancelled; inspect task and tool checkpoints before another attempt.",
+            )
+        except Exception:
+            logger.exception("Could not persist cancelled workflow recovery state")
+        raise
     except Exception:
         try:
             store.update_workflow(
