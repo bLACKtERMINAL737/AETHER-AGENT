@@ -50,6 +50,11 @@ async def test_recovery_runs_only_checkpointed_queued_tasks(tmp_path, monkeypatc
     assert saved["status"] == "succeeded"
     assert saved["results"]["tasks"][0]["status"] == "succeeded"
     assert saved["results"]["qa_review"]["status"] == "succeeded"
+    diagnostics = saved["results"]["diagnostics"]
+    assert diagnostics["task_counts"]["succeeded"] == 1
+    assert diagnostics["qa_status"] == "succeeded"
+    assert diagnostics["failure_count"] == 0
+    assert diagnostics["failures"] == []
 
 
 @pytest.mark.asyncio
@@ -609,6 +614,11 @@ async def test_recovery_task_timeout_marks_task_unknown_without_replay(
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "partial"
     assert saved["results"]["tasks"][0]["status"] == "unknown"
+    diagnostics = saved["results"]["diagnostics"]
+    assert diagnostics["task_counts"]["unknown"] == 1
+    assert diagnostics["qa_status"] == "succeeded"
+    assert diagnostics["failure_count"] == 1
+    assert diagnostics["failures"][0]["category"] == "outcome_unknown"
 
 
 @pytest.mark.asyncio

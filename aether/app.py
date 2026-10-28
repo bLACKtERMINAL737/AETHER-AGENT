@@ -768,10 +768,55 @@ async def recover_agent_workflow(workflow_id: str):
                 "error": "QA task was not checkpointed before interruption; start a new workflow for a fresh QA review.",
             }
 
+        # Recovery changes task outcomes; rebuild diagnostics from the final checkpoint
+        # so the workflow detail endpoint never returns stale pre-recovery counts.
+        statuses = ("queued", "running", "succeeded", "failed", "unknown", "blocked")
+        task_counts = {
+            status: sum(1 for item in outcomes if item.get("status") == status)
+            for status in statuses
+        }
+        failures = []
+        for item in outcomes:
+            status = item.get("status")
+            if status in {"failed", "unknown", "blocked"}:
+                reason = item.get("error") or (
+                    "Prerequisite task did not succeed." if status == "blocked"
+                    else "Execution outcome is uncertain; inspect task and tool journals."
+                    if status == "unknown" else "Task did not succeed."
+                )
+                failures.append({
+                    "plan_index": item.get("plan_index"),
+                    "task_id": item.get("task_id"),
+                    "title": item.get("title", "Untitled task"),
+                    "status": status,
+                    "category": (
+                        "timeout" if "timeout" in str(reason).lower()
+                        else "dependency_blocked" if status == "blocked"
+                        else "outcome_unknown" if status == "unknown"
+                        else "task_failed"
+                    ),
+                    "reason": str(reason)[:500],
+                })
+        final_qa = checkpoint.get("qa_review")
+        qa_status = final_qa.get("status") if isinstance(final_qa, dict) else None
+        if qa_status and qa_status != "succeeded":
+            failures.append({
+                "task_id": final_qa.get("task_id"),
+                "title": "QA/security review",
+                "status": qa_status,
+                "category": "qa_review_failed",
+                "reason": str(final_qa.get("error") or "QA review did not succeed.")[:500],
+            })
+        checkpoint["diagnostics"] = {
+            "task_counts": task_counts,
+            "qa_status": qa_status,
+            "failure_count": len(failures),
+            "failures": failures,
+        }
         all_ok = (
             all(item.get("status") == "succeeded" for item in outcomes)
-            and isinstance(checkpoint.get("qa_review"), dict)
-            and checkpoint["qa_review"].get("status") == "succeeded"
+            and isinstance(final_qa, dict)
+            and final_qa.get("status") == "succeeded"
         )
         final_status = "succeeded" if all_ok else "partial"
         store.update_workflow(
