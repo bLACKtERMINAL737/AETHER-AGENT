@@ -28,7 +28,7 @@ class FakeAsyncClient:
         return FakeResponse()
 
 
-def test_basic_chat_sends_multimodal_openai_compatible_content(monkeypatch):
+@pytest.mark.asyncio\nasync def test_basic_chat_sends_multimodal_openai_compatible_content(monkeypatch):
     calls = []
 
     def client_factory(*_args, **_kwargs):
@@ -38,7 +38,7 @@ def test_basic_chat_sends_multimodal_openai_compatible_content(monkeypatch):
     provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
     image_data_url = "data:image/png;base64," + base64.b64encode(b"\\x89PNG\\r\\n\\x1a\\nexample").decode("ascii")
 
-    answer = __import__("asyncio").run(provider.chat("What is shown?", image_data_url=image_data_url))
+    answer = await provider.chat("What is shown?", image_data_url=image_data_url)
 
     assert answer == "It is a test image."
     user_message = calls[0]["payload"]["messages"][-1]
