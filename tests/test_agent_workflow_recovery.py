@@ -577,6 +577,7 @@ async def test_recovery_cancellation_persists_unknown_workflow_checkpoint(
 
 
 @pytest.mark.asyncio
+# Recovery timeout cases assert the final persisted workflow status.
 async def test_recovery_task_timeout_marks_task_unknown_without_replay(
     tmp_path, monkeypatch
 ):
