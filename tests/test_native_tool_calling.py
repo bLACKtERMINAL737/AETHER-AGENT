@@ -778,3 +778,70 @@ async def test_tool_chat_rejects_malformed_completion_envelopes(monkeypatch, pay
 
     with pytest.raises(RuntimeError, match="unexpected chat completion response"):
         await provider.chat_with_tools("hello")
+
+
+@pytest.mark.asyncio
+async def test_provider_tool_call_batch_over_five_is_rejected_before_execution(monkeypatch):
+    calls = []
+    tool_calls = [
+        tool_call(f"call-{i}", "workspace.list_files", {"path": "."})
+        for i in range(6)
+    ]
+    responses = [completion(tool_calls=tool_calls), completion(content="Stopped safely.")]
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient(responses, calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"ok": True}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+    result = await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
+    assert result["tool_calls"] == 5
+    assert len(executed) == 5
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_deeply_nested_tool_arguments_fail_safely(monkeypatch):
+    calls = []
+    nested = '{"value":' + ("[" * 2500) + "0" + ("]" * 2500) + "}"
+    response = completion(tool_calls=[{
+        "id": "call-deep",
+        "type": "function",
+        "function": {"name": "workspace.list_files", "arguments": nested},
+    }])
+    responses = [response, completion(content="Invalid arguments.")]
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient(responses, calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"ok": True}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+    result = await provider.chat_with_tools(
+        "List files", tool_specs=specs, execute_tool=execute,
+    )
+    assert result["tool_calls"] == 0
+    assert executed == []
