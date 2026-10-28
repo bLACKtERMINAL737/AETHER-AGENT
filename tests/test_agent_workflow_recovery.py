@@ -477,3 +477,25 @@ async def test_recovery_rejects_invalid_qa_task_id_before_journal_lookup(
 
     assert exc.value.status_code == 409
     assert store.get_workflow(workflow_id)["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_qa_checkpoint_pointing_to_non_qa_task(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, task_id, _qa_id = make_workflow(tmp_path, monkeypatch)
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["qa_review"]["task_id"] = task_id
+    # Keep the referenced task queued so a status-only check would accept it.
+    assert store.get_task(task_id)["status"] == "queued"
+    assert store.claim_workflow_recovery(workflow_id)
+    store.update_workflow(workflow_id, "running", results=checkpoint)
+    store.update_workflow(workflow_id, "unknown", error="simulated QA identity corruption")
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
+    assert store.get_task(task_id)["status"] == "queued"

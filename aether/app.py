@@ -544,7 +544,12 @@ async def recover_agent_workflow(workflow_id: str):
                     detail="QA checkpoint has an invalid task ID; inspect the record manually.",
                 )
             qa_task = store.get_task(qa_id)
-            if qa_task is None or qa_task.get("status") not in compatible_journal_statuses[qa_status]:
+            if (
+                qa_task is None
+                or not isinstance(qa_task.get("title"), str)
+                or not qa_task["title"].startswith("[qa_security] ")
+                or qa_task.get("status") not in compatible_journal_statuses[qa_status]
+            ):
                 raise HTTPException(
                     status_code=409,
                     detail="QA checkpoint and durable task journal disagree; inspect both before recovery.",
