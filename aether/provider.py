@@ -10,6 +10,7 @@ import httpx
 
 logger = logging.getLogger("aether.provider")
 MAX_TOOL_ARGUMENT_BYTES = 64 * 1024
+MAX_TOOL_CALLS_PER_RESPONSE = 5
 TaskType = Literal["general", "coding", "reasoning"]
 ModelRoute = Literal["primary", "coding", "reasoning", "fallback"]
 
@@ -180,6 +181,8 @@ class ModelProvider:
             calls = assistant.get("tool_calls") or []
             if not isinstance(content, (str, type(None))) or not isinstance(calls, list):
                 raise RuntimeError("Provider returned an unexpected chat completion response")
+            if len(calls) > MAX_TOOL_CALLS_PER_RESPONSE:
+                raise RuntimeError("Provider returned too many tool calls in one response")
             if not calls:
                 return {"answer": content or "", "tool_calls": executions}
 
@@ -204,7 +207,7 @@ class ModelProvider:
                     args = json.loads(raw_args)
                     if not isinstance(args, dict):
                         raise ValueError
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, RecursionError):
                     args = None
                 normalized_calls.append((call_id, name, args))
 
