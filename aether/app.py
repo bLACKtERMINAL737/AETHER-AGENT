@@ -461,7 +461,8 @@ async def recover_agent_workflow(workflow_id: str):
                 outcome.get("title") != plan_item.get("title")
                 or outcome.get("depends_on", []) != plan_item.get("depends_on", [])
                 or (
-                    ("role" in outcome or "role" in plan_item)
+                    "role" in outcome
+                    and "role" in plan_item
                     and outcome.get("role") != plan_item.get("role")
                 )
             ):
