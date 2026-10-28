@@ -845,3 +845,66 @@ async def test_deeply_nested_tool_arguments_fail_safely(monkeypatch):
     )
     assert result["tool_calls"] == 0
     assert executed == []
+
+
+
+@pytest.mark.asyncio
+async def test_oversized_tool_call_id_is_rejected_before_execution(monkeypatch):
+    calls = []
+    response = completion(tool_calls=[
+        tool_call("x" * 257, "workspace.list_files", {"path": "."}),
+    ])
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient([response], calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"ok": True}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+    with pytest.raises(RuntimeError, match="malformed tool call"):
+        await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
+    assert executed == []
+
+
+@pytest.mark.asyncio
+async def test_lone_surrogate_tool_arguments_are_normalized_before_execution(monkeypatch):
+    calls = []
+    response = completion(tool_calls=[{
+        "id": "call-surrogate",
+        "type": "function",
+        "function": {"name": "workspace.list_files", "arguments": '{"path":"\\ud800"}'},
+    }])
+    # Simulate a provider-decoded Python string containing a lone surrogate.
+    response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = '{"path":"' + chr(0xD800) + '"}'
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient([response], calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"ok": True}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+    with pytest.raises(RuntimeError, match="malformed tool arguments"):
+        await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
+    assert executed == []

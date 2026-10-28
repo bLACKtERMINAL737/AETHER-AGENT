@@ -10,6 +10,7 @@ import httpx
 
 logger = logging.getLogger("aether.provider")
 MAX_TOOL_ARGUMENT_BYTES = 64 * 1024
+MAX_TOOL_CALL_ID_CHARS = 256
 MAX_TOOL_CALLS_PER_RESPONSE = 5
 MAX_JSON_NESTING_DEPTH = 100
 TaskType = Literal["general", "coding", "reasoning"]
@@ -197,13 +198,22 @@ class ModelProvider:
                     raise RuntimeError("Provider returned a malformed tool call")
                 call_id = call.get("id")
                 function = call.get("function")
-                if not isinstance(call_id, str) or not call_id or not isinstance(function, dict):
+                if (
+                    not isinstance(call_id, str)
+                    or not call_id
+                    or len(call_id) > MAX_TOOL_CALL_ID_CHARS
+                    or not isinstance(function, dict)
+                ):
                     raise RuntimeError("Provider returned a malformed tool call")
                 name = function.get("name")
                 raw_args = function.get("arguments", "{}")
                 if not isinstance(name, str) or not name or not isinstance(raw_args, str):
                     raise RuntimeError("Provider returned a malformed tool call")
-                if len(raw_args.encode("utf-8")) > MAX_TOOL_ARGUMENT_BYTES:
+                try:
+                    raw_args_size = len(raw_args.encode("utf-8"))
+                except UnicodeEncodeError as exc:
+                    raise RuntimeError("Provider returned malformed tool arguments") from exc
+                if raw_args_size > MAX_TOOL_ARGUMENT_BYTES:
                     raise RuntimeError("Provider tool arguments exceeded the size limit")
                 if name not in available_tool_names:
                     raise RuntimeError("Provider returned an unregistered tool name")
