@@ -608,3 +608,15 @@ async def test_regular_chat_normalizes_invalid_provider_json(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
         await provider.chat("hello")
+
+
+@pytest.mark.asyncio
+async def test_invalid_provider_json_error_helper_contract():
+    from aether.provider import _decode_provider_json
+
+    class BadJsonResponse:
+        def json(self):
+            raise ValueError("not json")
+
+    with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
+        _decode_provider_json(BadJsonResponse())
