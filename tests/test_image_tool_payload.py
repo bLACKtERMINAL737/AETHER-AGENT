@@ -58,3 +58,45 @@ async def test_tool_enabled_chat_preserves_multimodal_user_content(monkeypatch):
         ],
     }
     assert payload["tools"]
+
+
+@pytest.mark.asyncio
+async def test_regular_chat_preserves_multimodal_user_content(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_args, **_kwargs: FakeAsyncClient(calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
+    image_bytes = bytes.fromhex("89504e470d0a1a0a") + b"test-image"
+    image_data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
+
+    answer = await provider.chat("What is shown?", image_data_url=image_data_url)
+
+    assert answer == "I can inspect the image."
+    user_message = calls[0]["payload"]["messages"][-1]
+    assert user_message == {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is shown?"},
+            {"type": "image_url", "image_url": {"url": image_data_url}},
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_regular_chat_keeps_plain_text_content_without_image(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_args, **_kwargs: FakeAsyncClient(calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "text-model")
+
+    answer = await provider.chat("Hello")
+
+    assert answer == "I can inspect the image."
+    assert calls[0]["payload"]["messages"][-1] == {
+        "role": "user",
+        "content": "Hello",
+    }
