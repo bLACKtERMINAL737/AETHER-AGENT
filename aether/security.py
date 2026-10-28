@@ -69,17 +69,7 @@ class LocalAPIProtection:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
-            # Reject oversized declared bodies before FastAPI parses JSON or base64.
-        # Do not consume or wrap ASGI receive(), which can corrupt request streams.
-        # Configure the reverse proxy/server too for chunked bodies without a length.
-        if not exempt:
-            raw_length = headers.get("content-length", "")
-            if raw_length.isdecimal() and int(raw_length) > MAX_REQUEST_BODY_BYTES:
-                response = JSONResponse({"detail": "Request body too large"}, status_code=413)
-                await response(scope, receive, send)
-                return
-
-        await self.app(scope, receive, send)
+            await self.app(scope, receive, send)
             return
 
         path = scope.get("path", "")
@@ -111,4 +101,12 @@ class LocalAPIProtection:
                 await response(scope, receive, send)
                 return
 
+        # Reject oversized declared bodies before FastAPI parses JSON or base64.
+        # Avoid consuming/wrapping ASGI receive(); enforce chunked limits at the server/proxy.
+        if not exempt:
+            raw_length = headers.get("content-length", "")
+            if raw_length.isdecimal() and int(raw_length) > MAX_REQUEST_BODY_BYTES:
+                response = JSONResponse({"detail": "Request body too large"}, status_code=413)
+                await response(scope, receive, send)
+                return
         await self.app(scope, receive, send)
