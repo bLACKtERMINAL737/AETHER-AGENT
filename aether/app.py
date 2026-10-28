@@ -231,7 +231,7 @@ def configure_model(request: ModelConfigurationRequest):
     if not model_name or not secret:
         raise HTTPException(status_code=422, detail="Model ID and provider key must not be blank.")
     try:
-        if any(ord(char) <= 32 or char == "\\\\" for char in raw_url):
+        if any(ord(char) <= 32 or char == "\\" for char in raw_url):
             raise ValueError
         parsed = urlsplit(raw_url)
         host = parsed.hostname
