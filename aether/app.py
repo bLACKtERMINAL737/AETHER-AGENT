@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import binascii
 from contextlib import asynccontextmanager
 import logging
 import json
@@ -11,7 +13,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .coding import CodingEngine, CodingError
 from .config import Settings
@@ -89,7 +91,31 @@ class ChatRequest(BaseModel):
     allow_fallback: bool = True
     session_id: str | None = Field(default=None, min_length=1, max_length=200)
     use_saved_memories: bool = False
-    image_data_url: str | None = Field(default=None, max_length=900_000, pattern=r"^data:image/(png|jpeg|webp);base64,")
+    image_data_url: str | None = Field(default=None, max_length=900_000)
+
+    @field_validator("image_data_url")
+    @classmethod
+    def validate_image_data_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        match = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/]*={0,2})", value)
+        if not match:
+            raise ValueError("image_data_url must be a PNG, JPEG, or WebP base64 data URL")
+        media_type, encoded = match.groups()
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("image_data_url contains invalid base64 data") from exc
+        if not decoded or len(decoded) > 600 * 1024:
+            raise ValueError("image must be non-empty and no larger than 600 KB")
+        valid_signature = (
+            decoded.startswith(b"\x89PNG\r\n\x1a\n") if media_type == "png"
+            else decoded.startswith(bytes.fromhex("ffd8ff")) if media_type == "jpeg"
+            else len(decoded) >= 12 and decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP"
+        )
+        if not valid_signature:
+            raise ValueError("image bytes do not match the declared image type")
+        return value
 
 
 class ModelConfigurationRequest(BaseModel):
@@ -682,7 +708,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         "Return only JSON: {subtasks:[{title,input,role,depends_on}]}. Create 1-4 tasks for the goal. "
         "depends_on is an array of zero-based prerequisite task indexes, or [] if independent. "
         "Dependencies must form an acyclic graph. Roles must be coding, research, memory, or monitor. "
-        "Keep tasks narrow. Do not claim execution.\\n\\n"
+        "Keep tasks narrow. Do not claim execution.\n\n"
         + request.goal
     )
     try:
@@ -901,10 +927,10 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 }
                 task = store.create_task(
                     f"[{item['role']}] {item['title']}",
-                    f"Workflow ID: {workflow_id}\\n"
-                    f"Parent goal: {request.goal}\\n"
-                    f"Assigned role: {item['role']}\\n"
-                    f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\\n"
+                    f"Workflow ID: {workflow_id}\n"
+                    f"Parent goal: {request.goal}\n"
+                    f"Assigned role: {item['role']}\n"
+                    f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\n"
                     f"Task: {item['input']}",
                 )
                 outcome = {
@@ -965,7 +991,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         outcomes = ordered_outcomes()
         qa = store.create_task(
             "[qa_security] Review specialist results",
-            "Review this goal and the specialist results for correctness, security risks, and missing tests.\\n"
+            "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
             + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False),
         )
         checkpoint["qa_review"] = {"task_id": qa["id"], "status": "queued"}
