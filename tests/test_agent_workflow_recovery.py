@@ -457,3 +457,23 @@ async def test_recovery_rejects_unknown_qa_checkpoint_status_with_conflict(
 
     assert exc.value.status_code == 409
     assert store.get_workflow(workflow_id)["status"] == "unknown"
+
+
+@pytest.mark.parametrize("invalid_task_id", [None, "", "   ", 17, [], {}])
+@pytest.mark.asyncio
+async def test_recovery_rejects_invalid_qa_task_id_before_journal_lookup(
+    tmp_path, monkeypatch, invalid_task_id
+):
+    store, workflow_id, _task_id, _qa_id = make_workflow(tmp_path, monkeypatch)
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["qa_review"]["task_id"] = invalid_task_id
+    assert store.claim_workflow_recovery(workflow_id)
+    store.update_workflow(workflow_id, "running", results=checkpoint)
+    store.update_workflow(workflow_id, "unknown", error="simulated invalid QA task id")
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
