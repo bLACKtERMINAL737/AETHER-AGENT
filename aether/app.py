@@ -1085,10 +1085,31 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "task_timeout_seconds": task_timeout_seconds,
             "diagnostics": checkpoint["diagnostics"],
         }
+    except asyncio.CancelledError:
+        # Cancellation can also arrive between scheduler phases, outside a worker.
+        # Preserve the last durable checkpoint and mark the workflow uncertain.
+        try:
+            checkpoint["tasks"] = ordered_outcomes()
+            checkpoint["diagnostics"] = build_diagnostics(
+                checkpoint["tasks"], checkpoint.get("qa_review")
+            )
+            store.update_workflow(
+                workflow_id,
+                "unknown",
+                results=checkpoint,
+                error="Workflow execution was cancelled; inspect saved checkpoints before recovery.",
+            )
+        except Exception:
+            logger.exception("Could not persist cancelled workflow state")
+        raise
     except Exception:
         # Keep already persisted checkpoints; never automatically replay a workflow
         # whose process/DB outcome may be uncertain.
         try:
+            checkpoint["tasks"] = ordered_outcomes()
+            checkpoint["diagnostics"] = build_diagnostics(
+                checkpoint["tasks"], checkpoint.get("qa_review")
+            )
             store.update_workflow(
                 workflow_id,
                 "unknown",
