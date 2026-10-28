@@ -181,8 +181,10 @@ class ModelProvider:
             calls = assistant.get("tool_calls") or []
             if not isinstance(content, (str, type(None))) or not isinstance(calls, list):
                 raise RuntimeError("Provider returned an unexpected chat completion response")
+            # Process at most the supported batch size. Providers may return more
+            # calls than requested; never execute beyond the per-response limit.
             if len(calls) > MAX_TOOL_CALLS_PER_RESPONSE:
-                raise RuntimeError("Provider returned too many tool calls in one response")
+                calls = calls[:MAX_TOOL_CALLS_PER_RESPONSE]
             if not calls:
                 return {"answer": content or "", "tool_calls": executions}
 
