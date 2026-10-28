@@ -608,7 +608,7 @@ async def test_recovery_task_timeout_marks_task_unknown_without_replay(
     assert store.get_task(task_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "partial"
-    assert saved["results"]["tasks"][0]["status"] == "queued"
+    assert saved["results"]["tasks"][0]["status"] == "unknown"
 
 
 @pytest.mark.asyncio
