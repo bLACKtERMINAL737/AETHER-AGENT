@@ -468,3 +468,44 @@ async def test_cancelled_workflow_marks_running_task_unknown_and_checkpoints(
     assert "cancelled" in outcome["error"].lower()
     assert store.get_task(outcome["task_id"])["status"] == "unknown"
     assert saved_workflow["results"]["diagnostics"]["failure_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_cancellation_during_qa_persists_unknown_state(
+    tmp_path, monkeypatch
+):
+    store, _router = configure(monkeypatch, tmp_path)
+    executed = []
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert task is not None
+        assert store.claim_task(task_id)
+        executed.append(task["title"])
+        if task["title"].startswith("[qa_security]"):
+            raise asyncio.CancelledError()
+        store.set_task_status(task_id, "succeeded", result={"answer": "checked"})
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "result": "checked",
+            "tool_calls": 0,
+            "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module.orchestrate_agent_work(
+            app_module.AgentPlanRequest(goal="Persist cancellation safely")
+        )
+
+    workflows = store.list_workflows(limit=10)
+    assert len(workflows) == 1
+    saved = store.get_workflow(workflows[0]["id"])
+    assert saved["status"] == "unknown"
+    assert "cancelled" in saved["error_text"].lower()
+    assert saved["results"]["qa_review"]["status"] == "unknown"
+    assert all(item["status"] == "succeeded" for item in saved["results"]["tasks"])
+    qa_tasks = [store.get_task(task_id) for task_id in store.list_tasks(limit=20)["tasks"]]
+    assert any(task and task["status"] == "unknown" for task in qa_tasks)
