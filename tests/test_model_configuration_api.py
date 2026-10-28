@@ -136,3 +136,28 @@ def test_model_configuration_endpoint_rejects_empty_or_partial_url_userinfo(
     )
 
     assert response.status_code == 422
+
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://api.example.com/\n/v1",
+        "https://api.example.com\\@attacker.example/v1",
+        "https://api.example.com/v1 ",
+    ],
+)
+def test_model_configuration_endpoint_rejects_url_control_whitespace_and_backslashes(
+    client_and_providers, base_url
+):
+    client, _ = client_and_providers
+    response = client.post(
+        "/models/configure",
+        json={
+            "route": "primary",
+            "base_url": base_url,
+            "model": "test-model",
+            "api_key": "test-key",
+        },
+    )
+    assert response.status_code == 422
