@@ -523,3 +523,27 @@ async def test_recovery_rejects_checkpoint_task_id_for_different_specialist(
     assert store.get_task(other_task["id"])["status"] == "queued"
     assert store.get_task(task_id)["status"] == "queued"
     assert store.get_task(qa_id)["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_checkpoint_pointing_to_different_qa_task(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, _task_id, _qa_id = make_workflow(tmp_path, monkeypatch)
+    other_qa_task = store.create_task(
+        "[qa_security] Review another workflow", "Unrelated QA task"
+    )
+    workflow = store.get_workflow(workflow_id)
+    checkpoint = workflow["results"]
+    checkpoint["qa_review"]["task_id"] = other_qa_task["id"]
+    assert other_qa_task["status"] == "queued"
+    assert store.claim_workflow_recovery(workflow_id)
+    store.update_workflow(workflow_id, "running", results=checkpoint)
+    store.update_workflow(workflow_id, "unknown", error="simulated QA task substitution")
+
+    with pytest.raises(HTTPException) as exc:
+        await app_module.recover_agent_workflow(workflow_id)
+
+    assert exc.value.status_code == 409
+    assert store.get_workflow(workflow_id)["status"] == "unknown"
+    assert store.get_task(other_qa_task["id"])["status"] == "queued"
