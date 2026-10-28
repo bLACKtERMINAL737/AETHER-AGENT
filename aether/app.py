@@ -1356,9 +1356,19 @@ async def chat(request: ChatRequest):
                 store.finish_tool(execution_id, "succeeded", result=result)
             except Exception as exc:
                 # The tool has already run, so journal failure makes the outcome
-                # uncertain. Never return success or retry this work automatically.
+                # uncertain. Best-effort mark a still-running journal row unknown;
+                # if the success write actually committed, the store correctly
+                # refuses to rewrite that terminal record.
                 tool_task["uncertain"] = True
                 logger.exception("Could not persist native chat tool result")
+                try:
+                    store.finish_tool(
+                        execution_id,
+                        "unknown",
+                        error="Tool ran but its outcome could not be safely journaled",
+                    )
+                except Exception:
+                    logger.exception("Could not mark native chat tool outcome unknown")
                 raise ToolError(
                     "Tool ran, but its result could not be safely journaled."
                 ) from exc
