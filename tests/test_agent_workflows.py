@@ -322,13 +322,13 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
     saved = store.get_workflow(result["workflow_id"])
     by_title = {item["title"]: item for item in saved["results"]["tasks"]}
     assert by_title["Slow prerequisite"]["status"] == "unknown"
-    assert "timeout" in by_title["Slow prerequisite"]["error"].lower()
+    assert "timed out" in by_title["Slow prerequisite"]["error"].lower()
     assert by_title["Must wait"]["status"] == "blocked"
     assert saved["results"]["qa_review"]["status"] == "succeeded"
     diagnostic_categories = {
         item["category"] for item in saved["results"]["diagnostics"]["failures"]
     }
-    assert diagnostic_categories == {"timeout", "dependency_blocked"}
+    assert diagnostic_categories == {"outcome_unknown", "dependency_blocked"}
 
 
 @pytest.mark.asyncio
@@ -583,3 +583,28 @@ async def test_qa_timeout_preserves_durable_error_diagnostic(tmp_path, monkeypat
     assert saved_task is not None
     assert saved_task["status"] == "unknown"
     assert saved_task["error_text"]
+
+
+@pytest.mark.parametrize(
+    ("exception", "phase", "expected"),
+    [
+        (RuntimeError("secret token should not leak"), "Agent task", "RuntimeError"),
+        (ValueError("private path /Users/alice/private"), "QA review", "ValueError"),
+        (TimeoutError(), "QA review", "timed out"),
+    ],
+)
+def test_workflow_exception_diagnostics_are_safe_and_actionable(
+    exception, phase, expected
+):
+    message = app_module.workflow_exception_diagnostic(exception, phase=phase)
+    assert expected.lower() in message.lower()
+    assert "secret token" not in message
+    assert "/Users/alice/private" not in message
+    assert len(message) <= 1000
+
+
+def test_http_exception_detail_is_preserved_in_workflow_diagnostics():
+    error = HTTPException(status_code=504, detail="Agent task timed out safely")
+    assert app_module.workflow_exception_diagnostic(
+        error, phase="Agent task"
+    ) == "Agent task timed out safely"

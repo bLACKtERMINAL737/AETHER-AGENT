@@ -96,6 +96,25 @@ def agent_task_timeout_seconds() -> float:
         configured = 120.0
     return min(max(configured, 1.0), 600.0)
 
+def workflow_exception_diagnostic(exc: Exception, *, phase: str) -> str:
+    """Return bounded API-safe workflow diagnostics without exposing raw exceptions."""
+    if isinstance(exc, HTTPException):
+        detail = str(exc.detail).strip()
+        return (detail or f"{phase} failed without a diagnostic message.")[:1000]
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return (
+            f"{phase} timed out; the outcome may be uncertain. "
+            "Inspect the task and tool journals before retrying."
+        )
+    error_type = type(exc).__name__
+    if not error_type.isidentifier():
+        error_type = "UnexpectedError"
+    return (
+        f"{phase} failed unexpectedly ({error_type}). "
+        "Inspect the task journal for details."
+    )[:1000]
+
+
 
 
 class ChatRequest(BaseModel):
@@ -980,9 +999,9 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         except Exception as exc:
             saved_task = store.get_task(task_id)
             status = saved_task["status"] if saved_task else "failed"
-            error = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            if not error and saved_task:
-                error = saved_task.get("error_text") or ""
+            error = workflow_exception_diagnostic(exc, phase="Agent task")
+            if isinstance(exc, HTTPException) and not str(exc.detail).strip() and saved_task:
+                error = (saved_task.get("error_text") or error)[:1000]
             updated = {**outcome, "status": status, "error": error}
         return plan_index, updated
 
@@ -1136,11 +1155,9 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             raise
         except Exception as exc:
             saved_qa = store.get_task(qa["id"])
-            error = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            if not error and saved_qa:
-                error = saved_qa.get("error_text") or ""
-            if not error:
-                error = "QA review failed without a diagnostic message."
+            error = workflow_exception_diagnostic(exc, phase="QA review")
+            if isinstance(exc, HTTPException) and not str(exc.detail).strip() and saved_qa:
+                error = (saved_qa.get("error_text") or error)[:1000]
             review = {
                 "task_id": qa["id"],
                 "status": saved_qa["status"] if saved_qa else "failed",
