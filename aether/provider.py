@@ -175,16 +175,11 @@ class ModelProvider:
                 )
                 response.raise_for_status()
                 data = _decode_provider_json(response)
-            try:
-                assistant = data["choices"][0]["message"]
-                if not isinstance(assistant, dict):
-                    raise TypeError
-                content = assistant.get("content")
-                calls = assistant.get("tool_calls") or []
-                if not isinstance(content, (str, type(None))) or not isinstance(calls, list):
-                    raise TypeError
-            except (KeyError, IndexError, TypeError) as exc:
-                raise RuntimeError("Provider returned an unexpected chat completion response") from exc
+            assistant = _extract_completion_message(data)
+            content = assistant.get("content")
+            calls = assistant.get("tool_calls") or []
+            if not isinstance(content, (str, type(None))) or not isinstance(calls, list):
+                raise RuntimeError("Provider returned an unexpected chat completion response")
             if not calls:
                 return {"answer": content or "", "tool_calls": executions}
 
@@ -327,15 +322,11 @@ class ModelProvider:
             )
             response.raise_for_status()
             data = _decode_provider_json(response)
-        if not isinstance(data, dict):
+        assistant = _extract_completion_message(data)
+        content = assistant.get("content")
+        if not isinstance(content, str):
             raise RuntimeError("Provider returned an unexpected chat completion response")
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-            raise RuntimeError("Provider returned an unexpected chat completion response")
-        assistant = choices[0].get("message")
-        if not isinstance(assistant, dict) or not isinstance(assistant.get("content"), str):
-            raise RuntimeError("Provider returned an unexpected chat completion response")
-        return assistant["content"]
+        return content
 
 
 def _tool_result_message(result: dict[str, object], max_chars: int = 12_000) -> str:
@@ -558,3 +549,16 @@ def _decode_provider_json(response: httpx.Response) -> object:
         return response.json()
     except (ValueError, TypeError) as exc:
         raise RuntimeError("Provider returned invalid JSON") from exc
+
+
+def _extract_completion_message(data: object) -> dict[str, object]:
+    """Validate the shared OpenAI-compatible completion envelope."""
+    if not isinstance(data, dict):
+        raise RuntimeError("Provider returned an unexpected chat completion response")
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise RuntimeError("Provider returned an unexpected chat completion response")
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        raise RuntimeError("Provider returned an unexpected chat completion response")
+    return message
