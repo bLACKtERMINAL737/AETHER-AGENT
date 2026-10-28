@@ -43,7 +43,7 @@ async def test_tool_enabled_chat_preserves_multimodal_user_content(monkeypatch):
     result = await provider.chat_with_tools(
         "What is shown?",
         tool_specs=[{"type": "function", "function": {"name": "read_file", "description": "Read a file", "parameters": {"type": "object", "properties": {}}}}],
-        execute_tool=None,
+        execute_tool=lambda _name, _arguments: {"ok": True},
         image_data_url=image_data_url,
     )
 
