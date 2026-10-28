@@ -603,7 +603,7 @@ async def test_recovery_task_timeout_marks_task_unknown_without_replay(
 
     assert result["status"] == "partial"
     assert "uncertain" in result["tasks"][0]["error"].lower()
-    assert executed == [task_id]
+    assert executed == [task_id, qa_id]
     assert store.get_task(task_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "unknown"
