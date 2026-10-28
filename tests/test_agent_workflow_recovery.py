@@ -21,7 +21,7 @@ def make_workflow(tmp_path, monkeypatch, *, task_status="queued", qa=True):
         "qa_review": None,
     }
     if qa:
-        qa_task = store.create_task("[qa_security] Review results", "Review saved results")
+        qa_task = store.create_task("[qa_security] Review specialist results", "Review saved results")
         results["qa_review"] = {"task_id": qa_task["id"], "status": "queued"}
     workflow = store.create_workflow("Inspect safely", [{"title": "Inspect files", "input": "Read-only inspection", "role": "research"}])
     store.update_workflow(workflow["id"], "unknown", results=results, error="simulated interruption")
@@ -104,7 +104,7 @@ async def test_recovery_runs_prerequisite_with_later_plan_index_first(tmp_path, 
     monkeypatch.setattr(app_module, "store", store)
     first = store.create_task("[research] Dependent first", "Wait for prerequisite")
     second = store.create_task("[research] Prerequisite second", "Run before dependent")
-    qa = store.create_task("[qa_security] Review", "Review completed tasks")
+    qa = store.create_task("[qa_security] Review specialist results", "Review completed tasks")
     workflow = store.create_workflow(
         "Recover reverse dependency",
         [
