@@ -4,7 +4,6 @@ import binascii
 from contextlib import asynccontextmanager
 import logging
 import json
-import math
 import os
 import re
 from typing import Any, Literal
