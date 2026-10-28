@@ -525,6 +525,11 @@ async def recover_agent_workflow(workflow_id: str):
     if isinstance(qa_checkpoint, dict):
         qa_status = qa_checkpoint.get("status")
         qa_id = qa_checkpoint.get("task_id")
+        if qa_status not in {*compatible_journal_statuses, "not_started"}:
+            raise HTTPException(
+                status_code=409,
+                detail="QA checkpoint has an unsupported status; inspect the record manually.",
+            )
         if qa_status == "not_started":
             # This state deliberately has no task ID and cannot be replayed.
             if qa_id is not None:
