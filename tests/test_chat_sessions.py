@@ -314,3 +314,42 @@ async def test_native_tool_provider_failures_return_actionable_http_errors(
     executions = store.list_tool_executions(task["id"])
     assert len(executions) == 1
     assert executions[0]["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_native_tool_timeout_warns_that_tool_actions_may_have_occurred(
+    tmp_path, monkeypatch
+):
+    import httpx
+
+    store = TaskStore(tmp_path / "native-tool-timeout-retry-guidance.sqlite3")
+
+    class ToolRouter:
+        async def chat_with_tools(self, message, task_type, **kwargs):
+            await kwargs["execute_tool"]("workspace.list_files", {"path": "."})
+            raise httpx.ReadTimeout("provider timeout after tool result")
+
+    class ReadOnlyTools:
+        def describe(self):
+            return [{
+                "name": "workspace.list_files",
+                "description": "List workspace files",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }]
+
+        def execute(self, name, arguments):
+            return {"entries": [{"name": "example.py", "type": "file"}]}
+
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", ToolRouter())
+    monkeypatch.setattr(app_module, "tools", ReadOnlyTools())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await app_module.chat(app_module.ChatRequest(message="List files"))
+
+    assert exc_info.value.status_code == 504
+    assert "tool actions may already have occurred" in exc_info.value.detail
+    tasks = store.list_tasks()
+    task = store.get_task(tasks[0]["id"])
+    assert task["status"] == "failed"
+    assert store.list_tool_executions(task["id"])[0]["status"] == "succeeded"
