@@ -326,7 +326,7 @@ class ModelProvider:
                 json={"model": self.model, "messages": messages, "temperature": 0.2},
             )
             response.raise_for_status()
-            data = response.json()
+            data = _decode_provider_json(response)
         try:
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
