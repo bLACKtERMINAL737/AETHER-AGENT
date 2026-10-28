@@ -1429,6 +1429,20 @@ async def chat(request: ChatRequest):
                             "Tool failed and its result could not be safely journaled."
                         ) from exc
                 raise
+            except asyncio.CancelledError:
+                # Cancellation may arrive after a side effect began. Do not claim
+                # failure or success; preserve an explicit uncertain journal state.
+                tool_task["uncertain"] = True
+                if execution_id is not None:
+                    try:
+                        store.finish_tool(
+                            execution_id,
+                            "unknown",
+                            error="Tool execution was cancelled; inspect the outcome before retrying.",
+                        )
+                    except Exception:
+                        logger.exception("Could not persist cancelled tool execution")
+                raise
             except Exception as exc:
                 tool_task["failed"] = True
                 tool_task["uncertain"] = True
