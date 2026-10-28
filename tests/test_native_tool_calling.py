@@ -620,3 +620,29 @@ async def test_invalid_provider_json_error_helper_contract():
 
     with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
         _decode_provider_json(BadJsonResponse())
+
+
+@pytest.mark.asyncio
+async def test_regular_chat_rejects_unexpected_provider_response_shape(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient([{}], calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    with pytest.raises(RuntimeError, match="unexpected chat completion response"):
+        await provider.chat("hello")
+
+
+@pytest.mark.asyncio
+async def test_tool_chat_rejects_unexpected_provider_response_shape(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient([{}], calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    with pytest.raises(RuntimeError, match="unexpected chat completion response"):
+        await provider.chat_with_tools("hello")
