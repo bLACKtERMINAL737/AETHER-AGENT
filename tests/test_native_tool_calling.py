@@ -820,9 +820,10 @@ async def test_deeply_nested_tool_arguments_fail_safely(monkeypatch):
         "type": "function",
         "function": {"name": "workspace.list_files", "arguments": nested},
     }])
+    responses = [response, completion(content="Invalid arguments.")]
     monkeypatch.setattr(
         "aether.provider.httpx.AsyncClient",
-        lambda *_a, **_kw: FakeAsyncClient([response, completion(content="Invalid arguments.")], calls),
+        lambda *_a, **_kw: FakeAsyncClient(responses, calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
