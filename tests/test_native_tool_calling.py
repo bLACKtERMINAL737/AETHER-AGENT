@@ -697,9 +697,7 @@ async def test_tool_execution_exception_is_reported_without_reexecuting(monkeypa
 async def test_unserializable_tool_result_is_replaced_with_safe_json():
     from aether.provider import _tool_result_message
 
-    class Recursive:
-        def __init__(self):
-            self.value = self
-
-    result = _tool_result_message({"result": Recursive()})
+    recursive = {}
+    recursive["self"] = recursive
+    result = _tool_result_message({"result": recursive})
     assert "could not be serialized safely" in result
