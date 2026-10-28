@@ -512,10 +512,17 @@ async def recover_agent_workflow(workflow_id: str):
         # A blocked task has not been claimed, so its durable record remains queued.
         "blocked": {"queued"},
     }
-    for outcome in outcomes:
+    for index, outcome in enumerate(outcomes):
         task_id = outcome["task_id"]
         task = store.get_task(task_id)
-        if task is None or task.get("status") not in compatible_journal_statuses[outcome["status"]]:
+        plan_item = saved_plan[index]
+        expected_role = plan_item.get("role", "planner")
+        expected_title = f"[{expected_role}] {plan_item.get('title', '')}"
+        if (
+            task is None
+            or task.get("title") != expected_title
+            or task.get("status") not in compatible_journal_statuses[outcome["status"]]
+        ):
             raise HTTPException(
                 status_code=409,
                 detail="Workflow checkpoint and durable task journal disagree; inspect both before recovery.",
