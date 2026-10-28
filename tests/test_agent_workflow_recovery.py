@@ -547,3 +547,30 @@ async def test_recovery_rejects_checkpoint_pointing_to_different_qa_task(
     assert exc.value.status_code == 409
     assert store.get_workflow(workflow_id)["status"] == "unknown"
     assert store.get_task(other_qa_task["id"])["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_recovery_cancellation_persists_unknown_workflow_checkpoint(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, task_id, _qa_id = make_workflow(
+        tmp_path, monkeypatch, qa=False
+    )
+
+    async def cancelled_run(task_id_arg):
+        assert task_id_arg == task_id
+        assert store.claim_task(task_id_arg)
+        raise asyncio.CancelledError()
+
+    import asyncio
+
+    monkeypatch.setattr(app_module, "run_agent_task", cancelled_run)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module.recover_agent_workflow(workflow_id)
+
+    saved = store.get_workflow(workflow_id)
+    assert saved["status"] == "unknown"
+    assert "cancelled" in saved["error_text"].lower()
+    assert saved["results"]["tasks"][0]["status"] == "queued"
+    assert store.get_task(task_id)["status"] == "running"
