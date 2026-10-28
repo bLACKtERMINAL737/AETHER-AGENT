@@ -9,6 +9,7 @@ from typing import Literal
 import httpx
 
 logger = logging.getLogger("aether.provider")
+MAX_TOOL_ARGUMENT_BYTES = 64 * 1024
 TaskType = Literal["general", "coding", "reasoning"]
 ModelRoute = Literal["primary", "coding", "reasoning", "fallback"]
 
@@ -200,6 +201,8 @@ class ModelProvider:
                 raw_args = function.get("arguments", "{}")
                 if not isinstance(name, str) or not name or not isinstance(raw_args, str):
                     raise RuntimeError("Provider returned a malformed tool call")
+                if len(raw_args.encode("utf-8")) > MAX_TOOL_ARGUMENT_BYTES:
+                    raise RuntimeError("Provider tool arguments exceeded the size limit")
                 if name not in available_tool_names:
                     raise RuntimeError("Provider returned an unregistered tool name")
                 try:
