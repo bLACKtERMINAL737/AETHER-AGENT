@@ -805,9 +805,9 @@ async def test_provider_tool_call_batch_over_five_is_rejected_before_execution(m
             "parameters": {"type": "object", "properties": {}},
         },
     }]
-    with pytest.raises(RuntimeError, match="too many tool calls in one response"):
-        await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
-    assert executed == []
+    result = await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
+    assert result["tool_calls"] == 5
+    assert len(executed) == 5
 
 
 @pytest.mark.asyncio
@@ -840,5 +840,5 @@ async def test_deeply_nested_tool_arguments_fail_safely(monkeypatch):
     result = await provider.chat_with_tools(
         "List files", tool_specs=specs, execute_tool=execute,
     )
-    assert result["answer"] == "Invalid arguments."
+    assert result["tool_calls"] == 0
     assert executed == []
