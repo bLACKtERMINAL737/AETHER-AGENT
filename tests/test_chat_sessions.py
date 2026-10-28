@@ -200,3 +200,22 @@ def test_chat_request_rejects_empty_or_oversized_session_id():
 def test_chat_request_accepts_bounded_session_id():
     request = app_module.ChatRequest(message="Continue", session_id="session-123")
     assert request.session_id == "session-123"
+
+
+
+def test_chat_rejects_whitespace_only_message_and_normalizes_valid_input():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="message must not be blank"):
+        app_module.ChatRequest(message="  \n\t  ")
+
+    request = app_module.ChatRequest(message="  explain this  ", session_id="  session-1  ")
+    assert request.message == "explain this"
+    assert request.session_id == "session-1"
+
+
+def test_chat_rejects_whitespace_only_session_id():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="session_id must not be blank"):
+        app_module.ChatRequest(message="Hello", session_id="   ")
