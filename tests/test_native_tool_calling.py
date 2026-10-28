@@ -534,3 +534,40 @@ async def test_native_chat_sends_image_as_openai_compatible_multimodal_content(m
         {"type": "text", "text": "Describe this image"},
         {"type": "image_url", "image_url": {"url": image_data_url}},
     ]
+
+
+@pytest.mark.asyncio
+async def test_oversized_tool_arguments_are_rejected_before_execution(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[{
+            "id": "call-huge",
+            "type": "function",
+            "function": {
+                "name": "workspace.read_file",
+                "arguments": json.dumps({"path": "x" * (64 * 1024)}),
+            },
+        }])
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"ok": True}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.read_file",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    }]
+    with pytest.raises(RuntimeError, match="tool arguments exceeded the size limit"):
+        await provider.chat_with_tools("Read a file", tool_specs=specs, execute_tool=execute)
+    assert executed == []
