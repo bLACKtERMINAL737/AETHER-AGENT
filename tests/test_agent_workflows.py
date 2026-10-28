@@ -507,5 +507,6 @@ async def test_orchestrator_cancellation_during_qa_persists_unknown_state(
     assert "cancelled" in saved["error_text"].lower()
     assert saved["results"]["qa_review"]["status"] == "unknown"
     assert all(item["status"] == "succeeded" for item in saved["results"]["tasks"])
-    qa_tasks = [store.get_task(task_id) for task_id in store.list_tasks(limit=20)["tasks"]]
-    assert any(task and task["status"] == "unknown" for task in qa_tasks)
+    qa_task = store.get_task(saved["results"]["qa_review"]["task_id"])
+    assert qa_task is not None
+    assert qa_task["status"] == "unknown"
