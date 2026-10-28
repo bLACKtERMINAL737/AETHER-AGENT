@@ -464,3 +464,47 @@ def test_tool_result_serialization_failure_returns_safe_json():
     assert json.loads(_tool_result_message(cyclic)) == {
         "error": "Tool result could not be serialized safely."
     }
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_context_is_sent_back_to_model(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[tool_call(
+            "call-fail", "workspace.read_file", {"path": "missing.txt"}
+        )]),
+        completion(content="The file could not be read because the tool reported an error."),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    async def execute(_name, _args):
+        raise FileNotFoundError("do not expose /private/local/path")
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.read_file",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    }]
+    result = await provider.chat_with_tools(
+        "Read missing.txt", tool_specs=specs, execute_tool=execute
+    )
+
+    tool_message = next(
+        message for message in calls[1]["payload"]["messages"]
+        if message.get("role") == "tool"
+    )
+    payload = json.loads(tool_message["content"])
+    assert payload == {
+        "error": "Tool execution failed (FileNotFoundError).",
+        "tool": "workspace.read_file",
+        "retryable": False,
+    }
+    assert "/private/local/path" not in tool_message["content"]
+    assert result["answer"] == "The file could not be read because the tool reported an error."
