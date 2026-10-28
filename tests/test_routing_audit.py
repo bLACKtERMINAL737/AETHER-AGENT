@@ -123,3 +123,36 @@ async def test_unconfigured_manual_route_fails_explicitly_without_silent_switch(
 
     assert primary.calls == 0
     assert fallback.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_invalid_provider_json_is_not_retried_or_sent_to_fallback():
+    class InvalidPayloadProvider(FakeProvider):
+        async def chat(self, message, task_type="general", history=None, memories=None):
+            self.calls += 1
+            raise RuntimeError("Provider returned invalid JSON")
+
+    primary = InvalidPayloadProvider("primary")
+    fallback = FakeProvider("fallback")
+    router = ModelRouter(primary, fallback=fallback, max_attempts=3)
+
+    with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
+        await router.chat("hello", allow_fallback=True)
+
+    assert primary.calls == 1
+    assert fallback.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_budget_stays_bounded_across_primary_and_fallback():
+    primary = FakeProvider("primary", errors=[
+        http_error(503), http_error(503), http_error(503),
+    ])
+    fallback = FakeProvider("fallback", errors=[http_error(503), http_error(503)])
+    router = ModelRouter(primary, fallback=fallback, max_attempts=3, max_total_attempts=4)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await router.chat("hello", allow_fallback=True)
+
+    assert primary.calls == 3
+    assert fallback.calls == 1
