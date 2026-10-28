@@ -408,3 +408,59 @@ async def test_invalid_tool_arguments_are_returned_without_execution(monkeypatch
         "error": "Invalid tool arguments; expected a JSON object."
     }
     assert result["answer"] == "The arguments were invalid."
+
+
+@pytest.mark.asyncio
+async def test_oversized_tool_result_is_replaced_with_valid_json(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[
+            tool_call("call-large", "workspace.read_file", {"path": "large.txt"})
+        ]),
+        completion(content="The result was too large to include safely."),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    async def execute(_name, _args):
+        return {"content": "x" * 20_000}
+
+    result = await provider.chat_with_tools(
+        "Read large.txt",
+        tool_specs=[{
+            "type": "function",
+            "function": {
+                "name": "workspace.read_file",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }],
+        execute_tool=execute,
+    )
+
+    tool_message = next(
+        message
+        for message in calls[1]["payload"]["messages"]
+        if message.get("role") == "tool"
+    )
+    parsed = json.loads(tool_message["content"])
+    assert parsed == {
+        "error": "Tool result exceeded the response size limit and was omitted.",
+        "truncated": True,
+    }
+    assert len(tool_message["content"]) < 12_000
+    assert result["answer"] == "The result was too large to include safely."
+
+
+def test_tool_result_serialization_failure_returns_safe_json():
+    from aether.provider import _tool_result_message
+
+    cyclic = {}
+    cyclic["self"] = cyclic
+
+    assert json.loads(_tool_result_message(cyclic)) == {
+        "error": "Tool result could not be serialized safely."
+    }
