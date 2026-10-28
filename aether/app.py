@@ -460,6 +460,10 @@ async def recover_agent_workflow(workflow_id: str):
             if (
                 outcome.get("title") != plan_item.get("title")
                 or outcome.get("depends_on", []) != plan_item.get("depends_on", [])
+                or (
+                    ("role" in outcome or "role" in plan_item)
+                    and outcome.get("role") != plan_item.get("role")
+                )
             ):
                 raise ValueError("Workflow checkpoint does not match the saved plan")
             task_id = outcome.get("task_id")
