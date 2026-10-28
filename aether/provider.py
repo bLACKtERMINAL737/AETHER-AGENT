@@ -127,6 +127,7 @@ class ModelProvider:
         max_tool_calls = min(max(0, max_tool_calls), MAX_TOOL_CALLS_PER_RESPONSE)
         executions = 0
         rounds = 0
+        seen_tool_call_ids: set[str] = set()
         specs = tool_specs or []
 
         # Respect an explicitly named registered tool on the first request.
@@ -233,6 +234,9 @@ class ModelProvider:
             call_ids = [call_id for call_id, _name, _args in normalized_calls]
             if len(call_ids) != len(set(call_ids)):
                 raise RuntimeError("Provider returned duplicate tool-call IDs")
+            if any(call_id in seen_tool_call_ids for call_id in call_ids):
+                raise RuntimeError("Provider reused a tool-call ID within one request")
+            seen_tool_call_ids.update(call_ids)
 
             messages.append({
                 "role": "assistant",
