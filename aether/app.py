@@ -553,8 +553,7 @@ async def recover_agent_workflow(workflow_id: str):
             qa_task = store.get_task(qa_id)
             if (
                 qa_task is None
-                or not isinstance(qa_task.get("title"), str)
-                or not qa_task["title"].startswith("[qa_security] ")
+                or qa_task.get("title") != "[qa_security] Review specialist results"
                 or qa_task.get("status") not in compatible_journal_statuses[qa_status]
             ):
                 raise HTTPException(
