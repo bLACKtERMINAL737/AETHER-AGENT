@@ -608,3 +608,31 @@ def test_http_exception_detail_is_preserved_in_workflow_diagnostics():
     assert app_module.workflow_exception_diagnostic(
         error, phase="Agent task"
     ) == "Agent task timed out safely"
+
+
+@pytest.mark.parametrize(
+    ("detail", "sensitive"),
+    [
+        ("Provider failed with Bearer abc.def_123", "abc.def_123"),
+        ("Request rejected: api_key=supersecretvalue", "supersecretvalue"),
+        ("Provider path /Users/alice/.config/secret.json unavailable", "/Users/alice/.config/secret.json"),
+        ("Invalid token: token=private-token-value", "private-token-value"),
+    ],
+)
+def test_http_exception_diagnostic_redacts_credentials_and_local_paths(
+    detail, sensitive
+):
+    message = app_module.workflow_exception_diagnostic(
+        HTTPException(status_code=502, detail=detail), phase="Agent task"
+    )
+    assert sensitive not in message
+    assert "[REDACTED" in message
+    assert len(message) <= 1000
+
+
+def test_http_exception_diagnostic_keeps_non_sensitive_detail():
+    message = app_module.workflow_exception_diagnostic(
+        HTTPException(status_code=502, detail="Provider is unavailable"),
+        phase="Agent task",
+    )
+    assert message == "Provider is unavailable"
