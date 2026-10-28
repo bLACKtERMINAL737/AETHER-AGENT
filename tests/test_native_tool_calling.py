@@ -908,3 +908,41 @@ async def test_lone_surrogate_tool_arguments_are_normalized_before_execution(mon
     with pytest.raises(RuntimeError, match="malformed tool arguments"):
         await provider.chat_with_tools("List files", tool_specs=specs, execute_tool=execute)
     assert executed == []
+
+
+@pytest.mark.asyncio
+async def test_reused_tool_call_id_across_rounds_is_rejected_before_second_execution(
+    monkeypatch,
+):
+    calls = []
+    responses = [
+        completion(tool_calls=[tool_call("stable-id", "workspace.list_files", {"path": "."})]),
+        completion(tool_calls=[tool_call("stable-id", "workspace.list_files", {"path": "."})]),
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executed = []
+
+    async def execute(name, args):
+        executed.append((name, args))
+        return {"entries": []}
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.list_files",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    }]
+
+    with pytest.raises(RuntimeError, match="reused a tool-call ID"):
+        await provider.chat_with_tools(
+            "List files", tool_specs=specs, execute_tool=execute, max_tool_calls=5
+        )
+
+    assert executed == [("workspace.list_files", {"path": "."})]
+    assert len(calls) == 2
