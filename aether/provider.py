@@ -327,13 +327,15 @@ class ModelProvider:
             )
             response.raise_for_status()
             data = _decode_provider_json(response)
-        try:
-            content = data["choices"][0]["message"]["content"]
-            if not isinstance(content, str):
-                raise TypeError("content is not text")
-            return content
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("Provider returned an unexpected chat completion response") from exc
+        if not isinstance(data, dict):
+            raise RuntimeError("Provider returned an unexpected chat completion response")
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise RuntimeError("Provider returned an unexpected chat completion response")
+        assistant = choices[0].get("message")
+        if not isinstance(assistant, dict) or not isinstance(assistant.get("content"), str):
+            raise RuntimeError("Provider returned an unexpected chat completion response")
+        return assistant["content"]
 
 
 def _tool_result_message(result: dict[str, object], max_chars: int = 12_000) -> str:
