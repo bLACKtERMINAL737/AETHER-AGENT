@@ -740,3 +740,41 @@ async def test_regular_chat_rejects_malformed_completion_shapes(monkeypatch, pay
 
     with pytest.raises(RuntimeError, match="unexpected chat completion response"):
         await provider.chat("hello")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [
+    None,
+    [],
+    {},
+    {"choices": []},
+    {"choices": {}},
+    {"choices": [None]},
+    {"choices": [{"message": None}]},
+])
+async def test_tool_chat_rejects_malformed_completion_envelopes(monkeypatch, payload):
+    class ShapeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return payload
+
+    class ShapeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return ShapeResponse()
+
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_args, **_kwargs: ShapeClient(),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    with pytest.raises(RuntimeError, match="unexpected chat completion response"):
+        await provider.chat_with_tools("hello")
