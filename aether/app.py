@@ -1334,6 +1334,14 @@ async def chat(request: ChatRequest):
                     except Exception:
                         tool_task["uncertain"] = True
                         logger.exception("Could not journal native chat tool failure")
+                        try:
+                            store.finish_tool(
+                                execution_id,
+                                "unknown",
+                                error="Tool failed but its final outcome could not be safely journaled",
+                            )
+                        except Exception:
+                            logger.exception("Could not mark failed native chat tool outcome unknown")
                         raise ToolError(
                             "Tool failed and its result could not be safely journaled."
                         ) from exc
