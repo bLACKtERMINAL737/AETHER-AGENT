@@ -755,11 +755,11 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             raise ValueError("Planner response has no textual answer")
         raw_answer = raw_answer.strip()
         if raw_answer.startswith("```"):
-            raw_answer = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
+            raw_answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
         try:
             data = json.loads(raw_answer)
         except json.JSONDecodeError:
-            object_match = re.search(r"\\{.*\\}", raw_answer, flags=re.DOTALL)
+            object_match = re.search(r"\{.*\}", raw_answer, flags=re.DOTALL)
             if object_match is None:
                 raise
             data = json.loads(object_match.group(0))
