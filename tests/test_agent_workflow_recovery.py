@@ -599,11 +599,10 @@ async def test_recovery_task_timeout_marks_task_unknown_without_replay(
         }
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
-    with pytest.raises(HTTPException) as error:
-        await app_module.recover_agent_workflow(workflow_id)
+    result = await app_module.recover_agent_workflow(workflow_id)
 
-    assert error.value.status_code == 504
-    assert "uncertain" in error.value.detail.lower()
+    assert result["status"] == "partial"
+    assert "uncertain" in result["tasks"][0]["error"].lower()
     assert executed == [task_id]
     assert store.get_task(task_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
@@ -637,10 +636,9 @@ async def test_recovery_qa_timeout_persists_uncertain_workflow_state(
         }
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
-    with pytest.raises(HTTPException) as error:
-        await app_module.recover_agent_workflow(workflow_id)
+    result = await app_module.recover_agent_workflow(workflow_id)
 
-    assert error.value.status_code == 504
+    assert result["status"] == "partial"
     assert store.get_task(task_id)["status"] == "succeeded"
     assert store.get_task(qa_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
