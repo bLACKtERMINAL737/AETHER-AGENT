@@ -225,7 +225,7 @@ def list_models():
 @app.post("/models/configure")
 def configure_model(request: ModelConfigurationRequest):
     """Configure one route in memory for this running process; credentials are never persisted."""
-    raw_url = request.base_url.strip()
+    raw_url = request.base_url
     model_name = request.model.strip()
     secret = request.api_key.strip()
     if not model_name or not secret:
