@@ -18,7 +18,7 @@ async def test_oversized_content_length_is_rejected_before_route(monkeypatch):
     scope = {
         'type': 'http', 'method': 'POST', 'path': '/mutate', 'scheme': 'http',
         'headers': [(b'host', b'127.0.0.1:8000'), (b'x-aether-token', b'test-token'),
-                    (b'content-length', str(2 * 1024 * 1024).encode())],
+                    (b'content-length', str(3 * 1024 * 1024).encode())],
         'client': ('127.0.0.1', 12345),
     }
     sent = []
