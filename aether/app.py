@@ -100,7 +100,28 @@ def workflow_exception_diagnostic(exc: Exception, *, phase: str) -> str:
     """Return bounded API-safe workflow diagnostics without exposing raw exceptions."""
     if isinstance(exc, HTTPException):
         detail = str(exc.detail).strip()
-        return (detail or f"{phase} failed without a diagnostic message.")[:1000]
+        if not detail:
+            detail = f"{phase} failed without a diagnostic message."
+        # HTTPException details can include provider messages or user-controlled
+        # strings. Redact common credentials and machine-local paths before returning.
+        detail = re.sub(
+            r"(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]+",
+            "Bearer [REDACTED]",
+            detail,
+        )
+        detail = re.sub(
+            r"(?i)\\b(?:sk-[A-Za-z0-9_-]{8,}|sk-or-v1-[A-Za-z0-9_-]{8,}|"
+            r"api[_-]?key\\s*[:=]\\s*[^\\s,;]+|"
+            r"token\\s*[:=]\\s*[^\\s,;]+)",
+            "[REDACTED_CREDENTIAL]",
+            detail,
+        )
+        detail = re.sub(
+            r"(?:(?:/Users/|/home/|/root/)[^\\s,;]+|[A-Z]:\\\\Users\\\\[^\\s,;]+)",
+            "[REDACTED_PATH]",
+            detail,
+        )
+        return detail[:1000]
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         return (
             f"{phase} timed out; the outcome may be uncertain. "
