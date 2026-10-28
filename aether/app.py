@@ -1136,10 +1136,15 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             raise
         except Exception as exc:
             saved_qa = store.get_task(qa["id"])
+            error = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            if not error and saved_qa:
+                error = saved_qa.get("error_text") or ""
+            if not error:
+                error = "QA review failed without a diagnostic message."
             review = {
                 "task_id": qa["id"],
                 "status": saved_qa["status"] if saved_qa else "failed",
-                "error": exc.detail if isinstance(exc, HTTPException) else str(exc),
+                "error": error[:1000],
             }
         checkpoint["qa_review"] = review
         checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
