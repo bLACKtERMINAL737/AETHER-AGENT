@@ -646,3 +646,58 @@ async def test_tool_chat_rejects_unexpected_provider_response_shape(monkeypatch)
 
     with pytest.raises(RuntimeError, match="unexpected chat completion response"):
         await provider.chat_with_tools("hello")
+
+
+@pytest.mark.asyncio
+async def test_tool_execution_exception_is_reported_without_reexecuting(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[{
+            "id": "call-fails",
+            "type": "function",
+            "function": {"name": "workspace.read_file", "arguments": "{}"},
+        }]),
+        completion(content="The file tool failed."),
+    ]
+    monkeypatch.setattr(
+        "aether.provider.httpx.AsyncClient",
+        lambda *_a, **_kw: FakeAsyncClient(responses, calls),
+    )
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+    executions = 0
+
+    async def execute(name, args):
+        nonlocal executions
+        executions += 1
+        raise OSError("sensitive local path /private/secret.txt")
+
+    specs = [{
+        "type": "function",
+        "function": {
+            "name": "workspace.read_file",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }]
+    result = await provider.chat_with_tools(
+        "Read the file", tool_specs=specs, execute_tool=execute,
+    )
+
+    assert executions == 1
+    assert result["answer"] == "The file tool failed."
+    tool_messages = [
+        message for message in calls[1]["payload"]["messages"]
+        if message.get("role") == "tool"
+    ]
+    assert len(tool_messages) == 1
+    assert "Tool execution failed (OSError)." in tool_messages[0]["content"]
+    assert "/private/secret.txt" not in tool_messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_unserializable_tool_result_is_replaced_with_safe_json():
+    from aether.provider import _tool_result_message
+
+    recursive = {}
+    recursive["self"] = recursive
+    result = _tool_result_message({"result": recursive})
+    assert "could not be serialized safely" in result
