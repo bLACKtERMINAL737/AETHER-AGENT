@@ -11,6 +11,7 @@ main{max-width:1100px;margin:auto;padding:28px 18px 60px}.top{display:flex;align
 .grid{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;margin-top:20px}.panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:18px;padding:18px;min-width:0;box-shadow:0 12px 40px #0002}
 label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,textarea,select{width:100%;background:#0a1020;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px;font:inherit}textarea{min-height:115px;resize:vertical}button{border:1px solid var(--line);background:#202b45;color:var(--text);padding:10px 13px;border-radius:10px;cursor:pointer;font:inherit}button.primary{background:var(--accent);border-color:var(--accent);color:#100d27;font-weight:700}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.files{display:grid;gap:7px;margin-top:10px;max-height:310px;overflow:auto}.file{display:flex;align-items:flex-start;gap:9px;padding:9px;border:1px solid var(--line);border-radius:9px;overflow-wrap:anywhere}.file input{width:auto;margin-top:5px}.status{margin-top:12px;min-height:22px;color:var(--muted)}.status.good{color:var(--good)}.status.bad{color:var(--bad)}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;border:1px solid var(--line);padding:13px;border-radius:10px;max-height:520px;overflow:auto;font-size:12px}.proposal{display:none}.warning{margin-top:16px;border:1px solid #725c2d;background:#382c153d;border-radius:12px;padding:12px;color:#f3d89a;font-size:13px}.small{font-size:12px}@media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:20px 12px 40px}}
 
+.chat-message{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:#0a1020;overflow-wrap:anywhere}.chat-message.user{background:#1b2340;border-color:#39466d}.chat-message.assistant{background:#101a2d}.chat-message-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.chat-message-role{font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--muted)}.chat-message-actions{display:flex;gap:6px}.chat-message-actions button{padding:4px 8px;font-size:12px}.chat-message-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}.chat-message-body p{margin:0 0 10px}.chat-message-body p:last-child{margin-bottom:0}.chat-message-body pre{margin:10px 0;max-height:360px}.chat-message-body code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:#080d19;border:1px solid var(--line);border-radius:5px;padding:2px 5px}.chat-message-body pre code{display:block;border:0;padding:0;background:transparent;white-space:pre;overflow-x:auto}.chat-empty{padding:14px;border:1px dashed var(--line);border-radius:12px;color:var(--muted)}.chat-composer-hint{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:5px;color:var(--muted);font-size:12px}
 .task-list{display:grid;gap:8px;margin-top:12px}.task-item{border:1px solid var(--line);border-radius:12px;padding:12px;background:#0b1223;cursor:pointer}.task-item:hover{border-color:var(--accent)}.task-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}.task-state{font-size:11px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);border-radius:99px;padding:3px 8px;color:var(--muted)}.task-state.succeeded{color:var(--good)}.task-state.failed{color:var(--bad)}.task-state.running{color:var(--accent)}.task-detail{white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;border:1px solid var(--line);padding:12px;border-radius:10px;max-height:280px;overflow:auto;font:12px/1.5 ui-monospace,monospace}.task-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}@media(max-width:760px){.task-grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -52,6 +53,7 @@ label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,te
     <div id="chatMessages" class="files" style="max-height:360px;min-height:80px" aria-live="polite"><div class="muted">Start a conversation below.</div></div>
     <label for="chatInput">Message</label>
     <textarea id="chatInput" maxlength="20000" placeholder="Ask AETHER CLAW something…"></textarea>
+    <div class="chat-composer-hint"><span>Enter to send · Shift+Enter for a new line</span><span id="chatCharCount">0 / 20000</span></div>
     <label style="display:flex;align-items:center;gap:8px"><input id="useSavedMemories" type="checkbox" style="width:auto"> Allow relevant saved memories to be used for this message</label>
     <div class="actions"><button class="primary" id="sendChat">Send message</button></div>
     <div id="chatStatus" class="status" role="status"></div>
@@ -198,14 +200,76 @@ async function loadModelRoutes(){
  }catch(e){$("modelStatus").textContent="Could not load routes: "+e.message;}
 }
 $("modelMode").onchange=updateModelControls;
+function appendInlineMarkdown(parent,text){
+ const pattern=/(`[^`]+?`|\*\*[^*]+?\*\*)/g;
+ let last=0,match;
+ while((match=pattern.exec(text))!==null){
+  if(match.index>last)parent.append(document.createTextNode(text.slice(last,match.index)));
+  const token=match[0],node=document.createElement(token.startsWith("`")?"code":"strong");
+  node.textContent=token.startsWith("`")?token.slice(1,-1):token.slice(2,-2);
+  parent.append(node);last=pattern.lastIndex;
+ }
+ if(last<text.length)parent.append(document.createTextNode(text.slice(last)));
+}
+function renderMessageContent(container,content){
+ const lines=String(content||"").split("\n");
+ let paragraph=[];
+ const flushParagraph=()=>{
+  if(!paragraph.length)return;
+  const p=document.createElement("p");
+  appendInlineMarkdown(p,paragraph.join("\n"));
+  container.append(p);paragraph=[];
+ };
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i];
+  if(line.trimStart().startsWith("```")){
+   flushParagraph();
+   const language=line.trimStart().slice(3).trim();
+   const codeLines=[];i++;
+   while(i<lines.length&&!lines[i].trimStart().startsWith("```")){codeLines.push(lines[i]);i++;}
+   const pre=document.createElement("pre"),code=document.createElement("code");
+   if(language)code.dataset.language=language;
+   code.textContent=codeLines.join("\n");
+   const actions=document.createElement("div");actions.className="chat-message-actions";
+   const copy=document.createElement("button");copy.type="button";copy.textContent="Copy code";
+   copy.onclick=async()=>{
+    try{await navigator.clipboard.writeText(code.textContent);copy.textContent="Copied";setTimeout(()=>copy.textContent="Copy code",1200);}
+    catch(e){setStatus("chatStatus","Clipboard access failed. Select and copy the code manually.","bad");}
+   };
+   actions.append(copy);container.append(actions,pre);pre.append(code);
+  }else if(!line.trim()){
+   flushParagraph();
+  }else{
+   if(paragraph.length)paragraph.push(line);else paragraph=[line];
+  }
+ }
+ flushParagraph();
+}
 function renderChatMessages(messages){
  const box=$("chatMessages");box.replaceChildren();
- if(!messages.length){box.textContent="No messages yet.";return;}
+ if(!messages.length){
+  const empty=document.createElement("div");empty.className="chat-empty";
+  empty.textContent="Start a conversation below. Code blocks and basic Markdown are formatted for readability.";
+  box.append(empty);return;
+ }
  for(const msg of messages){
-  const card=document.createElement("div");card.className="file";card.style.display="block";
-  const role=document.createElement("strong");role.textContent=msg.role==="user"?"You":msg.role==="assistant"?"AETHER CLAW":"System";
-  const body=document.createElement("div");body.textContent=msg.content;body.style.whiteSpace="pre-wrap";body.style.marginTop="5px";
-  card.append(role,body);box.append(card);
+  const roleName=msg.role==="user"?"You":msg.role==="assistant"?"AETHER CLAW":"System";
+  const card=document.createElement("article");card.className="chat-message "+(msg.role==="user"?"user":msg.role==="assistant"?"assistant":"system");
+  const head=document.createElement("div");head.className="chat-message-head";
+  const role=document.createElement("strong");role.className="chat-message-role";role.textContent=roleName;
+  head.append(role);
+  if(msg.role==="assistant"&&msg.content){
+   const actions=document.createElement("div");actions.className="chat-message-actions";
+   const copy=document.createElement("button");copy.type="button";copy.textContent="Copy response";
+   copy.onclick=async()=>{
+    try{await navigator.clipboard.writeText(String(msg.content));copy.textContent="Copied";setTimeout(()=>copy.textContent="Copy response",1200);}
+    catch(e){setStatus("chatStatus","Clipboard access failed. Select and copy the response manually.","bad");}
+   };
+   actions.append(copy);head.append(actions);
+  }
+  const body=document.createElement("div");body.className="chat-message-body";
+  renderMessageContent(body,msg.content);
+  card.append(head,body);box.append(card);
  }
  box.scrollTop=box.scrollHeight;
 }
@@ -266,6 +330,7 @@ async function sendChat(){
  }catch(e){setStatus("chatStatus",e.message,"bad");await refreshSessions();}
  finally{$("sendChat").disabled=false;}
 }
+$("chatInput").addEventListener("input",()=>{$("chatCharCount").textContent=$("chatInput").value.length+" / 20000";});
 $("sendChat").onclick=sendChat;
 $("chatInput").addEventListener("keydown",event=>{
  if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();sendChat();}
