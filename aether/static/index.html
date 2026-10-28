@@ -358,7 +358,8 @@ async function refreshSessions(){
    option.textContent=(s.title||"Conversation")+" ("+s.message_count+")";select.append(option);
   }
   if(old && data.sessions.some(s=>s.id===old)){select.value=old;} else if(!old){select.value="";}
- }catch(e){setStatus("chatStatus",e.message,"bad");}
+  return true;
+ }catch(e){setStatus("chatStatus",e.message,"bad");return false;}
 }
 async function openSession(sessionId){
  if(!sessionId){currentSessionId=null;renderChatMessages([]);return true;}
@@ -402,7 +403,7 @@ async function sendChat(){
   currentSessionId=result.session_id;$("sessionSelect").value=currentSessionId;
   $("chatInput").value="";
   const historyLoaded=await openSession(currentSessionId);
-  await refreshSessions();$("sessionSelect").value=currentSessionId;
+  const sessionsRefreshed=await refreshSessions();$("sessionSelect").value=currentSessionId;
   if(!historyLoaded){
    // The chat request succeeded even if the follow-up history fetch failed.
    // Keep the new answer visible rather than silently leaving the old transcript.
@@ -413,7 +414,8 @@ async function sendChat(){
    setStatus("chatStatus","Reply generated. Saved history could not be refreshed, so only this turn is shown; reopen the conversation to load its full history.","bad");
    return;
   }
-  setStatus("chatStatus",result.mode.toUpperCase()+" · "+result.task_type+" · "+result.route+" ("+result.model+"). Fallback used: "+(result.fallback_used?"yes":"no")+". Saved memory used: "+(result.memory_context_used?"yes":"no")+".","good");
+  const replyStatus=result.mode.toUpperCase()+" · "+result.task_type+" · "+result.route+" ("+result.model+"). Fallback used: "+(result.fallback_used?"yes":"no")+". Saved memory used: "+(result.memory_context_used?"yes":"no")+".";
+  setStatus("chatStatus",sessionsRefreshed?replyStatus:replyStatus+" Reply succeeded, but the saved conversation list could not be refreshed.",sessionsRefreshed?"good":"bad");
  }catch(e){setStatus("chatStatus",e.message,"bad");await refreshSessions();}
  finally{$("sendChat").disabled=false;}
 }
