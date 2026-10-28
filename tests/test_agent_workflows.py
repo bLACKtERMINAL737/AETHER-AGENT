@@ -328,7 +328,7 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
     diagnostic_categories = {
         item["category"] for item in saved["results"]["diagnostics"]["failures"]
     }
-    assert diagnostic_categories == {"timeout", "dependency_blocked"}
+    assert diagnostic_categories == {"outcome_unknown", "dependency_blocked"}
 
 
 @pytest.mark.asyncio
