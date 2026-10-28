@@ -510,3 +510,38 @@ async def test_orchestrator_cancellation_during_qa_persists_unknown_state(
     qa_task = store.get_task(saved["results"]["qa_review"]["task_id"])
     assert qa_task is not None
     assert qa_task["status"] == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("invalid", 120.0),
+        ("nan", 120.0),
+        ("inf", 120.0),
+        ("-inf", 120.0),
+        ("0", 1.0),
+        ("0.25", 1.0),
+        ("999999", 600.0),
+        ("30", 30.0),
+    ],
+)
+def test_agent_task_timeout_config_is_finite_and_bounded(
+    monkeypatch, configured, expected
+):
+    monkeypatch.setenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", configured)
+    assert app_module.agent_task_timeout_seconds() == expected
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_reports_normalized_timeout_for_nonfinite_config(
+    tmp_path, monkeypatch
+):
+    configure(monkeypatch, tmp_path)
+    monkeypatch.setenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "nan")
+
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Inspect the repository and review its risks")
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["task_timeout_seconds"] == 120.0
