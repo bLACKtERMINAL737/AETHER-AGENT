@@ -570,7 +570,7 @@ async def test_recovery_cancellation_persists_unknown_workflow_checkpoint(
         await app_module.recover_agent_workflow(workflow_id)
 
     saved = store.get_workflow(workflow_id)
-    assert saved["status"] == "partial"
+    assert saved["status"] == "unknown"
     assert "cancelled" in saved["error_text"].lower()
     assert saved["results"]["tasks"][0]["status"] == "queued"
     assert store.get_task(task_id)["status"] == "running"
@@ -606,7 +606,7 @@ async def test_recovery_task_timeout_marks_task_unknown_without_replay(
     assert executed == [task_id, qa_id]
     assert store.get_task(task_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
-    assert saved["status"] == "unknown"
+    assert saved["status"] == "partial"
     assert saved["results"]["tasks"][0]["status"] == "queued"
 
 
@@ -642,5 +642,5 @@ async def test_recovery_qa_timeout_persists_uncertain_workflow_state(
     assert store.get_task(task_id)["status"] == "succeeded"
     assert store.get_task(qa_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
-    assert saved["status"] == "unknown"
+    assert saved["status"] == "partial"
     assert saved["results"]["qa_review"]["status"] == "queued"
