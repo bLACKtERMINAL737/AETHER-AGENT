@@ -89,6 +89,7 @@ class ChatRequest(BaseModel):
     allow_fallback: bool = True
     session_id: str | None = Field(default=None, min_length=1, max_length=200)
     use_saved_memories: bool = False
+    image_data_url: str | None = Field(default=None, max_length=900_000, pattern=r"^data:image/(png|jpeg|webp);base64,")
 
 
 class ModelConfigurationRequest(BaseModel):
@@ -1407,6 +1408,7 @@ async def chat(request: ChatRequest):
                     execute_tool=execute_chat_tool,
                     execution_counter=lambda: tool_task["attempts"] > 0,
                     max_tool_calls=5,
+                    **({"image_data_url": request.image_data_url} if request.image_data_url else {}),
                 )
             except Exception:
                 # The tool journal records each tool's own outcome. If the model
@@ -1443,6 +1445,7 @@ async def chat(request: ChatRequest):
                 memories=memories,
                 model_route=request.model_route if request.mode == "manual" else None,
                 allow_fallback=request.allow_fallback,
+                **({"image_data_url": request.image_data_url} if request.image_data_url else {}),
             )
         answer = str(result["answer"])
         # Answer knowledge-cutoff questions deterministically: prompt guidance alone
