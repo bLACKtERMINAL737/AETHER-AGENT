@@ -38,6 +38,7 @@ class ModelProvider:
         tool_specs: list[dict[str, object]] | None = None,
         execute_tool=None,
         max_tool_calls: int = 5,
+        image_data_url: str | None = None,
     ) -> dict[str, object]:
         """Run OpenAI-compatible function calling with a strict per-request execution cap."""
         if not self.configured:
@@ -111,7 +112,13 @@ class ModelProvider:
             role, content = item.get("role"), item.get("content")
             if role in {"user", "assistant"} and isinstance(content, str):
                 messages.append({"role": role, "content": content[:8000]})
-        messages.append({"role": "user", "content": message})
+        user_content: object = message
+        if image_data_url:
+            user_content = [
+                {"type": "text", "text": message},
+                {"type": "image_url", "image_url": {"url": image_data_url}},
+            ]
+        messages.append({"role": "user", "content": user_content})
 
         executions = 0
         rounds = 0
@@ -260,6 +267,7 @@ class ModelProvider:
         self, message: str, task_type: TaskType = "general",
         history: list[dict[str, str]] | None = None,
         memories: list[dict[str, object]] | None = None,
+        image_data_url: str | None = None,
     ) -> str:
         if not self.configured:
             raise ProviderNotConfigured(
@@ -301,7 +309,13 @@ class ModelProvider:
             role, text = item.get("role"), item.get("content")
             if role in {"user", "assistant"} and isinstance(text, str):
                 messages.append({"role": role, "content": text[:8000]})
-        messages.append({"role": "user", "content": message})
+        user_content: object = message
+        if image_data_url:
+            user_content = [
+                {"type": "text", "text": message},
+                {"type": "image_url", "image_url": {"url": image_data_url}},
+            ]
+        messages.append({"role": "user", "content": user_content})
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.post(
                 self.base_url.rstrip("/") + "/chat/completions",
@@ -421,6 +435,7 @@ class ModelRouter:
         execute_tool=None,
         execution_counter=None,
         max_tool_calls: int = 5,
+        image_data_url: str | None = None,
     ) -> dict[str, object]:
         """Route native tool calls; never restart after a tool execution attempt."""
         selected, route = self._route(task_type, model_route=model_route)
@@ -441,6 +456,7 @@ class ModelRouter:
                         message, task_type, history=history, memories=memories,
                         tool_specs=tool_specs, execute_tool=execute_tool,
                         max_tool_calls=max_tool_calls,
+                        image_data_url=image_data_url,
                     )
                     attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "success"})
                     return {
@@ -479,6 +495,7 @@ class ModelRouter:
         memories: list[dict[str, object]] | None = None,
         model_route: ModelRoute | None = None,
         allow_fallback: bool = True,
+        image_data_url: str | None = None,
     ) -> dict[str, object]:
         selected, route = self._route(task_type, model_route=model_route)
         candidates: list[tuple[ModelProvider, str]] = [(selected, route)]
@@ -496,7 +513,9 @@ class ModelRouter:
                 try:
                     # Preserve compatibility with simple provider adapters that implement the original signature.
                     if history or memories:
-                        answer = await provider.chat(message, task_type, history=history, memories=memories)
+                        answer = await provider.chat(message, task_type, history=history, memories=memories, **({"image_data_url": image_data_url} if image_data_url else {}))
+                    elif image_data_url:
+                        answer = await provider.chat(message, task_type, image_data_url=image_data_url)
                     else:
                         answer = await provider.chat(message, task_type)
                     attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "success"})

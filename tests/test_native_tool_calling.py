@@ -508,3 +508,29 @@ async def test_tool_failure_context_is_sent_back_to_model(monkeypatch):
     }
     assert "/private/local/path" not in tool_message["content"]
     assert result["answer"] == "The file could not be read because the tool reported an error."
+
+
+@pytest.mark.asyncio
+async def test_native_chat_sends_image_as_openai_compatible_multimodal_content(monkeypatch):
+    calls = []
+    responses = [completion(content="The image shows a red bicycle.")]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
+    image_data_url = "data:image/png;base64,aGVsbG8="
+
+    result = await provider.chat_with_tools(
+        "Describe this image",
+        image_data_url=image_data_url,
+    )
+
+    assert result["answer"] == "The image shows a red bicycle."
+    user_message = calls[0]["payload"]["messages"][-1]
+    assert user_message["role"] == "user"
+    assert user_message["content"] == [
+        {"type": "text", "text": "Describe this image"},
+        {"type": "image_url", "image_url": {"url": image_data_url}},
+    ]
