@@ -93,6 +93,24 @@ class ChatRequest(BaseModel):
     use_saved_memories: bool = False
     image_data_url: str | None = Field(default=None, max_length=900_000)
 
+    @field_validator("message")
+    @classmethod
+    def validate_message_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("message must not be blank")
+        return value
+
+    @field_validator("session_id")
+    @classmethod
+    def normalize_session_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("session_id must not be blank")
+        return value
+
     @field_validator("image_data_url")
     @classmethod
     def validate_image_data_url(cls, value: str | None) -> str | None:
@@ -213,6 +231,8 @@ def configure_model(request: ModelConfigurationRequest):
     if not model_name or not secret:
         raise HTTPException(status_code=422, detail="Model ID and provider key must not be blank.")
     try:
+        if any(ord(char) <= 32 or char == "\\\\" for char in raw_url):
+            raise ValueError
         parsed = urlsplit(raw_url)
         host = parsed.hostname
         if (
