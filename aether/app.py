@@ -105,19 +105,19 @@ def workflow_exception_diagnostic(exc: Exception, *, phase: str) -> str:
         # HTTPException details can include provider messages or user-controlled
         # strings. Redact common credentials and machine-local paths before returning.
         detail = re.sub(
-            r"(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]+",
+            r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
             "Bearer [REDACTED]",
             detail,
         )
         detail = re.sub(
-            r"(?i)\\b(?:sk-[A-Za-z0-9_-]{8,}|sk-or-v1-[A-Za-z0-9_-]{8,}|"
-            r"api[_-]?key\\s*[:=]\\s*[^\\s,;]+|"
-            r"token\\s*[:=]\\s*[^\\s,;]+)",
+            r"(?i)\b(?:sk-[A-Za-z0-9_-]{8,}|sk-or-v1-[A-Za-z0-9_-]{8,}|"
+            r"api[_-]?key\s*[:=]\s*[^\s,;]+|"
+            r"token\s*[:=]\s*[^\s,;]+)",
             "[REDACTED_CREDENTIAL]",
             detail,
         )
         detail = re.sub(
-            r"(?:(?:/Users/|/home/|/root/)[^\\s,;]+|[A-Z]:\\\\Users\\\\[^\\s,;]+)",
+            r"(?:(?:/Users/|/home/|/root/)[^\s,;]+|[A-Z]:\\Users\\[^\s,;]+)",
             "[REDACTED_PATH]",
             detail,
         )
