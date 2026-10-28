@@ -1320,26 +1320,68 @@ async def chat(request: ChatRequest):
             task_id = tool_task["id"]
             tool_task["attempts"] += 1
             internal_name = tool_name_map.get(str(name), str(name))
-            execution_id = store.begin_tool(task_id, internal_name, arguments)
+            execution_id = None
             try:
+                # If journal creation fails, do not run the tool: there would be no
+                # durable record to explain or reconcile the side effect.
+                execution_id = store.begin_tool(task_id, internal_name, arguments)
                 result = tools.execute(internal_name, arguments)
-                store.finish_tool(execution_id, "succeeded", result=result)
-                tool_task["count"] += 1
-                return result
             except ToolError as exc:
                 tool_task["failed"] = True
-                store.finish_tool(execution_id, "failed", error=str(exc)[:500])
+                if execution_id is not None:
+                    try:
+                        store.finish_tool(execution_id, "failed", error=str(exc)[:500])
+                    except Exception:
+                        tool_task["uncertain"] = True
+                        logger.exception("Could not journal native chat tool failure")
+                        try:
+                            store.finish_tool(
+                                execution_id,
+                                "unknown",
+                                error="Tool failed but its final outcome could not be safely journaled",
+                            )
+                        except Exception:
+                            logger.exception("Could not mark failed native chat tool outcome unknown")
+                        raise ToolError(
+                            "Tool failed and its result could not be safely journaled."
+                        ) from exc
                 raise
             except Exception as exc:
                 tool_task["failed"] = True
                 tool_task["uncertain"] = True
-                logger.exception("Unexpected native chat tool failure")
-                store.finish_tool(
-                    execution_id,
-                    "unknown",
-                    error="Unexpected execution error; inspect local logs before retrying",
-                )
+                logger.exception("Unexpected native chat tool or journal failure")
+                if execution_id is not None:
+                    try:
+                        store.finish_tool(
+                            execution_id,
+                            "unknown",
+                            error="Unexpected execution error; inspect local logs before retrying",
+                        )
+                    except Exception:
+                        logger.exception("Could not journal uncertain native chat tool execution")
                 raise ToolError("Tool execution outcome may be uncertain") from exc
+            try:
+                store.finish_tool(execution_id, "succeeded", result=result)
+            except Exception as exc:
+                # The tool has already run, so journal failure makes the outcome
+                # uncertain. Best-effort mark a still-running journal row unknown;
+                # if the success write actually committed, the store correctly
+                # refuses to rewrite that terminal record.
+                tool_task["uncertain"] = True
+                logger.exception("Could not persist native chat tool result")
+                try:
+                    store.finish_tool(
+                        execution_id,
+                        "unknown",
+                        error="Tool ran but its outcome could not be safely journaled",
+                    )
+                except Exception:
+                    logger.exception("Could not mark native chat tool outcome unknown")
+                raise ToolError(
+                    "Tool ran, but its result could not be safely journaled."
+                ) from exc
+            tool_task["count"] += 1
+            return result
 
         if callable(getattr(router, "chat_with_tools", None)):
             tool_specs = [
