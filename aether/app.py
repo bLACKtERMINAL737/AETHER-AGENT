@@ -109,8 +109,8 @@ class ChatRequest(BaseModel):
         if not decoded or len(decoded) > 600 * 1024:
             raise ValueError("image must be non-empty and no larger than 600 KB")
         valid_signature = (
-            decoded.startswith(b"\\x89PNG\\r\\n\\x1a\\n") if media_type == "png"
-            else decoded.startswith(b"\\xff\\xd8\\xff") if media_type == "jpeg"
+            decoded.startswith(b"\x89PNG\r\n\x1a\n") if media_type == "png"
+            else decoded.startswith(b"\xff\\xd8\xff") if media_type == "jpeg"
             else len(decoded) >= 12 and decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP"
         )
         if not valid_signature:
@@ -708,7 +708,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         "Return only JSON: {subtasks:[{title,input,role,depends_on}]}. Create 1-4 tasks for the goal. "
         "depends_on is an array of zero-based prerequisite task indexes, or [] if independent. "
         "Dependencies must form an acyclic graph. Roles must be coding, research, memory, or monitor. "
-        "Keep tasks narrow. Do not claim execution.\\n\\n"
+        "Keep tasks narrow. Do not claim execution.\n\n"
         + request.goal
     )
     try:
@@ -927,10 +927,10 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 }
                 task = store.create_task(
                     f"[{item['role']}] {item['title']}",
-                    f"Workflow ID: {workflow_id}\\n"
-                    f"Parent goal: {request.goal}\\n"
-                    f"Assigned role: {item['role']}\\n"
-                    f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\\n"
+                    f"Workflow ID: {workflow_id}\n"
+                    f"Parent goal: {request.goal}\n"
+                    f"Assigned role: {item['role']}\n"
+                    f"Prerequisite results: {json.dumps(prerequisite_results, ensure_ascii=False)}\n"
                     f"Task: {item['input']}",
                 )
                 outcome = {
@@ -991,7 +991,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         outcomes = ordered_outcomes()
         qa = store.create_task(
             "[qa_security] Review specialist results",
-            "Review this goal and the specialist results for correctness, security risks, and missing tests.\\n"
+            "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
             + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False),
         )
         checkpoint["qa_review"] = {"task_id": qa["id"], "status": "queued"}
