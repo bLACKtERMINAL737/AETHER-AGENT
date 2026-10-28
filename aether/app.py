@@ -748,13 +748,18 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     )
     try:
         response = await router.chat(prompt, route)
-        raw_answer = str(response.get("answer", "")).strip()
+        if not isinstance(response, dict):
+            raise ValueError("Planner response must be an object")
+        raw_answer = response.get("answer")
+        if not isinstance(raw_answer, str) or not raw_answer.strip():
+            raise ValueError("Planner response has no textual answer")
+        raw_answer = raw_answer.strip()
         if raw_answer.startswith("```"):
-            raw_answer = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
+            raw_answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
         try:
             data = json.loads(raw_answer)
         except json.JSONDecodeError:
-            object_match = re.search(r"\\{.*\\}", raw_answer, flags=re.DOTALL)
+            object_match = re.search(r"\{.*\}", raw_answer, flags=re.DOTALL)
             if object_match is None:
                 raise
             data = json.loads(object_match.group(0))
@@ -765,6 +770,13 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         raise HTTPException(status_code=503, detail="No model route configured for planning.") from exc
     except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(status_code=502, detail="Planner returned an invalid plan; no tasks were created.") from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Planner timed out; no tasks were created. Retry the planning request.") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Planner provider request failed; no tasks were created.") from exc
+    except Exception as exc:
+        logger.exception("Unexpected agent planner failure")
+        raise HTTPException(status_code=502, detail="Planner failed unexpectedly; no tasks were created.") from exc
 
     # Never allow a model-generated plan or environment value to create unbounded work.
     try:
