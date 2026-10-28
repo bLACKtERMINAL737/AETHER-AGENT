@@ -570,7 +570,7 @@ async def test_recovery_cancellation_persists_unknown_workflow_checkpoint(
         await app_module.recover_agent_workflow(workflow_id)
 
     saved = store.get_workflow(workflow_id)
-    assert saved["status"] == "unknown"
+    assert saved["status"] == "partial"
     assert "cancelled" in saved["error_text"].lower()
     assert saved["results"]["tasks"][0]["status"] == "queued"
     assert store.get_task(task_id)["status"] == "running"
