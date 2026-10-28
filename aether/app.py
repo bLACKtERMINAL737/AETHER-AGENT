@@ -538,6 +538,11 @@ async def recover_agent_workflow(workflow_id: str):
                     detail="The not-started QA checkpoint unexpectedly contains a task ID; inspect it manually.",
                 )
         else:
+            if not isinstance(qa_id, str) or not qa_id.strip():
+                raise HTTPException(
+                    status_code=409,
+                    detail="QA checkpoint has an invalid task ID; inspect the record manually.",
+                )
             qa_task = store.get_task(qa_id)
             if qa_task is None or qa_task.get("status") not in compatible_journal_statuses[qa_status]:
                 raise HTTPException(
