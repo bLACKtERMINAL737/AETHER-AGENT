@@ -219,3 +219,43 @@ def test_chat_rejects_whitespace_only_session_id():
 
     with pytest.raises(ValidationError, match="session_id must not be blank"):
         app_module.ChatRequest(message="Hello", session_id="   ")
+
+
+@pytest.mark.asyncio
+async def test_native_tool_task_is_unknown_when_chat_is_cancelled_after_tool(tmp_path, monkeypatch):
+    import asyncio
+
+    store = TaskStore(tmp_path / "native-tool-chat-cancelled.sqlite3")
+
+    class ToolRouter:
+        async def chat_with_tools(self, message, task_type, **kwargs):
+            await kwargs["execute_tool"]("workspace.list_files", {"path": "."})
+            raise asyncio.CancelledError()
+
+    class ReadOnlyTools:
+        def describe(self):
+            return [{
+                "name": "workspace.list_files",
+                "description": "List workspace files",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }]
+
+        def execute(self, name, arguments):
+            assert name == "workspace.list_files"
+            return {"entries": [{"name": "example.py", "type": "file"}]}
+
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", ToolRouter())
+    monkeypatch.setattr(app_module, "tools", ReadOnlyTools())
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module.chat(app_module.ChatRequest(message="List files"))
+
+    tasks = store.list_tasks()
+    assert len(tasks) == 1
+    task = store.get_task(tasks[0]["id"])
+    assert task["status"] == "unknown"
+    assert "cancelled" in task["error_text"].lower()
+    executions = store.list_tool_executions(task["id"])
+    assert len(executions) == 1
+    assert executions[0]["status"] == "succeeded"
