@@ -11,6 +11,7 @@ import httpx
 logger = logging.getLogger("aether.provider")
 MAX_TOOL_ARGUMENT_BYTES = 64 * 1024
 MAX_TOOL_CALLS_PER_RESPONSE = 5
+MAX_JSON_NESTING_DEPTH = 100
 TaskType = Literal["general", "coding", "reasoning"]
 ModelRoute = Literal["primary", "coding", "reasoning", "fallback"]
 
@@ -122,6 +123,7 @@ class ModelProvider:
             ]
         messages.append({"role": "user", "content": user_content})
 
+        max_tool_calls = min(max(0, max_tool_calls), MAX_TOOL_CALLS_PER_RESPONSE)
         executions = 0
         rounds = 0
         specs = tool_specs or []
@@ -206,6 +208,8 @@ class ModelProvider:
                 if name not in available_tool_names:
                     raise RuntimeError("Provider returned an unregistered tool name")
                 try:
+                    if _json_exceeds_nesting_limit(raw_args, MAX_JSON_NESTING_DEPTH):
+                        raise ValueError("JSON nesting limit exceeded")
                     args = json.loads(raw_args)
                     if not isinstance(args, dict):
                         raise ValueError
@@ -332,6 +336,31 @@ class ModelProvider:
         if not isinstance(content, str):
             raise RuntimeError("Provider returned an unexpected chat completion response")
         return content
+
+
+def _json_exceeds_nesting_limit(raw: str, limit: int) -> bool:
+    """Detect excessive JSON container nesting without parsing the payload."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for char in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == chr(92):
+                escaped = True
+            elif char == chr(34):
+                in_string = False
+            continue
+        if char == chr(34):
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif char in "]}":
+            depth = max(0, depth - 1)
+    return False
 
 
 def _tool_result_message(result: dict[str, object], max_chars: int = 12_000) -> str:
