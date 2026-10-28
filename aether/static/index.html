@@ -361,14 +361,24 @@ async function refreshSessions(){
   return true;
  }catch(e){setStatus("chatStatus",e.message,"bad");return false;}
 }
+let sessionLoadGeneration=0;
 async function openSession(sessionId){
- if(!sessionId){currentSessionId=null;renderChatMessages([]);return true;}
+ const generation=++sessionLoadGeneration;
+ if(!sessionId){
+  currentSessionId=null;renderChatMessages([]);
+  return true;
+ }
  try{
   const session=await api("/sessions/"+encodeURIComponent(sessionId)+"?limit=200");
+  // Ignore out-of-order responses after the user has switched conversations.
+  if(generation!==sessionLoadGeneration || $("sessionSelect").value!==sessionId)return false;
   currentSessionId=session.id;renderChatMessages(session.messages||[]);
   setStatus("chatStatus","Loaded saved conversation.","good");
   return true;
- }catch(e){setStatus("chatStatus",e.message,"bad");return false;}
+ }catch(e){
+  if(generation===sessionLoadGeneration && $("sessionSelect").value===sessionId)setStatus("chatStatus",e.message,"bad");
+  return false;
+ }
 }
 $("sessionSelect").onchange=()=>openSession($("sessionSelect").value);
 $("newSession").onclick=()=>{
