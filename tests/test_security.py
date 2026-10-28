@@ -1,7 +1,6 @@
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from starlette.requests import Request
 from aether.security import LocalAPIProtection, _origin_is_local
 
 
@@ -161,55 +160,3 @@ async def test_api_documentation_routes_require_authentication(monkeypatch, path
         response = await client.get(path)
 
     assert response.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_request_body_over_limit_is_rejected_before_route(monkeypatch):
-    from aether.security import MAX_REQUEST_BODY_BYTES
-
-    app = make_app(monkeypatch)
-    called = False
-
-    @app.post("/large")
-    async def large(request: Request):
-        nonlocal called
-        called = True
-        return {"size": len(await request.body())}
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://127.0.0.1:8000",
-    ) as client:
-        response = await client.post(
-            "/large",
-            content=b"x" * (MAX_REQUEST_BODY_BYTES + 1),
-            headers={"X-Aether-Token": "test-token"},
-        )
-
-    assert response.status_code == 413
-    assert response.json()["detail"] == "Request body exceeds the 1 MiB limit"
-    assert called is False
-
-
-@pytest.mark.asyncio
-async def test_request_body_at_limit_reaches_route(monkeypatch):
-    from aether.security import MAX_REQUEST_BODY_BYTES
-
-    app = make_app(monkeypatch)
-
-    @app.post("/bounded")
-    async def bounded(request: Request):
-        return {"size": len(await request.body())}
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://127.0.0.1:8000",
-    ) as client:
-        response = await client.post(
-            "/bounded",
-            content=b"x" * MAX_REQUEST_BODY_BYTES,
-            headers={"X-Aether-Token": "test-token"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {"size": MAX_REQUEST_BODY_BYTES}

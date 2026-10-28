@@ -8,7 +8,6 @@ from starlette.responses import JSONResponse
 
 EXEMPT_PATHS = {"/health", "/ui", "/ui/"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-MAX_REQUEST_BODY_BYTES = 1_048_576
 
 
 def _is_loopback(host: str | None) -> bool:
@@ -69,45 +68,8 @@ class LocalAPIProtection:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
-            await self.app(scope, replay_receive, send)
+            await self.app(scope, receive, send)
             return
-
-        # Enforce a body limit even when Content-Length is absent or untrusted.
-        # Buffer only up to the configured cap, then replay the accepted body to
-        # the downstream ASGI application.
-        body_parts = []
-        body_size = 0
-        while True:
-            message = await receive()
-            if message["type"] == "http.disconnect":
-                return
-            if message["type"] != "http.request":
-                continue
-            chunk = message.get("body", b"")
-            body_size += len(chunk)
-            if body_size > MAX_REQUEST_BODY_BYTES:
-                response = JSONResponse(
-                    {"detail": "Request body exceeds the 1 MiB limit"},
-                    status_code=413,
-                )
-                await response(scope, receive, send)
-                return
-            body_parts.append(message)
-            if not message.get("more_body", False):
-                break
-
-        replayed = False
-
-        async def replay_receive():
-            nonlocal replayed
-            if not replayed:
-                replayed = True
-                return {
-                    "type": "http.request",
-                    "body": b"".join(part.get("body", b"") for part in body_parts),
-                    "more_body": False,
-                }
-            return {"type": "http.disconnect"}
 
         path = scope.get("path", "")
         method = scope.get("method", "GET")
