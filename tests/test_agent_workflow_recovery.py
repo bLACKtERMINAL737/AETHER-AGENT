@@ -572,7 +572,7 @@ async def test_recovery_cancellation_persists_unknown_workflow_checkpoint(
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "unknown"
     assert "cancelled" in saved["error_text"].lower()
-    assert saved["results"]["tasks"][0]["status"] == "queued"
+    assert saved["results"]["tasks"][0]["status"] == "unknown"
     assert store.get_task(task_id)["status"] == "running"
 
 
@@ -644,4 +644,4 @@ async def test_recovery_qa_timeout_persists_uncertain_workflow_state(
     assert store.get_task(qa_id)["status"] == "unknown"
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "partial"
-    assert saved["results"]["qa_review"]["status"] == "queued"
+    assert saved["results"]["qa_review"]["status"] == "unknown"
