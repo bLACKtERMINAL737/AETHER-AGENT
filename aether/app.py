@@ -110,7 +110,7 @@ class ChatRequest(BaseModel):
             raise ValueError("image must be non-empty and no larger than 600 KB")
         valid_signature = (
             decoded.startswith(b"\x89PNG\r\n\x1a\n") if media_type == "png"
-            else decoded.startswith(b"\xff\\xd8\xff") if media_type == "jpeg"
+            else decoded.startswith(bytes.fromhex("ffd8ff")) if media_type == "jpeg"
             else len(decoded) >= 12 and decoded.startswith(b"RIFF") and decoded[8:12] == b"WEBP"
         )
         if not valid_signature:
