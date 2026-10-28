@@ -1524,7 +1524,7 @@ async def chat(request: ChatRequest):
                 if isinstance(exc, httpx.TimeoutException):
                     raise HTTPException(
                         status_code=504,
-                        detail="The model provider timed out; retry the request. Session history was not saved.",
+                        detail=("The model provider timed out. Check provider availability before retrying; tool actions may already have occurred, and session history was not saved." if tool_task["count"] else "The model provider timed out; retry the request. Session history was not saved."),
                     ) from exc
                 if isinstance(exc, httpx.HTTPStatusError):
                     raise HTTPException(
