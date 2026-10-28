@@ -95,3 +95,37 @@ async def test_chat_marks_tool_unknown_if_success_result_cannot_be_journaled(
     executions = store.list_tool_executions(task["id"])
     assert len(executions) == 1
     assert executions[0]["status"] == "unknown"
+
+class FailingReadOnlyTools(ReadOnlyTools):
+    def execute(self, name, arguments):
+        self.executions.append((name, arguments))
+        raise ToolError("simulated file read failure")
+
+
+@pytest.mark.asyncio
+async def test_chat_marks_failed_tool_unknown_if_failure_cannot_be_journaled(
+    tmp_path, monkeypatch
+):
+    store, _tools, router = configure(monkeypatch, tmp_path)
+    tools = FailingReadOnlyTools()
+    monkeypatch.setattr(app_module, "tools", tools)
+    original_finish_tool = store.finish_tool
+
+    def fail_failure_write(execution_id, status, result=None, error=None):
+        if status == "failed":
+            raise RuntimeError("simulated failure journal outage")
+        return original_finish_tool(execution_id, status, result=result, error=error)
+
+    monkeypatch.setattr(store, "finish_tool", fail_failure_write)
+
+    result = await app_module.chat(
+        app_module.ChatRequest(message="Read notes.txt")
+    )
+
+    assert "could not be safely journaled" in router.tool_error
+    assert tools.executions == [("workspace.read_file", {"path": "notes.txt"})]
+    task = store.get_task(result["task_id"])
+    assert task["status"] == "unknown"
+    executions = store.list_tool_executions(task["id"])
+    assert len(executions) == 1
+    assert executions[0]["status"] == "unknown"
