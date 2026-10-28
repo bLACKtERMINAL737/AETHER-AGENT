@@ -571,3 +571,40 @@ async def test_oversized_tool_arguments_are_rejected_before_execution(monkeypatc
     with pytest.raises(RuntimeError, match="tool arguments exceeded the size limit"):
         await provider.chat_with_tools("Read a file", tool_specs=specs, execute_tool=execute)
     assert executed == []
+
+
+class InvalidJsonResponse:
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        raise ValueError("provider sent invalid JSON")
+
+
+class InvalidJsonClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def post(self, *_args, **_kwargs):
+        return InvalidJsonResponse()
+
+
+@pytest.mark.asyncio
+async def test_native_tool_chat_normalizes_invalid_provider_json(monkeypatch):
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", lambda *_a, **_kw: InvalidJsonClient())
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
+        await provider.chat_with_tools("hello")
+
+
+@pytest.mark.asyncio
+async def test_regular_chat_normalizes_invalid_provider_json(monkeypatch):
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", lambda *_a, **_kw: InvalidJsonClient())
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
+        await provider.chat("hello")

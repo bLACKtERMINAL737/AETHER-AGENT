@@ -174,7 +174,7 @@ class ModelProvider:
                     json=payload,
                 )
                 response.raise_for_status()
-                data = response.json()
+                data = _decode_provider_json(response)
             try:
                 assistant = data["choices"][0]["message"]
                 if not isinstance(assistant, dict):
@@ -326,7 +326,7 @@ class ModelProvider:
                 json={"model": self.model, "messages": messages, "temperature": 0.2},
             )
             response.raise_for_status()
-            data = response.json()
+            data = _decode_provider_json(response)
         try:
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
@@ -548,3 +548,11 @@ class ModelRouter:
         if last_error is not None:
             raise last_error
         raise ProviderNotConfigured("No configured model route is available")
+
+
+def _decode_provider_json(response: httpx.Response) -> object:
+    """Convert invalid provider JSON into a stable, actionable provider error."""
+    try:
+        return response.json()
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("Provider returned invalid JSON") from exc
