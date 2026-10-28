@@ -1505,22 +1505,41 @@ async def chat(request: ChatRequest):
                     except Exception:
                         logger.exception("Could not persist cancelled native chat task")
                 raise
-            except Exception:
-                # The tool journal records each tool's own outcome. If the model
-                # fails after a tool ran, mark the parent chat-tool task as failed
-                # without rewriting a successful child execution as uncertain.
+            except Exception as exc:
+                # Preserve the provider failure category while keeping the parent
+                # task journal consistent with its child tool records.
                 if tool_task["id"] is not None:
                     status = "unknown" if tool_task["uncertain"] else "failed"
-                    store.set_task_status(
-                        tool_task["id"],
-                        status,
-                        error=(
-                            "Tool execution outcome may be uncertain; inspect tool records."
-                            if status == "unknown"
-                            else "Chat request failed after tool execution; inspect local logs."
-                        ),
+                    error_text = (
+                        "Tool execution outcome may be uncertain; inspect tool records."
+                        if status == "unknown"
+                        else "Chat request failed after tool execution; inspect local logs."
                     )
-                raise
+                    try:
+                        store.set_task_status(
+                            tool_task["id"], status, error=error_text
+                        )
+                    except Exception:
+                        logger.exception("Could not persist failed native chat task")
+                if isinstance(exc, httpx.TimeoutException):
+                    raise HTTPException(
+                        status_code=504,
+                        detail="The model provider timed out; retry the request. Session history was not saved.",
+                    ) from exc
+                if isinstance(exc, httpx.HTTPStatusError):
+                    raise HTTPException(
+                        status_code=502,
+                        detail="The model provider returned an unsuccessful response; check provider configuration and retry.",
+                    ) from exc
+                if isinstance(exc, (httpx.ConnectError, httpx.NetworkError)):
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Could not connect to the model provider; check connectivity and retry.",
+                    ) from exc
+                raise HTTPException(
+                    status_code=502,
+                    detail="Chat request failed; session history may be incomplete; see local logs",
+                ) from exc
             if tool_task["id"] is not None:
                 status = "unknown" if tool_task["uncertain"] else ("failed" if tool_task["failed"] else "succeeded")
                 store.set_task_status(

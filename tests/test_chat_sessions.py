@@ -259,3 +259,58 @@ async def test_native_tool_task_is_unknown_when_chat_is_cancelled_after_tool(tmp
     executions = store.list_tool_executions(task["id"])
     assert len(executions) == 1
     assert executions[0]["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_error", "expected_status"),
+    [
+        ("timeout", 504),
+        ("connect", 502),
+        ("http_status", 502),
+    ],
+)
+async def test_native_tool_provider_failures_return_actionable_http_errors(
+    tmp_path, monkeypatch, provider_error, expected_status
+):
+    import httpx
+
+    store = TaskStore(tmp_path / f"native-tool-provider-{provider_error}.sqlite3")
+
+    class ToolRouter:
+        async def chat_with_tools(self, message, task_type, **kwargs):
+            await kwargs["execute_tool"]("workspace.list_files", {"path": "."})
+            if provider_error == "timeout":
+                raise httpx.ReadTimeout("provider timeout")
+            if provider_error == "connect":
+                raise httpx.ConnectError("connection failed")
+            request = httpx.Request("POST", "https://provider.example/v1/chat/completions")
+            response = httpx.Response(503, request=request)
+            raise httpx.HTTPStatusError("service unavailable", request=request, response=response)
+
+    class ReadOnlyTools:
+        def describe(self):
+            return [{
+                "name": "workspace.list_files",
+                "description": "List workspace files",
+                "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}},
+            }]
+
+        def execute(self, name, arguments):
+            return {"entries": [{"name": "example.py", "type": "file"}]}
+
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "router", ToolRouter())
+    monkeypatch.setattr(app_module, "tools", ReadOnlyTools())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await app_module.chat(app_module.ChatRequest(message="List files"))
+
+    assert exc_info.value.status_code == expected_status
+    tasks = store.list_tasks()
+    assert len(tasks) == 1
+    task = store.get_task(tasks[0]["id"])
+    assert task["status"] == "failed"
+    executions = store.list_tool_executions(task["id"])
+    assert len(executions) == 1
+    assert executions[0]["status"] == "succeeded"
