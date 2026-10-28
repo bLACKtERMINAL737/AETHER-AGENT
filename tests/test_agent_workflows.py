@@ -322,7 +322,7 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
     saved = store.get_workflow(result["workflow_id"])
     by_title = {item["title"]: item for item in saved["results"]["tasks"]}
     assert by_title["Slow prerequisite"]["status"] == "unknown"
-    assert "timeout" in by_title["Slow prerequisite"]["error"].lower()
+    assert "timed out" in by_title["Slow prerequisite"]["error"].lower()
     assert by_title["Must wait"]["status"] == "blocked"
     assert saved["results"]["qa_review"]["status"] == "succeeded"
     diagnostic_categories = {
