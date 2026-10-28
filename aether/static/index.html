@@ -36,6 +36,31 @@ html,body{height:100%;background:var(--bg)}body{background:var(--bg);font-size:1
 #workspaceTools{width:100%;max-width:1000px;margin-top:24px}#workspaceTools>summary{cursor:pointer;list-style:none;display:flex;justify-content:center;align-items:center;gap:8px;border:1px solid #29313d;border-radius:12px;padding:12px;color:#aeb8c5;font-size:13px}#workspaceTools>summary::-webkit-details-marker{display:none}#workspaceTools[open]>summary{margin-bottom:16px}#workspaceTools>.grid,#workspaceTools>section{margin-top:14px!important}#workspaceTools .panel{background:#0d1117;border-color:#242d38}
 main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!important}
 @media(max-width:760px){.app-shell{grid-template-columns:1fr}.app-sidebar{position:relative;height:auto;min-height:0;border-right:0;border-bottom:1px solid #202630;padding:8px 12px}.brand{padding:4px 6px 8px}.sidebar-bottom,.sidebar-label{display:none}.app-main{padding:0 14px 24px}.app-topbar{height:52px;margin-bottom:8px}.app-main>.panel#chatPanel{min-height:calc(100dvh - 130px)}#chatMessages{padding-top:12px}}
+
+/* Composer alignment and touch-friendly mobile layout */
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.chat-composer{position:relative;width:100%;display:flex;align-items:flex-end;min-width:0}
+#chatPanel #chatInput{display:block;width:100%;min-width:0;min-height:64px;max-height:220px;resize:vertical;box-sizing:border-box;padding:17px 66px 17px 18px;margin:0;line-height:1.5}
+#chatPanel .chat-send-button{position:absolute;right:10px;bottom:10px;z-index:2;width:42px;min-width:42px;height:42px;padding:0;margin:0;border:0;border-radius:50%;display:grid;place-items:center;background:#38bdf8;color:#061018;box-shadow:none}
+#chatPanel .chat-send-button:hover{background:#7dd3fc}
+#chatPanel .chat-send-button:focus-visible{outline:2px solid #e0f2fe;outline-offset:3px}
+#chatPanel .chat-send-button:disabled{opacity:.5;cursor:wait}
+.chat-send-button svg{display:block;width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#chatPanel .chat-composer-hint{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 8px 0;padding:0;flex-wrap:wrap;font-size:11px;color:#8391a2}
+#chatPanel .memory-toggle{display:flex;align-items:center;gap:8px;margin:10px 8px 0;font-size:12px;color:#9aa4b2}
+#chatPanel .memory-toggle input{accent-color:#38bdf8}
+#chatPanel #chatStatus{margin-top:4px}
+@media(max-width:760px){
+ .app-main{padding-left:12px;padding-right:12px}
+ .app-main>.panel#chatPanel{min-height:calc(100dvh - 115px);padding-top:4px}
+ #chatPanel #chatInput{min-height:60px;max-height:34dvh;padding:14px 60px 14px 15px;font-size:16px;resize:vertical}
+ #chatPanel .chat-send-button{right:8px;bottom:8px;width:42px;min-width:42px;height:42px}
+ #chatPanel .chat-composer-hint{font-size:10px;margin-left:5px;margin-right:5px}
+ #chatPanel .memory-toggle{margin-left:5px;margin-right:5px}
+ #chatMessages{min-height:120px!important;max-height:none!important;padding:12px 0 18px!important}
+}
+@media(max-width:380px){#chatPanel .chat-composer-hint{align-items:flex-start;flex-direction:column;gap:3px}}
+
 </style>
 </head>
 <body>
@@ -83,11 +108,15 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       <button id="newSession">New chat</button><button id="deleteSession">Delete chat</button>
     </div>
     <div id="chatMessages" class="files" style="max-height:360px;min-height:80px" aria-live="polite"><div class="muted">Start a conversation below.</div></div>
-    <label for="chatInput">Message</label>
-    <textarea id="chatInput" maxlength="20000" placeholder="Ask AETHER CLAW something…"></textarea>
+    <div class="chat-composer" role="group" aria-label="Message composer">
+      <label class="sr-only" for="chatInput">Message</label>
+      <textarea id="chatInput" maxlength="20000" placeholder="Message AETHER CLAW…" aria-label="Message AETHER CLAW"></textarea>
+      <button class="primary chat-send-button" id="sendChat" type="button" aria-label="Send message" title="Send message">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" /></svg>
+      </button>
+    </div>
     <div class="chat-composer-hint"><span>Enter to send · Shift+Enter for a new line</span><span id="chatCharCount">0 / 20000</span></div>
-    <label style="display:flex;align-items:center;gap:8px"><input id="useSavedMemories" type="checkbox" style="width:auto"> Allow relevant saved memories to be used for this message</label>
-    <div class="actions"><button class="primary" id="sendChat">Send message</button></div>
+    <label class="memory-toggle"><input id="useSavedMemories" type="checkbox" style="width:auto"> Use relevant saved memories</label>
     <div id="chatStatus" class="status" role="status"></div>
   </section>
   <details id="workspaceTools"><summary>Advanced workspace · Coding, memory, workflows and tasks</summary>
