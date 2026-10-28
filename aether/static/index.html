@@ -382,6 +382,7 @@ async function openSession(sessionId){
 }
 $("sessionSelect").onchange=()=>openSession($("sessionSelect").value);
 $("newSession").onclick=()=>{
+ sessionLoadGeneration++;
  currentSessionId=null;$("sessionSelect").value="";renderChatMessages([]);
  setStatus("chatStatus","New conversation ready. It will be saved after you send a message.","good");
  $("chatInput").focus();
@@ -389,8 +390,11 @@ $("newSession").onclick=()=>{
 $("deleteSession").onclick=async()=>{
  if(!currentSessionId){setStatus("chatStatus","Choose a saved conversation first.","bad");return;}
  if(!confirm("Delete this conversation and its stored messages?"))return;
+ const deletingSessionId=currentSessionId;
+ const generation=++sessionLoadGeneration;
  try{
-  await api("/sessions/"+encodeURIComponent(currentSessionId),{method:"DELETE"});
+  await api("/sessions/"+encodeURIComponent(deletingSessionId),{method:"DELETE"});
+  if(generation!==sessionLoadGeneration)return;
   currentSessionId=null;renderChatMessages([]);await refreshSessions();
   setStatus("chatStatus","Conversation deleted.","good");
  }catch(e){setStatus("chatStatus",e.message,"bad");}
@@ -399,6 +403,7 @@ async function sendChat(){
  if($("sendChat").disabled)return;
  const message=$("chatInput").value.trim();
  if(!message){setStatus("chatStatus","Enter a message first.","bad");return;}
+ const viewGeneration=sessionLoadGeneration;
  $("sendChat").disabled=true;setStatus("chatStatus","AETHER CLAW is thinking…");
  try{
   const result=await api("/chat",{method:"POST",body:JSON.stringify({
@@ -410,6 +415,9 @@ async function sendChat(){
    session_id:currentSessionId,
    use_saved_memories:$("useSavedMemories").checked
   })});
+  // A request may finish after the user has switched to another conversation.
+  // Its server-side turn is saved, but it must not overwrite the currently visible chat.
+  if(viewGeneration!==sessionLoadGeneration){await refreshSessions();return;}
   currentSessionId=result.session_id;$("sessionSelect").value=currentSessionId;
   $("chatInput").value="";
   const historyLoaded=await openSession(currentSessionId);
