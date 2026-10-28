@@ -7,6 +7,8 @@ import json
 import os
 import re
 from typing import Any, Literal
+
+import httpx
 from pathlib import Path
 from ipaddress import ip_address
 from urllib.parse import urlsplit
@@ -1620,7 +1622,15 @@ async def chat(request: ChatRequest):
                 error="Chat request failed after tool execution began",
             )
         logger.exception("Model provider request failed")
-        raise HTTPException(status_code=502, detail="Chat request failed; session history may be incomplete; see local logs") from exc
+        if isinstance(exc, httpx.TimeoutException):
+            raise HTTPException(
+                status_code=504,
+                detail="The model provider timed out; retry the request. Session history was not saved.",
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Chat request failed; session history may be incomplete; see local logs",
+        ) from exc
     return {
         **result,
         "answer": answer,
