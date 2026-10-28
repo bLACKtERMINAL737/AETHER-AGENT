@@ -186,3 +186,17 @@ async def test_auto_mode_preserves_explicit_coding_task_type(tmp_path, monkeypat
     )
 
     assert router.calls[0]["task_type"] == "coding"
+
+
+def test_chat_request_rejects_empty_or_oversized_session_id():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        app_module.ChatRequest(message="Continue", session_id="")
+    with pytest.raises(ValidationError):
+        app_module.ChatRequest(message="Continue", session_id="s" * 201)
+
+
+def test_chat_request_accepts_bounded_session_id():
+    request = app_module.ChatRequest(message="Continue", session_id="session-123")
+    assert request.session_id == "session-123"

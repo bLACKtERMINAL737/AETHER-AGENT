@@ -87,7 +87,7 @@ class ChatRequest(BaseModel):
     task_type: Literal["auto", "general", "coding", "reasoning"] = "auto"
     model_route: Literal["primary", "coding", "reasoning", "fallback"] | None = None
     allow_fallback: bool = True
-    session_id: str | None = None
+    session_id: str | None = Field(default=None, min_length=1, max_length=200)
     use_saved_memories: bool = False
 
 
