@@ -572,5 +572,76 @@ async def test_recovery_cancellation_persists_unknown_workflow_checkpoint(
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "unknown"
     assert "cancelled" in saved["error_text"].lower()
-    assert saved["results"]["tasks"][0]["status"] == "queued"
+    assert saved["results"]["tasks"][0]["status"] == "unknown"
     assert store.get_task(task_id)["status"] == "running"
+
+
+@pytest.mark.asyncio
+# Recovery timeout cases assert the final persisted workflow status.
+async def test_recovery_task_timeout_marks_task_unknown_without_replay(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, task_id, qa_id = make_workflow(tmp_path, monkeypatch)
+    monkeypatch.setenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "1")
+    never_release = __import__("asyncio").Event()
+    executed = []
+
+    async def fake_run(task_id_arg):
+        executed.append(task_id_arg)
+        task = store.get_task(task_id_arg)
+        assert task is not None
+        assert store.claim_task(task_id_arg)
+        if task_id_arg == task_id:
+            await never_release.wait()
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": "reviewed"})
+        return {
+            "task_id": task_id_arg, "status": "succeeded", "result": "reviewed",
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.recover_agent_workflow(workflow_id)
+
+    assert result["status"] == "partial"
+    assert "uncertain" in result["tasks"][0]["error"].lower()
+    assert executed == [task_id, qa_id]
+    assert store.get_task(task_id)["status"] == "unknown"
+    saved = store.get_workflow(workflow_id)
+    assert saved["status"] == "partial"
+    assert saved["results"]["tasks"][0]["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_recovery_qa_timeout_persists_uncertain_workflow_state(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, task_id, qa_id = make_workflow(tmp_path, monkeypatch)
+    monkeypatch.setenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "1")
+    never_release = __import__("asyncio").Event()
+
+    async def fake_run(task_id_arg):
+        task = store.get_task(task_id_arg)
+        assert task is not None
+        assert store.claim_task(task_id_arg)
+        if task_id_arg == task_id:
+            store.set_task_status(task_id_arg, "succeeded", result={"answer": "done"})
+            return {
+                "task_id": task_id_arg, "status": "succeeded", "result": "done",
+                "tool_calls": 0, "tool_attempts": 0,
+            }
+        await never_release.wait()
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": "reviewed"})
+        return {
+            "task_id": task_id_arg, "status": "succeeded", "result": "reviewed",
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.recover_agent_workflow(workflow_id)
+
+    assert result["status"] == "partial"
+    assert store.get_task(task_id)["status"] == "succeeded"
+    assert store.get_task(qa_id)["status"] == "unknown"
+    saved = store.get_workflow(workflow_id)
+    assert saved["status"] == "partial"
+    assert saved["results"]["qa_review"]["status"] == "unknown"
