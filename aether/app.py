@@ -618,6 +618,35 @@ async def recover_agent_workflow(workflow_id: str):
         raise HTTPException(status_code=409, detail="Another request already claimed this workflow for recovery.")
 
     try:
+        try:
+            configured_timeout = float(os.getenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "120"))
+        except (TypeError, ValueError):
+            configured_timeout = 120.0
+        recovery_timeout_seconds = min(max(configured_timeout, 1.0), 600.0)
+
+        async def run_recovery_task_with_timeout(task_id: str) -> dict[str, Any]:
+            try:
+                return await asyncio.wait_for(
+                    run_agent_task(task_id), timeout=recovery_timeout_seconds
+                )
+            except asyncio.TimeoutError as exc:
+                saved_task = store.get_task(task_id)
+                # A timeout may occur after a tool has already acted. Never make the
+                # task replayable; retain an explicit uncertain journal state.
+                if saved_task and saved_task["status"] in {"queued", "running"}:
+                    store.set_task_status(
+                        task_id,
+                        "unknown",
+                        error=(
+                            f"Recovery task exceeded its {recovery_timeout_seconds:g}s timeout; "
+                            "inspect task and tool journals before retrying."
+                        ),
+                    )
+                raise HTTPException(
+                    status_code=504,
+                    detail="Recovery task timed out; its outcome may be uncertain. Inspect the task and tool journals.",
+                ) from exc
+
         # Resume in topological order, not display/plan order: a valid prerequisite
         # may have a larger plan index than the task that depends on it.
         for index in recovery_order:
@@ -643,7 +672,7 @@ async def recover_agent_workflow(workflow_id: str):
                 continue
             task_id = outcome["task_id"]
             try:
-                result = await run_agent_task(task_id)
+                result = await run_recovery_task_with_timeout(task_id)
                 updated = {
                     **outcome,
                     "status": result["status"],
@@ -666,7 +695,7 @@ async def recover_agent_workflow(workflow_id: str):
         if isinstance(qa_checkpoint, dict) and qa_checkpoint.get("status") == "queued":
             qa_id = qa_checkpoint["task_id"]
             try:
-                result = await run_agent_task(qa_id)
+                result = await run_recovery_task_with_timeout(qa_id)
                 review = {
                     "task_id": qa_id,
                     "status": result["status"],
