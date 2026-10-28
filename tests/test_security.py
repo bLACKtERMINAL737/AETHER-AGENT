@@ -1,6 +1,7 @@
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 from aether.security import LocalAPIProtection, _origin_is_local
 
 
@@ -170,7 +171,7 @@ async def test_request_body_over_limit_is_rejected_before_route(monkeypatch):
     called = False
 
     @app.post("/large")
-    async def large(request):
+    async def large(request: Request):
         nonlocal called
         called = True
         return {"size": len(await request.body())}
@@ -197,7 +198,7 @@ async def test_request_body_at_limit_reaches_route(monkeypatch):
     app = make_app(monkeypatch)
 
     @app.post("/bounded")
-    async def bounded(request):
+    async def bounded(request: Request):
         return {"size": len(await request.body())}
 
     async with AsyncClient(
