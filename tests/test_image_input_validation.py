@@ -12,19 +12,21 @@ def data_url(media_type: str, payload: bytes) -> str:
 
 
 def test_chat_request_accepts_png_signature_and_preserves_data_url():
-    image = data_url("png", b"\x89PNG\r\n\x1a\nsmall-test-payload")
+    image = data_url("png", bytes.fromhex("89504e470d0a1a0a") + b"small-test-payload")
     request = ChatRequest(message="Describe it", image_data_url=image)
     assert request.image_data_url == image
 
 
 def test_chat_request_accepts_jpeg_signature():
-    request = ChatRequest(message="Describe it", image_data_url=data_url("jpeg", b"\xff\\xd8\xffpayload"))
-    assert request.image_data_url.startswith("data:image/jpeg;base64,")
+    image = data_url("jpeg", bytes.fromhex("ffd8ff") + b"payload")
+    request = ChatRequest(message="Describe it", image_data_url=image)
+    assert request.image_data_url == image
 
 
 def test_chat_request_accepts_webp_signature():
-    request = ChatRequest(message="Describe it", image_data_url=data_url("webp", b"RIFF\x04\x00\x00\x00WEBPpayload"))
-    assert request.image_data_url.startswith("data:image/webp;base64,")
+    image = data_url("webp", b"RIFF" + bytes.fromhex("04000000") + b"WEBPpayload")
+    request = ChatRequest(message="Describe it", image_data_url=image)
+    assert request.image_data_url == image
 
 
 @pytest.mark.parametrize("value", [
@@ -32,7 +34,7 @@ def test_chat_request_accepts_webp_signature():
     "data:image/gif;base64,R0lGODlh",
     "data:image/png;base64,not base64!",
     data_url("png", b"not-a-png"),
-    data_url("jpeg", b"\x89PNG\r\n\x1a\nwrong-declared-type"),
+    data_url("jpeg", bytes.fromhex("89504e470d0a1a0a") + b"wrong-declared-type"),
     "data:image/png;base64,",
 ])
 def test_chat_request_rejects_invalid_image_data_urls(value):
@@ -41,7 +43,7 @@ def test_chat_request_rejects_invalid_image_data_urls(value):
 
 
 def test_chat_request_rejects_decoded_image_over_600_kib():
-    oversized_png = b"\x89PNG\r\n\x1a\n" + b"x" * (600 * 1024)
+    oversized_png = bytes.fromhex("89504e470d0a1a0a") + b"x" * (600 * 1024)
     with pytest.raises(ValidationError):
         ChatRequest(message="Describe it", image_data_url=data_url("png", oversized_png))
 
