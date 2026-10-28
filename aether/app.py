@@ -4,6 +4,7 @@ import binascii
 from contextlib import asynccontextmanager
 import logging
 import json
+import math
 import os
 import re
 from typing import Any, Literal
@@ -83,6 +84,18 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AETHER CLAW API", version="0.4.0",
               description="Local-first hybrid AI agent MVP. Bind to localhost only.", lifespan=lifespan)
 app.add_middleware(LocalAPIProtection)
+
+
+def agent_task_timeout_seconds() -> float:
+    """Return a finite, bounded timeout shared by orchestration and recovery."""
+    try:
+        configured = float(os.getenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "120"))
+    except (TypeError, ValueError):
+        configured = 120.0
+    if not math.isfinite(configured):
+        configured = 120.0
+    return min(max(configured, 1.0), 600.0)
+
 
 
 class ChatRequest(BaseModel):
@@ -618,11 +631,7 @@ async def recover_agent_workflow(workflow_id: str):
         raise HTTPException(status_code=409, detail="Another request already claimed this workflow for recovery.")
 
     try:
-        try:
-            configured_timeout = float(os.getenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "120"))
-        except (TypeError, ValueError):
-            configured_timeout = 120.0
-        recovery_timeout_seconds = min(max(configured_timeout, 1.0), 600.0)
+        recovery_timeout_seconds = agent_task_timeout_seconds()
 
         async def run_recovery_task_with_timeout(task_id: str) -> dict[str, Any]:
             try:
@@ -845,11 +854,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     except (TypeError, ValueError):
         configured_concurrency = 3
     max_concurrency = min(max(configured_concurrency, 1), 3)
-    try:
-        configured_timeout = float(os.getenv("AETHER_AGENT_TASK_TIMEOUT_SECONDS", "120"))
-    except (TypeError, ValueError):
-        configured_timeout = 120.0
-    task_timeout_seconds = min(max(configured_timeout, 1.0), 600.0)
+    task_timeout_seconds = agent_task_timeout_seconds()
 
     workflow = store.create_workflow(request.goal, subtasks)
     workflow_id = workflow["id"]
