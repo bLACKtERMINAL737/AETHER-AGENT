@@ -36,7 +36,7 @@ The submission should prove that AETHER CLAW executes agent work, not just that 
 - [ ] Pull the latest `main` branch and run `python -m pytest -q`.
 - [ ] Configure at least one OpenAI-compatible model route in the shell or through the UI's in-memory provider configuration panel.
 - [ ] Configure `AETHER_API_TOKEN` and keep the value off-screen; enter it into the UI when prompted.
-- [ ] Put a small, non-sensitive sample project with tests inside the configured `AETHER_WORKSPACE`.
+- [ ] Prepare the non-sensitive sample fixture from `examples/competition_demo/README.md` inside the configured `AETHER_WORKSPACE`; confirm it does not overwrite real project files.
 - [ ] For the sandbox segment only, build the Docker image and set `AETHER_ENABLE_TEST_RUNNER=true`.
 - [ ] Verify that the app binds to `127.0.0.1`, not `0.0.0.0`.
 - [ ] Close unrelated windows and remove secrets or personal data from the sample workspace.
