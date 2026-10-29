@@ -1931,6 +1931,11 @@ def approve_coding_proposal(proposal_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CodingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Could not approve coding proposal")
+        raise HTTPException(
+            status_code=502, detail="Coding proposal approval failed; inspect local logs"
+        ) from exc
 
 
 @app.post("/coding/proposals/{proposal_id}/reject")
@@ -1941,6 +1946,11 @@ def reject_coding_proposal(proposal_id: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CodingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Could not reject coding proposal")
+        raise HTTPException(
+            status_code=502, detail="Coding proposal rejection failed; inspect local logs"
+        ) from exc
 
 
 @app.post("/coding/proposals/{proposal_id}/apply")
