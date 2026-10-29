@@ -178,3 +178,26 @@ async def test_outbox_worker_marks_transport_error_unknown(monkeypatch, isolated
     result = await app_module.deliver_outbound_batch(worker_id="worker-test")
     assert result["unknown"] == 1
     assert isolated_store.get_outbound("telegram", "worker-unknown")["status"] == "unknown"
+
+
+
+@pytest.mark.asyncio
+async def test_outbox_worker_sends_discord_to_fixed_configured_webhook(monkeypatch, isolated_store):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    isolated_store.__init__(isolated_store.db_path)
+    monkeypatch.setenv(
+        "AETHER_DISCORD_WEBHOOK_URL",
+        "https://discord.com/api/webhooks/123456/secret-token",
+    )
+    isolated_store.queue_outbound(
+        channel="discord", provider_user_id="configured-webhook", text="discord worker",
+        idempotency_key="worker-discord", delivery_target="configured-webhook",
+    )
+    FakeAsyncClient.response = FakeResponse(200, {"id": "discord-worker-message"})
+    result = await app_module.deliver_outbound_batch(worker_id="worker-test")
+    assert result["sent"] == 1
+    assert isolated_store.get_outbound("discord", "worker-discord")["status"] == "sent"
+    assert FakeAsyncClient.calls[-1][0] == "https://discord.com/api/webhooks/123456/secret-token"
+    assert FakeAsyncClient.calls[-1][1]["params"] == {"wait": "true"}
