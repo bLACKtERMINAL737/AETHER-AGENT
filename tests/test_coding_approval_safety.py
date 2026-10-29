@@ -215,10 +215,12 @@ async def test_coding_proposal_api_returns_pending_proposal_without_applying(
             assert paths == ["sample.py"]
             return {"id": "proposal-api-1", "status": "pending", "changes": []}
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", FakeCoding())
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
         base_url="http://127.0.0.1:8000",
+        headers={"X-Aether-Token": "test-token"},
     ) as client:
         response = await client.post(
             "/coding/proposals",
@@ -240,6 +242,7 @@ async def test_coding_proposal_api_maps_validation_error_to_client_error(
         async def propose(self, instruction, paths):
             raise CodingError("Select between 1 and 8 files")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", InvalidCoding())
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
@@ -265,6 +268,7 @@ async def test_coding_apply_api_maps_missing_proposal_to_not_found(
         def apply(self, proposal_id):
             raise KeyError("Proposal not found")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", MissingProposalCoding())
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
@@ -286,6 +290,7 @@ async def test_coding_apply_api_maps_approval_conflict_to_conflict_status(
         def apply(self, proposal_id):
             raise CodingError("Proposal must be explicitly approved before applying")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", UnapprovedCoding())
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
@@ -308,6 +313,7 @@ async def test_coding_apply_api_does_not_leak_unexpected_exception_details(
         def apply(self, proposal_id):
             raise OSError("secret-path /Users/private/.env")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", BrokenCoding())
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
