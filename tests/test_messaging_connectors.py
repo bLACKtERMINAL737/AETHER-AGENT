@@ -137,3 +137,43 @@ async def test_discord_send_marks_transport_failure_unknown(monkeypatch, isolate
         )
     assert error.value.status_code == 502
     assert isolated_store.get_outbound("discord", "send-3")["status"] == "unknown"
+
+
+
+@pytest.mark.asyncio
+async def test_outbox_worker_sends_telegram_and_finishes_lease(monkeypatch, isolated_store):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    isolated_store.__init__(isolated_store.db_path)
+    queued = isolated_store.queue_outbound(
+        channel="telegram", provider_user_id="chat-1", text="worker hello",
+        idempotency_key="worker-telegram", delivery_target="98765",
+    )
+    monkeypatch.setenv("AETHER_TELEGRAM_BOT_TOKEN", "test-token")
+    result = await app_module.deliver_outbound_batch(worker_id="worker-test")
+    assert result == {"claimed": 1, "sent": 1, "failed": 0, "unknown": 0, "skipped": 0}
+    assert isolated_store.get_outbound("telegram", "worker-telegram")["status"] == "sent"
+    assert "98765" in FakeAsyncClient.calls[-1][1]["json"].values()
+
+
+@pytest.mark.asyncio
+async def test_outbox_worker_marks_transport_error_unknown(monkeypatch, isolated_store):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    isolated_store.__init__(isolated_store.db_path)
+    isolated_store.queue_outbound(
+        channel="telegram", provider_user_id="chat-2", text="worker uncertain",
+        idempotency_key="worker-unknown", delivery_target="12345",
+    )
+    monkeypatch.setenv("AETHER_TELEGRAM_BOT_TOKEN", "test-token")
+
+    class BrokenClient(FakeAsyncClient):
+        async def post(self, url, **kwargs):
+            raise httpx.ConnectError("connection dropped")
+
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", BrokenClient)
+    result = await app_module.deliver_outbound_batch(worker_id="worker-test")
+    assert result["unknown"] == 1
+    assert isolated_store.get_outbound("telegram", "worker-unknown")["status"] == "unknown"
