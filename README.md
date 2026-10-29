@@ -101,11 +101,21 @@ Set these environment variables for the routes you want to use:
 | `AETHER_REASONING_MODEL_API_KEY` | Optional reasoning-specialist API key |
 | `AETHER_REASONING_MODEL_NAME` | Optional reasoning-specialist model identifier |
 | `AETHER_DB_PATH` | SQLite database path; default `./data/aether.sqlite3` |
+| `AETHER_MESSAGING_TARGET_KEY` | Optional Fernet key used to encrypt persisted outbound delivery destinations; required before a background worker can resume Telegram deliveries |
 | `AETHER_WORKSPACE` | Workspace directory allowed for workspace tools; default `./workspace` |
 | `AETHER_ENABLE_TEST_RUNNER` | Set to `true` to enable Docker-backed pytest; default `false` |
 | `AETHER_TEST_TIMEOUT_SECONDS` | Test timeout in seconds, clamped to 5–120 |
 | `AETHER_SANDBOX_IMAGE` | Local sandbox image name; default `aether-sandbox:latest` |
 | `AETHER_TEST_PROJECT` | Optional project path to test instead of the configured workspace |
+
+Generate a messaging-target encryption key (keep it private and back it up securely):
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+export AETHER_MESSAGING_TARGET_KEY='paste-generated-key-here'
+```
+
+The key is never stored in SQLite. Losing it makes previously encrypted delivery destinations unreadable. Outbound message content and delivery state remain in the inbox/outbox; the destination is stored separately as authenticated ciphertext. Discord stores only the fixed `configured-webhook` reference, never the webhook URL. Without this key, current synchronous sends continue to work, but no recoverable Telegram target is persisted and a future background worker must not claim those messages.
 
 If model-provider variables are absent, local health checks and tools can still work, but chat/coding requests that need a model will return a configuration error.
 
