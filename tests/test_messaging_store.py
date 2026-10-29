@@ -119,3 +119,60 @@ def test_invalid_delivery_target_key_fails_closed(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", "not-a-fernet-key")
     with pytest.raises(ValueError, match="valid Fernet key"):
         MessagingStore(tmp_path / "inbox.sqlite3")
+
+
+
+def test_outbox_claim_is_atomic_and_only_claims_target_backed_messages(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    with_target = store.queue_outbound(
+        channel="telegram", provider_user_id="u1", text="ready",
+        idempotency_key="claim-1", delivery_target="123",
+    )
+    store.queue_outbound(
+        channel="telegram", provider_user_id="u2", text="no target",
+        idempotency_key="claim-2",
+    )
+    first = store.claim_outbound(worker_id="worker-a", limit=10, lease_seconds=30)
+    second = store.claim_outbound(worker_id="worker-b", limit=10, lease_seconds=30)
+    assert [item["id"] for item in first] == [with_target["message"]["id"]]
+    assert second == []
+
+
+def test_outbox_lease_requires_current_owner_and_finishes_once(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u1", text="ready",
+        idempotency_key="claim-owner", delivery_target="123",
+    )
+    message_id = queued["message"]["id"]
+    assert store.claim_outbound(worker_id="worker-a", lease_seconds=30)
+    assert not store.finish_outbound_lease(message_id, worker_id="worker-b", status="sent")
+    assert store.finish_outbound_lease(message_id, worker_id="worker-a", status="sent")
+    assert not store.finish_outbound_lease(message_id, worker_id="worker-a", status="sent")
+    assert store.get_outbound("telegram", "claim-owner")["status"] == "sent"
+
+
+def test_expired_lease_becomes_unknown_not_automatically_requeued(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u1", text="ready",
+        idempotency_key="claim-expiry", delivery_target="123",
+    )
+    message_id = queued["message"]["id"]
+    store.claim_outbound(worker_id="worker-a", lease_seconds=5)
+    expired = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    with store.connect() as con:
+        con.execute("UPDATE messaging_delivery_leases SET lease_until=? WHERE message_id=?", (expired, message_id))
+    assert store.expire_outbound_leases() == 1
+    assert store.get_outbound("telegram", "claim-expiry")["status"] == "unknown"
+    assert store.claim_outbound(worker_id="worker-b") == []
