@@ -76,8 +76,9 @@ class LocalAPIProtection:
         path = scope.get("path", "")
         method = scope.get("method", "GET")
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
-        exempt = path in EXEMPT_PATHS or path.startswith("/ui/") or path in WEBHOOK_PATHS
-        if not exempt:
+        webhook = path in WEBHOOK_PATHS
+        exempt = path in EXEMPT_PATHS or path.startswith("/ui/")
+        if not exempt and not webhook:
             if method in UNSAFE_METHODS and "origin" in headers:
                 origin = headers["origin"]
                 host = headers.get("host", "")
