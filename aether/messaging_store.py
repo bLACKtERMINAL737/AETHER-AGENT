@@ -239,9 +239,9 @@ class MessagingStore:
                    JOIN messaging_delivery_targets t ON t.message_id=m.id
                    LEFT JOIN messaging_delivery_leases l ON l.message_id=m.id
                    WHERE m.direction='outbound' AND m.status='accepted'
-                     AND (l.message_id IS NULL OR l.lease_until < ?)
+                     AND l.message_id IS NULL
                    ORDER BY m.created_at, m.id LIMIT ?""",
-                (now, limit),
+                (limit,),
             ).fetchall()
             for row in rows:
                 con.execute(
