@@ -316,6 +316,7 @@ async def discord_send(request: DiscordSendRequest):
         queued = messaging_store.queue_outbound(
             channel="discord", provider_user_id="configured-webhook",
             text=request.text, idempotency_key=request.idempotency_key,
+            delivery_target="configured-webhook",
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -410,6 +411,7 @@ async def telegram_send(request: TelegramSendRequest):
         queued = messaging_store.queue_outbound(
             channel="telegram", provider_user_id=request.chat_id,
             text=request.text, idempotency_key=request.idempotency_key,
+            delivery_target=request.chat_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
