@@ -160,6 +160,27 @@ class MessagingStore:
             row = con.execute("SELECT * FROM messaging_messages WHERE id=?", (message_id,)).fetchone()
         return {"conversation_id": conversation_id, "message": dict(row), "duplicate": False}
 
+    def update_outbound_status(
+        self, channel: str, idempotency_key: str, status: str,
+        *, provider_message_id: str | None = None,
+    ) -> None:
+        if status not in {"sent", "delivered", "failed", "unknown"}:
+            raise MessagingContractError("invalid outbound delivery status")
+        with self.connect() as con:
+            con.execute(
+                "UPDATE messaging_messages SET status=?, provider_message_id=COALESCE(?, provider_message_id), updated_at=? "
+                "WHERE channel=? AND idempotency_key=? AND direction='outbound'",
+                (status, provider_message_id, _now(), channel, idempotency_key),
+            )
+
+    def get_outbound(self, channel: str, idempotency_key: str) -> dict | None:
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT * FROM messaging_messages WHERE channel=? AND idempotency_key=? AND direction='outbound'",
+                (channel, idempotency_key),
+            ).fetchone()
+        return dict(row) if row else None
+
     def list_conversations(self, *, limit: int = 50) -> list[dict]:
         if not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
