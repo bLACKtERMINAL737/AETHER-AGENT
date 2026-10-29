@@ -60,43 +60,35 @@ Open these local pages:
 
 Show `/health` and `/models` only as status information. `/models` reports route IDs/model IDs/configuration status, not API keys. If the token is enabled, enter it in the UI's token field.
 
-## Suggested 4–6 minute walkthrough
+## Competition submission: maximum 3-minute demo
 
-### 1. Health and routes (30–45 seconds)
+The competition demo is limited to 3 minutes. Record a concise, reproducible take that prioritizes one verified end-to-end agent task. Do not attempt to squeeze every feature into the submission video.
 
-- Open the UI and check that the API is reachable.
-- Show which model routes are configured.
-- Explain that Auto uses a local heuristic to select task intent; it is not benchmark-driven model optimization.
-- If showing Manual mode, select a route that is actually configured.
+### Suggested 180-second structure
 
-### 2. Chat and session history (45–60 seconds)
+1. **0:00–0:20 — Problem and positioning.** Introduce AETHER CLAW as a local-first, modular AI agent foundation for task execution with explicit review and safe local development. Avoid claiming production readiness or that all inference is local when a cloud provider is selected.
+2. **0:20–0:40 — Live status.** Show the local UI and healthy API; briefly show the configured route without exposing provider IDs that are sensitive, tokens, or keys.
+3. **0:40–1:05 — Real tool execution.** Ask a short task requiring a workspace tool. Show the task journal's actual tool name, arguments, result, and status. Only include this if the exact release candidate passes the tool-use acceptance gates above.
+4. **1:05–2:25 — Approval-first coding.** Use a harmless sample project, create a proposal, inspect the diff, and show that files remain unchanged until explicit approval. Apply only after reviewing the diff. If this flow is not verified, do not stage it as a successful demo.
+5. **2:25–2:50 — Verification and safety.** Show a real test result if the sandbox is available; briefly mention token protection and that coding changes require approval. Skip Docker claims if the sandbox was not actually run.
+6. **2:50–3:00 — Close.** State the core value in one sentence and finish before the 3-minute cap.
 
-- Ask a small, non-sensitive question that can be answered quickly.
-- Show that the conversation is associated with a persistent local session.
-- If provider latency is unpredictable, prepare a fallback question and do not promise a fixed response time.
+**Recording rule:** use only features that passed on the exact release candidate. If live provider latency is unreliable, record a real successful run in advance; do not replace it with a mock or imply that an unexecuted action succeeded. Keep API tokens and provider credentials off-screen.
 
-### 3. Proposal-first coding (90–120 seconds)
+## Submission package checklist
 
-- Use a small sample repository inside the configured workspace.
-- Select only the file or files needed for a simple change.
-- Give a precise instruction, for example: “Correct the boundary condition in this function. Preserve the public interface and existing style.”
-- Generate the proposal and inspect the summary and diff.
-- Point out that proposal generation itself does not modify the selected workspace files.
-- Explicitly approve only after reviewing the diff, then apply it.
-- Do not use a real personal or production repository for a live demo.
+Before submitting, verify the competition portal's current field requirements and prepare these items:
 
-### 4. Test-and-fix / sandbox (60–90 seconds, optional)
+- [ ] **Project name:** AETHER CLAW.
+- [ ] **Project overview:** concise description of the problem, target users, and value.
+- [ ] **Scenario:** one concrete user workflow demonstrated in the video.
+- [ ] **Technical approach:** local-first API/UI, configurable model routes, workspace tools, persistent task/session state, approval-gated coding, and optional Docker test isolation—only describe capabilities present in the submitted revision.
+- [ ] **Demo video:** no longer than 3 minutes; use the verified outline above.
+- [ ] **Documentation:** repository README and this runbook reflect the actual submitted version.
+- [ ] **Final evidence:** record the exact main commit, local test result, which acceptance gates passed, and any feature omitted from the demo.
+- [ ] **Security review:** remove secrets and personal data from the recording, screenshots, sample workspace, and submission text.
 
-- Confirm Docker is running, the configured sandbox image has already been built, and the test runner is enabled.
-- Run the test-and-fix workflow or sandboxed pytest action.
-- Explain that iterative test-and-fix uses a disposable workspace copy and that a passing candidate still becomes a pending proposal requiring review and approval.
-- If Docker or the image is unavailable, skip this segment rather than implying the sandbox ran.
-
-### 5. Explicit memory (30–45 seconds, optional)
-
-- Save a harmless preference or demo note manually.
-- Search for it and show the result.
-- Explain that saved-memory retrieval is opt-in per chat request and uses lexical keyword matching, not embeddings. Never store secrets in memory.
+Do not mark the submission complete until each required portal field is filled and the video duration is checked.
 
 ## Fallback plan
 
