@@ -82,3 +82,40 @@ def test_outbound_delivery_status_rejects_invalid_value(tmp_path: Path):
     store = MessagingStore(tmp_path / "inbox.sqlite3")
     with pytest.raises(ValueError, match="invalid outbound delivery status"):
         store.update_outbound_status("telegram", "missing", "accepted")
+
+
+
+def test_delivery_target_is_encrypted_and_decryptable(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", key)
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="chat-private", text="hello",
+        idempotency_key="target-1", delivery_target="123456789",
+    )
+    assert store.get_delivery_target(queued["message"]["id"]) == "123456789"
+    with store.connect() as con:
+        raw = con.execute(
+            "SELECT ciphertext FROM messaging_delivery_targets WHERE message_id=?",
+            (queued["message"]["id"],),
+        ).fetchone()["ciphertext"]
+    assert b"123456789" not in bytes(raw)
+    assert "ciphertext" not in queued["message"]
+
+
+def test_delivery_target_is_not_persisted_without_key(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="chat-private", text="hello",
+        idempotency_key="target-2", delivery_target="123456789",
+    )
+    assert store.get_delivery_target(queued["message"]["id"]) is None
+
+
+def test_invalid_delivery_target_key_fails_closed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", "not-a-fernet-key")
+    with pytest.raises(ValueError, match="valid Fernet key"):
+        MessagingStore(tmp_path / "inbox.sqlite3")
