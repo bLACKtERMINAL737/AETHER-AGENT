@@ -196,6 +196,11 @@ class ChatRequest(BaseModel):
         return value
 
 
+class DiscordSendRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
 class TelegramSendRequest(BaseModel):
     chat_id: str = Field(min_length=1, max_length=256)
     text: str = Field(min_length=1, max_length=4096)
@@ -276,6 +281,69 @@ def _telegram_config():
     bot_token = os.getenv("AETHER_TELEGRAM_BOT_TOKEN", "").strip()
     webhook_secret = os.getenv("AETHER_TELEGRAM_WEBHOOK_SECRET", "").strip()
     return bot_token, webhook_secret
+
+
+def _discord_webhook_url() -> str:
+    url = os.getenv("AETHER_DISCORD_WEBHOOK_URL", "").strip()
+    if not url:
+        return ""
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower()
+        valid_host = host in {"discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com"}
+        valid_path = parsed.path.startswith("/api/webhooks/") and len(parsed.path.split("/")) >= 5
+        if parsed.scheme != "https" or not valid_host or not valid_path or parsed.username or parsed.password:
+            return ""
+        return url
+    except ValueError:
+        return ""
+
+
+@app.get("/messaging/discord/status")
+def discord_status():
+    configured = bool(_discord_webhook_url())
+    return {"channel": "discord", "configured": configured, "connector_type": "incoming_webhook"}
+
+
+@app.post("/messaging/discord/send")
+async def discord_send(request: DiscordSendRequest):
+    """Send one text message to a preconfigured Discord incoming webhook."""
+    webhook_url = _discord_webhook_url()
+    if not webhook_url:
+        raise HTTPException(status_code=503, detail="A valid Discord webhook URL is not configured")
+    # A webhook is a fixed destination. Never accept an arbitrary URL from the request.
+    try:
+        queued = messaging_store.queue_outbound(
+            channel="discord", provider_user_id="configured-webhook",
+            text=request.text, idempotency_key=request.idempotency_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    saved = queued["message"]
+    if queued["duplicate"]:
+        if saved.get("status") in {"sent", "delivered"}:
+            return {"conversation_id": queued["conversation_id"], "message": saved, "duplicate": True}
+        raise HTTPException(status_code=409, detail="This idempotency key was already processed or has an unknown outcome; inspect Discord and the inbox before retrying")
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            response = await client.post(webhook_url, json={"content": request.text}, params={"wait": "true"})
+        body = response.json() if response.content else {}
+        if not response.is_success or not isinstance(body, dict) or not body.get("id"):
+            messaging_store.update_outbound_status("discord", request.idempotency_key, "failed")
+            raise HTTPException(status_code=502, detail="Discord rejected the message; delivery was not confirmed")
+        messaging_store.update_outbound_status(
+            "discord", request.idempotency_key, "sent", provider_message_id=str(body["id"])
+        )
+        return {
+            "conversation_id": queued["conversation_id"],
+            "message": messaging_store.get_outbound("discord", request.idempotency_key),
+            "duplicate": queued["duplicate"],
+        }
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        messaging_store.update_outbound_status("discord", request.idempotency_key, "unknown")
+        raise HTTPException(status_code=502, detail="Discord request outcome is unknown; check Discord before retrying") from exc
 
 
 @app.get("/messaging/telegram/status")
