@@ -247,6 +247,7 @@ async def test_coding_proposal_api_maps_validation_error_to_client_error(
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
         base_url="http://127.0.0.1:8000",
+        headers={"X-Aether-Token": "test-token"},
     ) as client:
         response = await client.post(
             "/coding/proposals",
@@ -273,6 +274,7 @@ async def test_coding_apply_api_maps_missing_proposal_to_not_found(
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
         base_url="http://127.0.0.1:8000",
+        headers={"X-Aether-Token": "test-token"},
     ) as client:
         response = await client.post("/coding/proposals/missing/apply")
 
@@ -295,6 +297,7 @@ async def test_coding_apply_api_maps_approval_conflict_to_conflict_status(
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
         base_url="http://127.0.0.1:8000",
+        headers={"X-Aether-Token": "test-token"},
     ) as client:
         response = await client.post("/coding/proposals/proposal-api-2/apply")
 
@@ -318,6 +321,7 @@ async def test_coding_apply_api_does_not_leak_unexpected_exception_details(
     async with AsyncClient(
         transport=ASGITransport(app=app_module.app),
         base_url="http://127.0.0.1:8000",
+        headers={"X-Aether-Token": "test-token"},
     ) as client:
         response = await client.post("/coding/proposals/proposal-api-3/apply")
 
