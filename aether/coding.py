@@ -225,7 +225,23 @@ class CodingEngine:
                 staged.append((target, Path(temp_name), current))
             replaced: list[tuple[Path, str]] = []
             try:
-                for target, temp_path, old_content in staged:
+                # Recheck each target immediately before replacement. A workspace
+                # file may be edited by another process after the initial validation
+                # and while the proposal's other files are being staged.
+                for (target, temp_path, old_content), change in zip(staged, changes):
+                    try:
+                        latest_content = target.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError) as exc:
+                        raise CodingError(
+                            f"File became unavailable before apply: {change['path']}. "
+                            "Generate a fresh proposal."
+                        ) from exc
+                    latest_digest = hashlib.sha256(latest_content.encode("utf-8")).hexdigest()
+                    if latest_digest != change["original_sha256"]:
+                        raise CodingError(
+                            f"File changed while proposal was being applied: {change['path']}. "
+                            "No stale content was intentionally applied; inspect the workspace."
+                        )
                     os.replace(temp_path, target)
                     replaced.append((target, old_content))
             except Exception as apply_exc:
