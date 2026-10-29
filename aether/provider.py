@@ -8,11 +8,35 @@ from typing import Literal
 
 import httpx
 
+from .tools import ToolError
+
 logger = logging.getLogger("aether.provider")
 MAX_TOOL_ARGUMENT_BYTES = 64 * 1024
 MAX_TOOL_CALL_ID_CHARS = 256
 MAX_TOOL_CALLS_PER_RESPONSE = 5
 MAX_JSON_NESTING_DEPTH = 100
+
+
+def _safe_expected_tool_error(exc: ToolError) -> str:
+    """Keep actionable expected tool errors while redacting sensitive details."""
+    detail = str(exc).strip() or "Tool operation failed."
+    detail = re.sub(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        detail,
+    )
+    detail = re.sub(
+        r"(?i)\b(?:sk-or-v1-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{8,}|"
+        r"api[_-]?key\s*[:=]\s*[^\s,;]+|token\s*[:=]\s*[^\s,;]+)",
+        "[REDACTED_CREDENTIAL]",
+        detail,
+    )
+    detail = re.sub(
+        r"(?:(?:/Users/|/home/|/root/)[^\s,;]+|[A-Z]:\\Users\\[^\s,;]+)",
+        "[REDACTED_PATH]",
+        detail,
+    )
+    return detail[:500]
 TaskType = Literal["general", "coding", "reasoning"]
 ModelRoute = Literal["primary", "coding", "reasoning", "fallback"]
 
@@ -259,13 +283,19 @@ class ModelProvider:
                         if not isinstance(result, dict):
                             result = {"result": result}
                     except Exception as exc:
-                        # Preserve the sanitized error in the conversation so the model
-                        # can explain the failure rather than guessing missing content.
+                        # Expected ToolError messages help the model explain a concrete
+                        # failure (for example, a missing workspace file). Unexpected
+                        # exceptions remain generic to avoid leaking internal details.
                         logger.warning(
                             "Native chat tool %s failed: %s", name, type(exc).__name__
                         )
+                        error_message = (
+                            _safe_expected_tool_error(exc)
+                            if isinstance(exc, ToolError)
+                            else f"Tool execution failed ({type(exc).__name__})."
+                        )
                         result = {
-                            "error": f"Tool execution failed ({type(exc).__name__}).",
+                            "error": error_message,
                             "tool": name,
                             "retryable": False,
                         }
