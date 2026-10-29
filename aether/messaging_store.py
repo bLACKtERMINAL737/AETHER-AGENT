@@ -77,6 +77,15 @@ class MessagingStore:
                     ciphertext BLOB NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS messaging_delivery_leases (
+                    message_id TEXT PRIMARY KEY REFERENCES messaging_messages(id) ON DELETE CASCADE,
+                    lease_owner TEXT NOT NULL,
+                    lease_until TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_msg_delivery_leases_until
+                    ON messaging_delivery_leases(lease_until);
             """)
         raw_key = os.getenv("AETHER_MESSAGING_TARGET_KEY", "").strip()
         self._target_cipher = None
@@ -206,6 +215,92 @@ class MessagingStore:
             return self._target_cipher.decrypt(bytes(row["ciphertext"])).decode("utf-8")
         except (InvalidToken, UnicodeDecodeError):
             return None
+
+    def claim_outbound(
+        self, *, worker_id: str, limit: int = 10, lease_seconds: int = 60,
+    ) -> list[dict]:
+        """Atomically lease eligible, target-backed outbound messages for one worker."""
+        if not isinstance(worker_id, str) or not worker_id.strip() or len(worker_id) > 128:
+            raise MessagingContractError("worker_id is invalid")
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        if not 5 <= lease_seconds <= 900:
+            raise ValueError("lease_seconds must be between 5 and 900")
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        lease_until = (now_dt + __import__("datetime").timedelta(seconds=lease_seconds)).isoformat()
+        claimed: list[dict] = []
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            rows = con.execute(
+                """SELECT m.* FROM messaging_messages m
+                   JOIN messaging_delivery_targets t ON t.message_id=m.id
+                   LEFT JOIN messaging_delivery_leases l ON l.message_id=m.id
+                   WHERE m.direction='outbound' AND m.status='accepted'
+                     AND (l.message_id IS NULL OR l.lease_until < ?)
+                   ORDER BY m.created_at, m.id LIMIT ?""",
+                (now, limit),
+            ).fetchall()
+            for row in rows:
+                con.execute(
+                    """INSERT INTO messaging_delivery_leases(message_id,lease_owner,lease_until,attempts,updated_at)
+                       VALUES(?,?,?,?,?)
+                       ON CONFLICT(message_id) DO UPDATE SET
+                         lease_owner=excluded.lease_owner,
+                         lease_until=excluded.lease_until,
+                         attempts=messaging_delivery_leases.attempts+1,
+                         updated_at=excluded.updated_at""",
+                    (row["id"], worker_id.strip(), lease_until, 1, now),
+                )
+                claimed.append({**dict(row), "lease_owner": worker_id.strip(),
+                                "lease_until": lease_until})
+        return claimed
+
+    def finish_outbound_lease(
+        self, message_id: str, *, worker_id: str, status: str,
+        provider_message_id: str | None = None,
+    ) -> bool:
+        """Finish a lease only for its current owner; never auto-requeue uncertain outcomes."""
+        if status not in {"sent", "delivered", "failed", "unknown"}:
+            raise MessagingContractError("invalid outbound delivery status")
+        now = _now()
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            lease = con.execute(
+                "SELECT lease_owner FROM messaging_delivery_leases WHERE message_id=?",
+                (message_id,),
+            ).fetchone()
+            if lease is None or lease["lease_owner"] != worker_id:
+                return False
+            con.execute(
+                """UPDATE messaging_messages SET status=?,
+                   provider_message_id=COALESCE(?,provider_message_id), updated_at=?
+                   WHERE id=? AND direction='outbound' AND status='accepted'""",
+                (status, provider_message_id, now, message_id),
+            )
+            changed = con.execute("SELECT changes()").fetchone()[0] == 1
+            if changed:
+                con.execute("DELETE FROM messaging_delivery_leases WHERE message_id=?", (message_id,))
+            return changed
+
+    def expire_outbound_leases(self) -> int:
+        """Mark expired in-flight claims unknown; explicit reconciliation is required before retry."""
+        now = _now()
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            rows = con.execute(
+                """SELECT message_id FROM messaging_delivery_leases
+                   WHERE lease_until < ?""", (now,)
+            ).fetchall()
+            ids = [row["message_id"] for row in rows]
+            for message_id in ids:
+                con.execute(
+                    """UPDATE messaging_messages SET status='unknown', updated_at=?
+                       WHERE id=? AND direction='outbound' AND status='accepted'""",
+                    (now, message_id),
+                )
+                con.execute("DELETE FROM messaging_delivery_leases WHERE message_id=?", (message_id,))
+        return len(ids)
 
     def update_outbound_status(
         self, channel: str, idempotency_key: str, status: str,
