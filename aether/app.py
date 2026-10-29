@@ -22,6 +22,7 @@ from .coding import CodingEngine, CodingError
 from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
+from .messaging_store import MessagingStore
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
@@ -31,6 +32,7 @@ logger = logging.getLogger("aether")
 settings = Settings.from_env()
 settings.workspace.mkdir(parents=True, exist_ok=True)
 store = TaskStore(settings.db_path)
+messaging_store = MessagingStore(settings.db_path)
 tools = ToolRegistry(settings.workspace)
 primary_provider = ModelProvider(
     settings.model_base_url, settings.model_api_key, settings.model_name,
@@ -191,6 +193,22 @@ class ChatRequest(BaseModel):
         return value
 
 
+class MessagingInboundRequest(BaseModel):
+    channel: str = Field(min_length=1, max_length=64)
+    provider_message_id: str = Field(min_length=1, max_length=256)
+    provider_user_id: str = Field(min_length=1, max_length=256)
+    text: str = Field(min_length=1, max_length=20_000)
+    received_at: str | None = Field(default=None, max_length=80)
+    display_name: str | None = Field(default=None, max_length=200)
+
+
+class MessagingOutboundRequest(BaseModel):
+    channel: str = Field(min_length=1, max_length=64)
+    provider_user_id: str = Field(min_length=1, max_length=256)
+    text: str = Field(min_length=1, max_length=20_000)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
 class ModelConfigurationRequest(BaseModel):
     route: Literal["primary", "coding", "reasoning", "fallback"]
     base_url: str = Field(min_length=1, max_length=500)
@@ -243,6 +261,61 @@ class MemorySearchRequest(BaseModel):
 class SessionSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=300)
     limit: int = Field(default=20, ge=1, le=100)
+
+
+@app.get("/messaging/channels")
+def messaging_channels():
+    """List registered channels; empty until provider adapters are configured."""
+    return {"channels": messaging_store.list_channels(), "configured": False}
+
+
+@app.get("/messaging/conversations")
+def messaging_conversations(limit: int = 50):
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    return {"conversations": messaging_store.list_conversations(limit=limit)}
+
+
+@app.get("/messaging/conversations/{conversation_id}/messages")
+def messaging_conversation_messages(conversation_id: str, limit: int = 100):
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+    try:
+        messages = messaging_store.list_messages(conversation_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid conversation ID") from exc
+    return {"conversation_id": conversation_id, "messages": messages}
+
+
+@app.post("/messaging/inbound")
+def messaging_inbound(request: MessagingInboundRequest):
+    """Persist a normalized inbound provider event; call only from verified adapters."""
+    try:
+        result = messaging_store.ingest(
+            channel=request.channel,
+            provider_message_id=request.provider_message_id,
+            provider_user_id=request.provider_user_id,
+            text=request.text,
+            received_at=request.received_at,
+            display_name=request.display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return result
+
+
+@app.post("/messaging/outbound")
+def messaging_outbound(request: MessagingOutboundRequest):
+    """Queue an outbound message record; this does not send to an external platform."""
+    try:
+        return messaging_store.queue_outbound(
+            channel=request.channel,
+            provider_user_id=request.provider_user_id,
+            text=request.text,
+            idempotency_key=request.idempotency_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/health")

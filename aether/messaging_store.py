@@ -1,0 +1,195 @@
+"""Persistent provider-neutral inbox storage.
+
+Provider IDs are converted to opaque conversation scopes and are not persisted.
+External adapters must verify webhook signatures before calling inbound APIs.
+"""
+from __future__ import annotations
+
+import re
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+from .messaging import MAX_ID_CHARS, MAX_TEXT_CHARS, MessagingContractError, conversation_scope
+
+_CHANNEL_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_CONVERSATION_RE = re.compile(r"^msg_[a-f0-9]{40}$")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _validate_channel(value: str) -> str:
+    if not isinstance(value, str):
+        raise MessagingContractError("channel must be text")
+    channel = value.strip().lower()
+    if not _CHANNEL_RE.fullmatch(channel):
+        raise MessagingContractError("channel is invalid")
+    return channel
+
+
+def _validate_text(value: str) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > MAX_TEXT_CHARS:
+        raise MessagingContractError("message text must be non-empty and within the size limit")
+    return value.strip()
+
+
+class MessagingStore:
+    """SQLite inbox/outbox journal sharing the application's database file."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.connect() as con:
+            con.executescript("""
+                CREATE TABLE IF NOT EXISTS messaging_conversations (
+                    id TEXT PRIMARY KEY,
+                    channel TEXT NOT NULL,
+                    display_name TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_msg_conversations_updated
+                    ON messaging_conversations(updated_at DESC);
+                CREATE TABLE IF NOT EXISTS messaging_messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES messaging_conversations(id) ON DELETE CASCADE,
+                    channel TEXT NOT NULL,
+                    direction TEXT NOT NULL CHECK(direction IN ('inbound','outbound')),
+                    text TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN ('accepted','sent','delivered','failed','unknown')),
+                    provider_message_id TEXT,
+                    idempotency_key TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(channel, provider_message_id),
+                    UNIQUE(channel, idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_msg_messages_conversation
+                    ON messaging_messages(conversation_id, created_at, id);
+            """)
+
+    def connect(self) -> sqlite3.Connection:
+        con = sqlite3.connect(self.db_path, timeout=10)
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys=ON")
+        con.execute("PRAGMA busy_timeout=10000")
+        return con
+
+    @staticmethod
+    def _scope(channel: str, provider_user_id: str) -> str:
+        if not isinstance(provider_user_id, str) or not provider_user_id.strip() or len(provider_user_id) > MAX_ID_CHARS:
+            raise MessagingContractError("provider_user_id is invalid")
+        namespace = "aether-claw"
+        return conversation_scope(channel, provider_user_id, namespace=namespace)
+
+    def ingest(
+        self, *, channel: str, provider_message_id: str, provider_user_id: str,
+        text: str, received_at: str | None = None, display_name: str | None = None,
+    ) -> dict:
+        channel = _validate_channel(channel)
+        text = _validate_text(text)
+        if not isinstance(provider_message_id, str) or not provider_message_id.strip() or len(provider_message_id) > MAX_ID_CHARS:
+            raise MessagingContractError("provider_message_id is invalid")
+        provider_message_id = provider_message_id.strip()
+        if received_at is None:
+            received_at = _now()
+        try:
+            parsed = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError
+        except (AttributeError, ValueError) as exc:
+            raise MessagingContractError("received_at must be an ISO-8601 timestamp with timezone") from exc
+        if display_name is not None:
+            if not isinstance(display_name, str) or len(display_name) > 200:
+                raise MessagingContractError("display_name is invalid")
+            display_name = display_name.strip() or None
+        conversation_id = self._scope(channel, provider_user_id)
+        now = _now()
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO messaging_conversations(id,channel,display_name,created_at,updated_at) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET display_name=COALESCE(excluded.display_name,messaging_conversations.display_name), updated_at=excluded.updated_at",
+                (conversation_id, channel, display_name, now, now),
+            )
+            existing = con.execute(
+                "SELECT * FROM messaging_messages WHERE channel=? AND provider_message_id=?",
+                (channel, provider_message_id),
+            ).fetchone()
+            if existing:
+                return {"conversation_id": conversation_id, "message": dict(existing), "duplicate": True}
+            message_id = str(uuid4())
+            con.execute(
+                "INSERT INTO messaging_messages(id,conversation_id,channel,direction,text,status,provider_message_id,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (message_id, conversation_id, channel, "inbound", text, "accepted", provider_message_id, received_at, now),
+            )
+            row = con.execute("SELECT * FROM messaging_messages WHERE id=?", (message_id,)).fetchone()
+        return {"conversation_id": conversation_id, "message": dict(row), "duplicate": False}
+
+    def queue_outbound(self, *, channel: str, provider_user_id: str, text: str, idempotency_key: str) -> dict:
+        channel = _validate_channel(channel)
+        text = _validate_text(text)
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > MAX_ID_CHARS:
+            raise MessagingContractError("idempotency_key is invalid")
+        idempotency_key = idempotency_key.strip()
+        conversation_id = self._scope(channel, provider_user_id)
+        now = _now()
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO messaging_conversations(id,channel,created_at,updated_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",
+                (conversation_id, channel, now, now),
+            )
+            existing = con.execute(
+                "SELECT * FROM messaging_messages WHERE channel=? AND idempotency_key=?",
+                (channel, idempotency_key),
+            ).fetchone()
+            if existing:
+                if existing["conversation_id"] != conversation_id or existing["text"] != text:
+                    raise MessagingContractError("idempotency_key was already used for a different message")
+                return {"conversation_id": conversation_id, "message": dict(existing), "duplicate": True}
+            message_id = str(uuid4())
+            con.execute(
+                "INSERT INTO messaging_messages(id,conversation_id,channel,direction,text,status,idempotency_key,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (message_id, conversation_id, channel, "outbound", text, "accepted", idempotency_key, now, now),
+            )
+            row = con.execute("SELECT * FROM messaging_messages WHERE id=?", (message_id,)).fetchone()
+        return {"conversation_id": conversation_id, "message": dict(row), "duplicate": False}
+
+    def list_conversations(self, *, limit: int = 50) -> list[dict]:
+        if not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        with self.connect() as con:
+            rows = con.execute(
+                """SELECT c.id, c.channel, c.display_name, c.created_at, c.updated_at,
+                          (SELECT m.text FROM messaging_messages m WHERE m.conversation_id=c.id
+                           ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
+                          (SELECT m.direction FROM messaging_messages m WHERE m.conversation_id=c.id
+                           ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_direction,
+                          (SELECT m.status FROM messaging_messages m WHERE m.conversation_id=c.id
+                           ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_status
+                   FROM messaging_conversations c ORDER BY c.updated_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_messages(self, conversation_id: str, *, limit: int = 100) -> list[dict]:
+        if not isinstance(conversation_id, str) or not _CONVERSATION_RE.fullmatch(conversation_id):
+            raise MessagingContractError("conversation ID is invalid")
+        if not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT * FROM messaging_messages WHERE conversation_id=? ORDER BY created_at, id LIMIT ?",
+                (conversation_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_channels(self) -> list[str]:
+        with self.connect() as con:
+            rows = con.execute("SELECT DISTINCT channel FROM messaging_conversations ORDER BY channel").fetchall()
+        return [row["channel"] for row in rows]
