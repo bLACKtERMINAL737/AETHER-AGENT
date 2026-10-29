@@ -1974,6 +1974,11 @@ def run_coding_tests():
         return coding.run_tests()
     except CodingError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Could not run coding tests")
+        raise HTTPException(
+            status_code=502, detail="Coding test run failed; inspect local logs"
+        ) from exc
 
 
 @app.get("/coding/files")
