@@ -14,7 +14,7 @@ from pathlib import Path
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -193,6 +193,12 @@ class ChatRequest(BaseModel):
         return value
 
 
+class TelegramSendRequest(BaseModel):
+    chat_id: str = Field(min_length=1, max_length=256)
+    text: str = Field(min_length=1, max_length=4096)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
 class MessagingInboundRequest(BaseModel):
     channel: str = Field(min_length=1, max_length=64)
     provider_message_id: str = Field(min_length=1, max_length=256)
@@ -261,6 +267,111 @@ class MemorySearchRequest(BaseModel):
 class SessionSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=300)
     limit: int = Field(default=20, ge=1, le=100)
+
+
+def _telegram_config():
+    bot_token = os.getenv("AETHER_TELEGRAM_BOT_TOKEN", "").strip()
+    webhook_secret = os.getenv("AETHER_TELEGRAM_WEBHOOK_SECRET", "").strip()
+    return bot_token, webhook_secret
+
+
+@app.get("/messaging/telegram/status")
+def telegram_status():
+    bot_token, webhook_secret = _telegram_config()
+    return {
+        "channel": "telegram",
+        "configured": bool(bot_token and webhook_secret),
+        "webhook_secret_configured": bool(webhook_secret),
+        "bot_token_configured": bool(bot_token),
+    }
+
+
+@app.post("/messaging/webhooks/telegram")
+async def telegram_webhook(request: Request):
+    """Receive Telegram updates only after validating Telegram's secret-token header."""
+    _, expected_secret = _telegram_config()
+    supplied_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not expected_secret or not hmac.compare_digest(supplied_secret, expected_secret):
+        raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid Telegram update")
+    message = payload.get("message") or payload.get("edited_message")
+    if not isinstance(message, dict) or not isinstance(message.get("chat"), dict):
+        return {"ok": True, "ignored": True}
+    text_value = message.get("text")
+    chat = message["chat"]
+    sender = message.get("from") or {}
+    provider_message_id = message.get("message_id")
+    chat_id = chat.get("id")
+    if not isinstance(text_value, str) or not text_value.strip() or chat_id is None or provider_message_id is None:
+        return {"ok": True, "ignored": True}
+    received_at = datetime.fromtimestamp(
+        int(message.get("date", int(time.time()))), tz=timezone.utc
+    ).isoformat()
+    display_name = " ".join(
+        part for part in (str(sender.get("first_name", "")).strip(), str(sender.get("last_name", "")).strip()) if part
+    ) or None
+    try:
+        result = messaging_store.ingest(
+            channel="telegram",
+            provider_message_id=f"{chat_id}:{provider_message_id}",
+            provider_user_id=str(chat_id),
+            text=text_value,
+            received_at=received_at,
+            display_name=display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Telegram message failed validation") from exc
+    return {"ok": True, "duplicate": result["duplicate"]}
+
+
+@app.post("/messaging/telegram/send")
+async def telegram_send(request: TelegramSendRequest):
+    """Send a Telegram message via the official Bot API and persist delivery outcome."""
+    bot_token, _ = _telegram_config()
+    if not bot_token:
+        raise HTTPException(status_code=503, detail="Telegram bot token is not configured")
+    try:
+        queued = messaging_store.queue_outbound(
+            channel="telegram", provider_user_id=request.chat_id,
+            text=request.text, idempotency_key=request.idempotency_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    saved = queued["message"]
+    if queued["duplicate"]:
+        if saved.get("status") in {"sent", "delivered"}:
+            return {"conversation_id": queued["conversation_id"], "message": saved, "duplicate": True}
+        if saved.get("status") == "failed":
+            raise HTTPException(status_code=409, detail="This idempotency key already failed; use a new key to retry")
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": request.chat_id, "text": request.text},
+            )
+        body = response.json()
+        if not response.is_success or not isinstance(body, dict) or not body.get("ok"):
+            messaging_store.update_outbound_status("telegram", request.idempotency_key, "failed")
+            raise HTTPException(status_code=502, detail="Telegram rejected the message; delivery was not confirmed")
+        provider_message_id = str((body.get("result") or {}).get("message_id", "")) or None
+        messaging_store.update_outbound_status(
+            "telegram", request.idempotency_key, "sent", provider_message_id=provider_message_id
+        )
+        return {
+            "conversation_id": queued["conversation_id"],
+            "message": messaging_store.get_outbound("telegram", request.idempotency_key),
+            "duplicate": queued["duplicate"],
+        }
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        messaging_store.update_outbound_status("telegram", request.idempotency_key, "unknown")
+        raise HTTPException(status_code=502, detail="Telegram request outcome is unknown; check delivery before retrying") from exc
 
 
 @app.get("/messaging/channels")
