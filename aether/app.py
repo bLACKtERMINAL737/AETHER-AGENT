@@ -447,6 +447,12 @@ async def telegram_send(request: TelegramSendRequest):
         raise HTTPException(status_code=502, detail="Telegram request outcome is unknown; check delivery before retrying") from exc
 
 
+@app.get("/messaging/delivery/metrics")
+def messaging_delivery_metrics():
+    """Return aggregate outbound delivery health without message content or secrets."""
+    return messaging_store.delivery_metrics()
+
+
 @app.get("/messaging/channels")
 def messaging_channels():
     """List registered channels; empty until provider adapters are configured."""
