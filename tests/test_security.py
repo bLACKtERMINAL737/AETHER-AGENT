@@ -160,3 +160,102 @@ async def test_api_documentation_routes_require_authentication(monkeypatch, path
         response = await client.get(path)
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_chunked_request_body_limit_applies_without_content_length(monkeypatch):
+    from aether.security import MAX_REQUEST_BODY_BYTES
+
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
+    app_called = False
+
+    async def inner_app(scope, receive, send):
+        nonlocal app_called
+        app_called = True
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = LocalAPIProtection(inner_app)
+    chunks = [
+        {"type": "http.request", "body": b"x" * (MAX_REQUEST_BODY_BYTES // 2), "more_body": True},
+        {"type": "http.request", "body": b"x" * (MAX_REQUEST_BODY_BYTES // 2 + 1), "more_body": True},
+    ]
+    async def receive():
+        return chunks.pop(0)
+
+    sent = []
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "scheme": "http", "path": "/private", "raw_path": b"/private",
+        "query_string": b"", "headers": [
+            (b"host", b"127.0.0.1:8000"),
+            (b"x-aether-token", b"test-token"),
+            (b"transfer-encoding", b"chunked"),
+        ],
+        "client": ("127.0.0.1", 12345), "server": ("127.0.0.1", 8000),
+    }
+    await middleware(scope, receive, send)
+
+    assert not app_called
+    assert sent[0]["status"] == 413
+
+
+@pytest.mark.asyncio
+async def test_chunked_request_body_within_limit_is_replayed(monkeypatch):
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
+    observed = bytearray()
+
+    async def inner_app(scope, receive, send):
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                break
+            observed.extend(message.get("body", b""))
+            if not message.get("more_body", False):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = LocalAPIProtection(inner_app)
+    chunks = [
+        {"type": "http.request", "body": b"hello ", "more_body": True},
+        {"type": "http.request", "body": b"world", "more_body": False},
+    ]
+    async def receive():
+        if chunks:
+            return chunks.pop(0)
+        return {"type": "http.disconnect"}
+
+    sent = []
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": "POST", "scheme": "http", "path": "/private", "raw_path": b"/private",
+        "query_string": b"", "headers": [
+            (b"host", b"127.0.0.1:8000"), (b"x-aether-token", b"test-token"),
+        ],
+        "client": ("127.0.0.1", 12345), "server": ("127.0.0.1", 8000),
+    }
+    await middleware(scope, receive, send)
+
+    assert bytes(observed) == b"hello world"
+    assert sent[0]["status"] == 200
+
+
+@pytest.mark.asyncio
+async def test_invalid_content_length_is_rejected(monkeypatch):
+    app = make_app(monkeypatch)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000") as client:
+        response = await client.post(
+            "/mutate",
+            headers={"X-Aether-Token": "test-token", "Content-Length": "not-a-number"},
+            content=b"{}",
+        )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid Content-Length"
