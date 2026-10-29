@@ -144,3 +144,59 @@ def test_concurrent_approve_and_reject_only_allow_one_transition(
     assert outcomes.count("success") == 1
     assert outcomes.count("conflict") == 1
     assert store.get_proposal(proposal["id"])["status"] in {"approved", "rejected"}
+
+
+def test_apply_rechecks_each_file_before_replacement_and_rolls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import aether.coding as coding_module
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    first = workspace / "first.py"
+    second = workspace / "second.py"
+    first.write_text("FIRST = 1\\n", encoding="utf-8")
+    second.write_text("SECOND = 1\\n", encoding="utf-8")
+    store = TaskStore(tmp_path / "aether.sqlite3")
+    engine = CodingEngine(workspace, store, UnusedRouter())
+    proposal = store.create_proposal(
+        "update two values",
+        [
+            {
+                "path": "first.py",
+                "original_content": "FIRST = 1\\n",
+                "original_sha256": hashlib.sha256(b"FIRST = 1\\n").hexdigest(),
+                "content": "FIRST = 2\\n",
+                "diff": "",
+            },
+            {
+                "path": "second.py",
+                "original_content": "SECOND = 1\\n",
+                "original_sha256": hashlib.sha256(b"SECOND = 1\\n").hexdigest(),
+                "content": "SECOND = 2\\n",
+                "diff": "",
+            },
+        ],
+    )
+    engine.approve(proposal["id"])
+
+    real_replace = coding_module.os.replace
+    changed_second = False
+
+    def replace_with_concurrent_edit(source, destination):
+        nonlocal changed_second
+        if Path(destination) == first and not changed_second:
+            result = real_replace(source, destination)
+            second.write_text("SECOND = 99\\n", encoding="utf-8")
+            changed_second = True
+            return result
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(coding_module.os, "replace", replace_with_concurrent_edit)
+
+    with pytest.raises(CodingError, match="File changed while proposal was being applied"):
+        engine.apply(proposal["id"])
+
+    assert first.read_text(encoding="utf-8") == "FIRST = 1\\n"
+    assert second.read_text(encoding="utf-8") == "SECOND = 99\\n"
+    assert store.get_proposal(proposal["id"])["status"] == "approved"
