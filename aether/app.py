@@ -349,8 +349,10 @@ async def telegram_send(request: TelegramSendRequest):
     if queued["duplicate"]:
         if saved.get("status") in {"sent", "delivered"}:
             return {"conversation_id": queued["conversation_id"], "message": saved, "duplicate": True}
-        if saved.get("status") == "failed":
-            raise HTTPException(status_code=409, detail="This idempotency key already failed; use a new key to retry")
+        raise HTTPException(
+            status_code=409,
+            detail="This idempotency key was already processed or has an unknown outcome; inspect the inbox before retrying",
+        )
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
             response = await client.post(
