@@ -60,3 +60,25 @@ def test_message_history_limit_is_bounded(tmp_path: Path):
     result = store.ingest(channel="telegram", provider_message_id="x", provider_user_id="u", text="hi")
     with pytest.raises(ValueError):
         store.list_messages(result["conversation_id"], limit=201)
+
+
+
+def test_outbound_delivery_status_is_persisted(tmp_path: Path):
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    result = store.queue_outbound(
+        channel="telegram", provider_user_id="chat-1", text="hello", idempotency_key="send-1"
+    )
+    store.update_outbound_status(
+        "telegram", "send-1", "sent", provider_message_id="telegram-message-9"
+    )
+    saved = store.get_outbound("telegram", "send-1")
+    assert saved is not None
+    assert saved["id"] == result["message"]["id"]
+    assert saved["status"] == "sent"
+    assert saved["provider_message_id"] == "telegram-message-9"
+
+
+def test_outbound_delivery_status_rejects_invalid_value(tmp_path: Path):
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    with pytest.raises(ValueError, match="invalid outbound delivery status"):
+        store.update_outbound_status("telegram", "missing", "accepted")
