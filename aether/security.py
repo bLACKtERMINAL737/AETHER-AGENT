@@ -7,6 +7,7 @@ from starlette.responses import JSONResponse
 
 
 EXEMPT_PATHS = {"/health", "/ui", "/ui/"}
+WEBHOOK_PATHS = {"/messaging/webhooks/telegram"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
 
@@ -75,7 +76,7 @@ class LocalAPIProtection:
         path = scope.get("path", "")
         method = scope.get("method", "GET")
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
-        exempt = path in EXEMPT_PATHS or path.startswith("/ui/")
+        exempt = path in EXEMPT_PATHS or path.startswith("/ui/") or path in WEBHOOK_PATHS
         if not exempt:
             if method in UNSAFE_METHODS and "origin" in headers:
                 origin = headers["origin"]
