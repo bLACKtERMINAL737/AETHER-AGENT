@@ -10,7 +10,7 @@ import re
 import sqlite3
 
 from cryptography.fernet import Fernet, InvalidToken
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -228,7 +228,7 @@ class MessagingStore:
             raise ValueError("lease_seconds must be between 5 and 900")
         now_dt = datetime.now(timezone.utc)
         now = now_dt.isoformat()
-        lease_until = (now_dt + __import__("datetime").timedelta(seconds=lease_seconds)).isoformat()
+        lease_until = (now_dt + timedelta(seconds=lease_seconds)).isoformat()
         claimed: list[dict] = []
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
