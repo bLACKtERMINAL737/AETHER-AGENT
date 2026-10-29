@@ -1,0 +1,35 @@
+# Reproducible AETHER CLAW agent evaluation
+
+The evaluation runner checks actual /chat responses against observable task-journal outcomes. It is intended for a local, non-sensitive workspace, not a public deployment.
+
+## Setup
+
+1. Start AETHER CLAW on loopback and configure a working model route.
+2. Set AETHER_API_TOKEN in the same shell used to run the evaluation if API protection is enabled. Never put the token in the case file or report.
+3. Create the fixture in the configured workspace at eval-fixtures/known_fact.txt with this content:
+
+```text
+AETHER CLAW evaluation marker: AETHER_EVAL_MARKER_9241
+The sample project is named Northstar Demo.
+```
+
+4. Confirm that eval-fixtures/does-not-exist.txt does not exist. Use a disposable evaluation workspace; do not run this against a workspace containing private files.
+5. Run from the repository root:
+
+```bash
+python scripts/agent_eval.py \
+  --cases examples/agent_eval_cases.json \
+  --base-url http://127.0.0.1:8000 \
+  --output agent-eval-report.json
+```
+
+The report contains case names, pass/fail checks, latency, task status, successful tool-call count, and tool names observed in the journal. It deliberately omits prompts, model answers, headers, credentials, and endpoint metadata. Keep the report out of version control if local project identifiers or timing data should remain private.
+
+## Interpreting results
+
+- The known-file case must observe workspace.read_file in the task journal and the exact marker in the answer.
+- The missing-file case is an expected task failure: it passes evaluation only if the agent gives the expected honest response and the journal confirms the failed workspace.read_file call. A task marked failed is not treated as successful execution.
+- A failing evaluation means the expected behavior was not observed; inspect the local UI and task journal before drawing conclusions.
+- This is a starter evaluation set, not a benchmark proving general intelligence or superiority over other agents. Run multiple times with the same workspace and configuration before comparing models. Record model/provider and cost separately in a private experiment log if needed.
+
+The runner makes real requests and can invoke real tools. Use only harmless fixture tasks and a local or otherwise trusted API endpoint.
