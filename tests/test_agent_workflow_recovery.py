@@ -655,3 +655,57 @@ async def test_recovery_qa_timeout_persists_uncertain_workflow_state(
     saved = store.get_workflow(workflow_id)
     assert saved["status"] == "partial"
     assert saved["results"]["qa_review"]["status"] == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("problem", "expected_category", "expected_task_status", "expected_qa_status"),
+    [
+        ("task_failed", "task_failed", "failed", "succeeded"),
+        ("task_unknown", "outcome_unknown", "unknown", "succeeded"),
+        ("qa_failed", "qa_review_failed", "succeeded", "failed"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_recovery_diagnostics_cover_failed_and_uncertain_outcomes(
+    tmp_path, monkeypatch, problem, expected_category,
+    expected_task_status, expected_qa_status,
+):
+    store, workflow_id, task_id, qa_id = make_workflow(tmp_path, monkeypatch)
+    assert qa_id is not None
+
+    async def fake_run(task_id_arg):
+        task = store.get_task(task_id_arg)
+        assert task is not None and task["status"] == "queued"
+        assert store.claim_task(task_id_arg)
+        is_problem = (
+            problem == "qa_failed" and task_id_arg == qa_id
+        ) or (
+            problem != "qa_failed" and task_id_arg == task_id
+        )
+        status = (
+            "failed" if is_problem and problem in {"task_failed", "qa_failed"}
+            else "unknown" if is_problem and problem == "task_unknown"
+            else "succeeded"
+        )
+        store.set_task_status(task_id_arg, status, result={"answer": "test outcome"})
+        return {
+            "task_id": task_id_arg,
+            "status": status,
+            "result": "test outcome",
+            "tool_calls": 0,
+            "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.recover_agent_workflow(workflow_id)
+
+    saved = store.get_workflow(workflow_id)
+    diagnostics = saved["results"]["diagnostics"]
+    assert result["status"] == "partial"
+    assert saved["status"] == "partial"
+    assert saved["results"]["tasks"][0]["status"] == expected_task_status
+    assert saved["results"]["qa_review"]["status"] == expected_qa_status
+    assert diagnostics["task_counts"][expected_task_status] == 1
+    assert diagnostics["qa_status"] == expected_qa_status
+    assert diagnostics["failure_count"] == 1
+    assert diagnostics["failures"][0]["category"] == expected_category
