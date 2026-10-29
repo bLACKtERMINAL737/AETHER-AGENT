@@ -156,6 +156,14 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       <div class="actions"><button id="queueMessaging" class="primary" type="button">Queue message intent</button></div>
     </div>
     <div style="margin-top:16px">
+      <h3>Discord Webhook</h3>
+      <div id="discordConnectorStatus" class="muted small" role="status">Checking Discord connector configuration…</div>
+      <label for="discordMessageText">Discord message</label>
+      <textarea id="discordMessageText" rows="3" maxlength="2000" placeholder="Send a message to the configured Discord channel…"></textarea>
+      <div class="actions"><button id="sendDiscordMessage" class="primary" type="button">Send via Discord</button><button id="refreshDiscordStatus" type="button">Check Discord setup</button></div>
+      <div class="muted small">Uses a backend-configured Discord incoming webhook. The webhook URL is a secret and is never sent to the browser. This connector sends to one configured destination; it does not read Discord messages.</div>
+    </div>
+    <div style="margin-top:16px">
       <h3>Telegram Bot</h3>
       <div id="telegramConnectorStatus" class="muted small" role="status">Checking Telegram connector configuration…</div>
       <div class="grid" style="margin-top:8px">
@@ -793,6 +801,38 @@ async function loadMessagingConversation(id,label){
     $("messagingDetailHint").textContent=label+" · "+id;
     setStatus("messagingStatus","Loaded "+(data.messages||[]).length+" message(s).","good");
   }catch(e){target.textContent="Could not load this conversation.";setStatus("messagingStatus",e.message,"bad");}
+}
+async function refreshDiscordConnectorStatus(){
+  const target=$("discordConnectorStatus");
+  target.textContent="Checking connector configuration…";
+  try{
+    const result=await api("/messaging/discord/status");
+    target.textContent=result.configured
+      ? "Discord incoming webhook configured. Messages will be sent to the configured destination."
+      : "Discord webhook not configured or URL is invalid. Set AETHER_DISCORD_WEBHOOK_URL on the backend.";
+    target.dataset.configured=String(Boolean(result.configured));
+  }catch(e){
+    target.textContent="Could not check Discord configuration. Verify backend status and API access.";
+    target.dataset.configured="false";
+  }
+}
+$("refreshDiscordStatus").onclick=refreshDiscordConnectorStatus;
+$("sendDiscordMessage").onclick=async()=>{
+  const message=$("discordMessageText").value.trim();
+  if(!message){setStatus("messagingStatus","Enter a Discord message.","bad");return;}
+  if($("discordConnectorStatus").dataset.configured!=="true"){
+    setStatus("messagingStatus","Discord webhook is not confirmed as configured.","bad");return;
+  }
+  const button=$("sendDiscordMessage");button.disabled=true;
+  try{
+    const result=await api("/messaging/discord/send",{method:"POST",body:JSON.stringify({text:message,idempotency_key:crypto.randomUUID()})});
+    $("discordMessageText").value="";
+    setStatus("messagingStatus","Discord accepted the webhook request; stored status: "+result.message.status+".","good");
+    await refreshMessagingInbox();
+    await loadMessagingConversation(result.conversation_id,"Discord webhook");
+  }catch(e){
+    setStatus("messagingStatus",e.message+" If the outcome is unknown, check Discord before retrying.","bad");
+  }finally{button.disabled=false;}
 }
 async function refreshTelegramConnectorStatus(){
   const target=$("telegramConnectorStatus");
