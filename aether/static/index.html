@@ -127,6 +127,36 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
     <div id="chatStatus" class="status" role="status"></div>
   </section>
   <details id="workspaceTools"><summary>Advanced workspace · Coding, memory, workflows and tasks</summary>
+    <section class="panel" id="messagingPanel" style="margin-top:16px" aria-labelledby="messagingHeading">
+    <div class="top">
+      <div><h2 id="messagingHeading">Universal Messaging Inbox</h2><div class="muted small">Review stored conversations and queue outbound message intents. External platforms are not connected until a verified adapter is configured.</div></div>
+      <button id="refreshMessaging" type="button">Refresh inbox</button>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div>
+        <h3>Conversations</h3>
+        <div id="messagingChannels" class="muted small">Loading channels…</div>
+        <div id="messagingConversationList" class="files" style="max-height:320px;overflow:auto" aria-live="polite">Loading conversations…</div>
+      </div>
+      <div>
+        <h3>Message history</h3>
+        <div id="messagingDetailHint" class="muted small">Choose a conversation to view its history.</div>
+        <div id="messagingMessages" class="files" style="max-height:320px;overflow:auto" aria-live="polite"></div>
+      </div>
+    </div>
+    <div style="margin-top:16px">
+      <h3>Queue outbound message intent</h3>
+      <div class="muted small">This records the requested message only. It does not send to Telegram, WhatsApp, Discord, or any other provider.</div>
+      <div class="grid" style="margin-top:8px">
+        <label>Channel name<input id="messagingOutChannel" maxlength="64" placeholder="e.g. telegram" autocomplete="off"></label>
+        <label>Provider recipient ID<input id="messagingOutRecipient" maxlength="256" placeholder="Recipient ID from a verified connector" autocomplete="off"></label>
+      </div>
+      <label for="messagingOutText">Message</label>
+      <textarea id="messagingOutText" rows="3" maxlength="20000" placeholder="Write a message intent…"></textarea>
+      <div class="actions"><button id="queueMessaging" class="primary" type="button">Queue message intent</button></div>
+    </div>
+    <div id="messagingStatus" class="status" role="status" aria-live="polite"></div>
+  </section>
   <div class="grid">
     <section class="panel">
       <h2>1. Select existing files</h2>
@@ -699,8 +729,83 @@ $("createTask").onclick=async()=>{
   finally{$("createTask").disabled=false;}
 };
 
+async function refreshMessagingInbox(){
+  const list=$("messagingConversationList"),channels=$("messagingChannels");
+  list.textContent="Loading conversations…";
+  try{
+    const [channelData,conversationData]=await Promise.all([
+      api("/messaging/channels"),api("/messaging/conversations?limit=100")
+    ]);
+    channels.textContent=channelData.channels.length
+      ? "Channels with stored conversations: "+channelData.channels.join(", ")+". No live connector status is implied."
+      : "No channels have stored conversations yet.";
+    list.replaceChildren();
+    const conversations=conversationData.conversations||[];
+    if(!conversations.length){
+      list.textContent="No stored conversations yet. Inbound messages appear here after a verified adapter records them.";
+    }else{
+      for(const conversation of conversations){
+        const item=document.createElement("button");
+        item.type="button";item.className="file-item";
+        item.style.cssText="display:block;width:100%;text-align:left;margin:4px 0;white-space:normal";
+        const title=document.createElement("strong");
+        title.textContent=(conversation.display_name||conversation.channel)+" · "+conversation.channel;
+        const preview=document.createElement("div");preview.className="muted small";
+        preview.textContent=(conversation.last_direction||"")+(conversation.last_status?" · "+conversation.last_status:"")+(conversation.last_message?" · "+conversation.last_message:"");
+        const time=document.createElement("div");time.className="muted small";time.textContent=conversation.updated_at||"";
+        item.append(title,preview,time);
+        item.onclick=()=>loadMessagingConversation(conversation.id,conversation.display_name||conversation.channel);
+        list.append(item);
+      }
+    }
+    setStatus("messagingStatus",conversations.length+" conversation(s) loaded.","good");
+  }catch(e){
+    list.textContent="Could not load conversations. Check the API token and backend status.";
+    setStatus("messagingStatus",e.message,"bad");
+  }
+}
+async function loadMessagingConversation(id,label){
+  const target=$("messagingMessages");target.textContent="Loading message history…";
+  try{
+    const data=await api("/messaging/conversations/"+encodeURIComponent(id)+"/messages?limit=200");
+    target.replaceChildren();
+    for(const message of data.messages||[]){
+      const card=document.createElement("article");
+      card.style.cssText="padding:10px;margin:6px 0;border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere";
+      const meta=document.createElement("div");meta.className="muted small";
+      meta.textContent=(message.direction||"message")+" · "+(message.status||"unknown")+" · "+(message.created_at||"");
+      const body=document.createElement("div");body.style.whiteSpace="pre-wrap";body.textContent=message.text||"";
+      card.append(meta,body);target.append(card);
+    }
+    if(!(data.messages||[]).length)target.textContent="No messages in this conversation.";
+    $("messagingDetailHint").textContent=label+" · "+id;
+    setStatus("messagingStatus","Loaded "+(data.messages||[]).length+" message(s).","good");
+  }catch(e){target.textContent="Could not load this conversation.";setStatus("messagingStatus",e.message,"bad");}
+}
+$("refreshMessaging").onclick=refreshMessagingInbox;
+$("queueMessaging").onclick=async()=>{
+  const channel=$("messagingOutChannel").value.trim();
+  const recipient=$("messagingOutRecipient").value.trim();
+  const message=$("messagingOutText").value.trim();
+  if(!channel||!recipient||!message){
+    setStatus("messagingStatus","Enter the channel, provider recipient ID, and message.","bad");return;
+  }
+  const button=$("queueMessaging");button.disabled=true;
+  try{
+    const result=await api("/messaging/outbound",{method:"POST",body:JSON.stringify({
+      channel,provider_user_id:recipient,text:message,idempotency_key:crypto.randomUUID()
+    })});
+    $("messagingOutText").value="";
+    setStatus("messagingStatus","Message intent stored as "+result.message.status+". It has NOT been sent to an external platform.","good");
+    await refreshMessagingInbox();
+    await loadMessagingConversation(result.conversation_id,channel);
+  }catch(e){setStatus("messagingStatus",e.message,"bad");}
+  finally{button.disabled=false;}
+}
+
 refreshFiles();
 loadMemories();
+refreshMessagingInbox();
 loadModelRoutes();
 refreshSessions();
 refreshWorkflows();
