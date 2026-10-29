@@ -16,6 +16,7 @@
     "message": "Use workspace.read_file to read eval-fixtures/does-not-exist.txt. If it fails, tell me the file could not be read; do not invent its contents.",
     "expected_contains": ["could not be read"],
     "expected_tools": ["workspace.read_file"],
-    "min_tool_calls": 1
+    "min_tool_calls": 1,
+    "expected_task_status": "failed"
   }
 ]
