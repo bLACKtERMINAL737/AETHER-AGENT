@@ -5,6 +5,7 @@ from aether import app as app_module
 
 
 def test_database_health_returns_ok_when_database_query_succeeds(monkeypatch):
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module.store, "list_tasks", lambda limit: [])
 
     with TestClient(
@@ -13,11 +14,7 @@ def test_database_health_returns_ok_when_database_query_succeeds(monkeypatch):
         headers={
             "Origin": "http://127.0.0.1",
             "Host": "127.0.0.1",
-            **(
-                {"Authorization": f"Bearer {os.environ['AETHER_API_TOKEN']}"}
-                if os.getenv("AETHER_API_TOKEN")
-                else {}
-            ),
+            "X-Aether-Token": "test-token",
         },
         client=("127.0.0.1", 12345),
     ) as client:
@@ -31,6 +28,7 @@ def test_database_health_returns_generic_error_when_database_query_fails(monkeyp
     def fail_query(limit):
         raise RuntimeError("sensitive database details")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module.store, "list_tasks", fail_query)
 
     with TestClient(
@@ -39,11 +37,7 @@ def test_database_health_returns_generic_error_when_database_query_fails(monkeyp
         headers={
             "Origin": "http://127.0.0.1",
             "Host": "127.0.0.1",
-            **(
-                {"Authorization": f"Bearer {os.environ['AETHER_API_TOKEN']}"}
-                if os.getenv("AETHER_API_TOKEN")
-                else {}
-            ),
+            "X-Aether-Token": "test-token",
         },
         client=("127.0.0.1", 12345),
         raise_server_exceptions=False,
