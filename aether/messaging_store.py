@@ -210,6 +210,45 @@ class MessagingStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def delivery_metrics(self) -> dict:
+        """Return aggregate outbound delivery counts without exposing message content or IDs."""
+        with self.connect() as con:
+            totals = con.execute(
+                """SELECT status, COUNT(*) AS count
+                   FROM messaging_messages
+                   WHERE direction='outbound'
+                   GROUP BY status"""
+            ).fetchall()
+            channels = con.execute(
+                """SELECT channel, status, COUNT(*) AS count
+                   FROM messaging_messages
+                   WHERE direction='outbound'
+                   GROUP BY channel, status
+                   ORDER BY channel, status"""
+            ).fetchall()
+            recent_failures = con.execute(
+                """SELECT channel, status, COUNT(*) AS count, MAX(updated_at) AS latest_at
+                   FROM messaging_messages
+                   WHERE direction='outbound' AND status IN ('failed','unknown')
+                   GROUP BY channel, status
+                   ORDER BY latest_at DESC"""
+            ).fetchall()
+        by_status = {row["status"]: row["count"] for row in totals}
+        for status in ("accepted", "sent", "delivered", "failed", "unknown"):
+            by_status.setdefault(status, 0)
+        by_channel: dict[str, dict[str, int]] = {}
+        for row in channels:
+            by_channel.setdefault(row["channel"], {})[row["status"]] = row["count"]
+        for counts in by_channel.values():
+            for status in ("accepted", "sent", "delivered", "failed", "unknown"):
+                counts.setdefault(status, 0)
+        return {
+            "total_outbound": sum(by_status.values()),
+            "by_status": by_status,
+            "by_channel": by_channel,
+            "recent_failures": [dict(row) for row in recent_failures[:20]],
+        }
+
     def list_channels(self) -> list[str]:
         with self.connect() as con:
             rows = con.execute("SELECT DISTINCT channel FROM messaging_conversations ORDER BY channel").fetchall()
