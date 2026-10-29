@@ -200,3 +200,121 @@ def test_apply_rechecks_each_file_before_replacement_and_rolls_back(
     assert first.read_text(encoding="utf-8") == "FIRST = 1\\n"
     assert second.read_text(encoding="utf-8") == "SECOND = 99\\n"
     assert store.get_proposal(proposal["id"])["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_coding_proposal_api_returns_pending_proposal_without_applying(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from httpx import ASGITransport, AsyncClient
+    import aether.app as app_module
+
+    class FakeCoding:
+        async def propose(self, instruction, paths):
+            assert instruction == "Change behavior"
+            assert paths == ["sample.py"]
+            return {"id": "proposal-api-1", "status": "pending", "changes": []}
+
+    monkeypatch.setattr(app_module, "coding", FakeCoding())
+    async with AsyncClient(
+        transport=ASGITransport(app=app_module.app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.post(
+            "/coding/proposals",
+            json={"instruction": "Change behavior", "paths": ["sample.py"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_coding_proposal_api_maps_validation_error_to_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from httpx import ASGITransport, AsyncClient
+    import aether.app as app_module
+
+    class InvalidCoding:
+        async def propose(self, instruction, paths):
+            raise CodingError("Select between 1 and 8 files")
+
+    monkeypatch.setattr(app_module, "coding", InvalidCoding())
+    async with AsyncClient(
+        transport=ASGITransport(app=app_module.app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.post(
+            "/coding/proposals",
+            json={"instruction": "Change behavior", "paths": ["sample.py"]},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Select between 1 and 8 files"
+
+
+@pytest.mark.asyncio
+async def test_coding_apply_api_maps_missing_proposal_to_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from httpx import ASGITransport, AsyncClient
+    import aether.app as app_module
+
+    class MissingProposalCoding:
+        def apply(self, proposal_id):
+            raise KeyError("Proposal not found")
+
+    monkeypatch.setattr(app_module, "coding", MissingProposalCoding())
+    async with AsyncClient(
+        transport=ASGITransport(app=app_module.app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.post("/coding/proposals/missing/apply")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_coding_apply_api_maps_approval_conflict_to_conflict_status(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from httpx import ASGITransport, AsyncClient
+    import aether.app as app_module
+
+    class UnapprovedCoding:
+        def apply(self, proposal_id):
+            raise CodingError("Proposal must be explicitly approved before applying")
+
+    monkeypatch.setattr(app_module, "coding", UnapprovedCoding())
+    async with AsyncClient(
+        transport=ASGITransport(app=app_module.app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.post("/coding/proposals/proposal-api-2/apply")
+
+    assert response.status_code == 409
+    assert "explicitly approved" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_coding_apply_api_does_not_leak_unexpected_exception_details(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from httpx import ASGITransport, AsyncClient
+    import aether.app as app_module
+
+    class BrokenCoding:
+        def apply(self, proposal_id):
+            raise OSError("secret-path /Users/private/.env")
+
+    monkeypatch.setattr(app_module, "coding", BrokenCoding())
+    async with AsyncClient(
+        transport=ASGITransport(app=app_module.app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.post("/coding/proposals/proposal-api-3/apply")
+
+    assert response.status_code == 502
+    assert "secret-path" not in response.text
+    assert "/Users/private" not in response.text
