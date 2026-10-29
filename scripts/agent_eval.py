@@ -200,7 +200,6 @@ def main() -> int:
     passed = sum(bool(item["passed"]) for item in results)
     report = {
         "schema_version": 1,
-        "base_url": args.base_url,
         "case_count": len(results),
         "passed": passed,
         "failed": len(results) - passed,
