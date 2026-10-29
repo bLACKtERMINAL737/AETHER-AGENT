@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from aether.provider import ModelProvider, ModelRouter
+from aether.tools import ToolError
 
 
 class FakeResponse:
@@ -357,6 +358,47 @@ async def test_tool_exception_details_are_not_sent_back_to_model(monkeypatch):
     assert secret_detail not in tool_result
     assert "Tool execution failed (RuntimeError)." in tool_result
     assert result["answer"] == "The tool failed."
+
+
+@pytest.mark.asyncio
+async def test_expected_tool_error_is_actionable_but_redacted_before_model(monkeypatch):
+    calls = []
+    responses = [
+        completion(tool_calls=[tool_call("call-expected", "workspace.read_file", {"path": "notes.txt"})]),
+        completion(content="The file could not be read.") ,
+    ]
+
+    def client_factory(*_args, **_kwargs):
+        return FakeAsyncClient(responses, calls)
+
+    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    provider = ModelProvider("https://example.test/v1", "secret", "test-model")
+
+    async def execute(_name, _args):
+        raise ToolError(
+            "File not found: /Users/alice/private/notes.txt; api_key=sk-or-v1-123456789abcdef"
+        )
+
+    result = await provider.chat_with_tools(
+        "Read notes.txt",
+        tool_specs=[{
+            "type": "function",
+            "function": {"name": "workspace.read_file", "parameters": {"type": "object"}},
+        }],
+        execute_tool=execute,
+    )
+
+    tool_result = next(
+        json.loads(message["content"])
+        for message in calls[1]["payload"]["messages"]
+        if message.get("role") == "tool"
+    )
+    assert "File not found" in tool_result["error"]
+    assert "[REDACTED_PATH]" in tool_result["error"]
+    assert "[REDACTED_CREDENTIAL]" in tool_result["error"]
+    assert "/Users/alice" not in tool_result["error"]
+    assert "sk-or-v1-123456789abcdef" not in tool_result["error"]
+    assert result["answer"] == "The file could not be read."
 
 
 @pytest.mark.parametrize("raw_arguments", ["{not-json", '["not", "an", "object"]', "null"])
