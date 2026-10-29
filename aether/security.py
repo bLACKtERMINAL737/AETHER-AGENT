@@ -101,12 +101,50 @@ class LocalAPIProtection:
                 await response(scope, receive, send)
                 return
 
-        # Reject oversized declared bodies before FastAPI parses JSON or base64.
-        # Avoid consuming/wrapping ASGI receive(); enforce chunked limits at the server/proxy.
-        if not exempt:
-            raw_length = headers.get("content-length", "")
-            if raw_length.isdecimal() and int(raw_length) > MAX_REQUEST_BODY_BYTES:
+        if exempt:
+            await self.app(scope, receive, send)
+            return
+
+        # Validate declared lengths, but do not rely on Content-Length: chunked
+        # requests may omit it entirely. Buffer only up to the configured limit
+        # before dispatch so FastAPI cannot parse an oversized JSON/base64 body.
+        raw_length = headers.get("content-length")
+        if raw_length is not None:
+            if not raw_length.isdecimal():
+                response = JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
+                await response(scope, receive, send)
+                return
+            if int(raw_length) > MAX_REQUEST_BODY_BYTES:
                 response = JSONResponse({"detail": "Request body too large"}, status_code=413)
                 await response(scope, receive, send)
                 return
-        await self.app(scope, receive, send)
+
+        messages = []
+        total_bytes = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                messages.append(message)
+                break
+            if message["type"] != "http.request":
+                continue
+            total_bytes += len(message.get("body", b""))
+            if total_bytes > MAX_REQUEST_BODY_BYTES:
+                response = JSONResponse({"detail": "Request body too large"}, status_code=413)
+                await response(scope, receive, send)
+                return
+            messages.append(message)
+            if not message.get("more_body", False):
+                break
+
+        message_index = 0
+
+        async def replay_receive():
+            nonlocal message_index
+            if message_index < len(messages):
+                message = messages[message_index]
+                message_index += 1
+                return message
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, replay_receive, send)
