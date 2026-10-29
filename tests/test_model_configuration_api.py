@@ -8,6 +8,7 @@ from aether.provider import ModelProvider, ModelRouter
 
 @pytest.fixture
 def client_and_providers(monkeypatch):
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     providers = {
         "primary": ModelProvider(None, None, None),
         "coding": ModelProvider(None, None, None),
@@ -31,11 +32,7 @@ def client_and_providers(monkeypatch):
     with TestClient(app_module.app, base_url="http://127.0.0.1", headers={
             "Origin": "http://127.0.0.1",
             "Host": "127.0.0.1",
-            **(
-                {"Authorization": f"Bearer {os.environ['AETHER_API_TOKEN']}"}
-                if os.getenv("AETHER_API_TOKEN")
-                else {}
-            ),
+            "X-Aether-Token": "test-token",
         }, client=("127.0.0.1", 12345)) as client:
         yield client, providers
 
