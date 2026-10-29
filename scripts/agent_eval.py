@@ -51,6 +51,9 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
         min_calls = case.get("min_tool_calls", 0)
         if type(min_calls) is not int or not 0 <= min_calls <= 5:
             raise ValueError(f"Case {name!r}: min_tool_calls must be an integer from 0 to 5")
+        expected_status = case.get("expected_task_status", "succeeded")
+        if expected_status not in {"succeeded", "failed", "unknown", "not_created"}:
+            raise ValueError(f"Case {name!r}: invalid expected_task_status")
         if case.get("mode", "auto") not in {"auto", "manual"}:
             raise ValueError(f"Case {name!r}: mode must be auto or manual")
         if case.get("task_type", "auto") not in {"auto", "general", "coding", "reasoning"}:
@@ -124,8 +127,6 @@ def run_case(
         if any(item not in answer.casefold() for item in expected):
             checks.append("expected_text_missing")
         tool_calls = int(response.get("tool_calls", 0) or 0)
-        if tool_calls < case.get("min_tool_calls", 0):
-            checks.append("tool_call_count_below_minimum")
         task_id = response.get("task_id")
         if task_id:
             try:
@@ -143,13 +144,16 @@ def run_case(
                         name = str(execution.get("tool_name") or execution.get("name") or "")
                         if name:
                             tool_names.append(name)
-                if task_status != "succeeded":
-                    checks.append("task_not_succeeded")
+                expected_status = case.get("expected_task_status", "succeeded")
+                if task_status != expected_status:
+                    checks.append("unexpected_task_status")
             except RuntimeError:
                 task_status = "unavailable"
                 checks.append("task_journal_unavailable")
         elif case.get("expected_tools") or case.get("min_tool_calls", 0):
             checks.append("task_id_missing")
+        if len(tool_names) < case.get("min_tool_calls", 0):
+            checks.append("tool_attempt_count_below_minimum")
         actual_tools = set(tool_names)
         if any(expected_tool not in actual_tools for expected_tool in case.get("expected_tools", [])):
             checks.append("expected_tool_missing")
