@@ -21,18 +21,18 @@ def _safe_expected_tool_error(exc: ToolError) -> str:
     """Keep actionable expected tool errors while redacting sensitive details."""
     detail = str(exc).strip() or "Tool operation failed."
     detail = re.sub(
-        r"(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]+",
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
         "Bearer [REDACTED]",
         detail,
     )
     detail = re.sub(
-        r"(?i)\\b(?:sk-or-v1-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{8,}|"
-        r"api[_-]?key\\s*[:=]\\s*[^\\s,;]+|token\\s*[:=]\\s*[^\\s,;]+)",
+        r"(?i)\b(?:sk-or-v1-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{8,}|"
+        r"api[_-]?key\s*[:=]\s*[^\s,;]+|token\s*[:=]\s*[^\s,;]+)",
         "[REDACTED_CREDENTIAL]",
         detail,
     )
     detail = re.sub(
-        r"(?:(?:/Users/|/home/|/root/)[^\\s,;]+|[A-Z]:\\\\Users\\\\[^\\s,;]+)",
+        r"(?:(?:/Users/|/home/|/root/)[^\s,;]+|[A-Z]:\\Users\\[^\s,;]+)",
         "[REDACTED_PATH]",
         detail,
     )
