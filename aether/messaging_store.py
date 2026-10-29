@@ -226,6 +226,8 @@ class MessagingStore:
             raise ValueError("limit must be between 1 and 100")
         if not 5 <= lease_seconds <= 900:
             raise ValueError("lease_seconds must be between 5 and 900")
+        if self._target_cipher is None:
+            return []
         now_dt = datetime.now(timezone.utc)
         now = now_dt.isoformat()
         lease_until = (now_dt + timedelta(seconds=lease_seconds)).isoformat()
@@ -271,6 +273,12 @@ class MessagingStore:
                 (message_id,),
             ).fetchone()
             if lease is None or lease["lease_owner"] != worker_id:
+                return False
+            lease_row = con.execute(
+                "SELECT lease_until FROM messaging_delivery_leases WHERE message_id=?",
+                (message_id,),
+            ).fetchone()
+            if lease_row is None or lease_row["lease_until"] < now:
                 return False
             con.execute(
                 """UPDATE messaging_messages SET status=?,
