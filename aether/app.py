@@ -449,6 +449,81 @@ async def telegram_send(request: TelegramSendRequest):
         raise HTTPException(status_code=502, detail="Telegram request outcome is unknown; check delivery before retrying") from exc
 
 
+
+async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit: int = 10) -> dict:
+    """Deliver one leased outbox batch. Expired/uncertain sends are never auto-retried."""
+    claimed = messaging_store.claim_outbound(worker_id=worker_id, limit=limit, lease_seconds=60)
+    outcomes = {"claimed": len(claimed), "sent": 0, "failed": 0, "unknown": 0, "skipped": 0}
+    for item in claimed:
+        message_id = item["id"]
+        channel = item["channel"]
+        target = messaging_store.get_delivery_target(message_id)
+        if not target:
+            messaging_store.finish_outbound_lease(
+                message_id, worker_id=worker_id, status="failed"
+            )
+            outcomes["failed"] += 1
+            continue
+        try:
+            if channel == "telegram":
+                bot_token, _ = _telegram_config()
+                if not bot_token:
+                    messaging_store.finish_outbound_lease(
+                        message_id, worker_id=worker_id, status="failed"
+                    )
+                    outcomes["failed"] += 1
+                    continue
+                url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+                payload = {"chat_id": target, "text": item["text"]}
+            elif channel == "discord":
+                webhook_url = _discord_webhook_url()
+                if target != "configured-webhook" or not webhook_url:
+                    messaging_store.finish_outbound_lease(
+                        message_id, worker_id=worker_id, status="failed"
+                    )
+                    outcomes["failed"] += 1
+                    continue
+                url = webhook_url
+                payload = {"content": item["text"]}
+            else:
+                messaging_store.finish_outbound_lease(
+                    message_id, worker_id=worker_id, status="failed"
+                )
+                outcomes["failed"] += 1
+                continue
+
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+                response = await client.post(
+                    url, json=payload,
+                    params={"wait": "true"} if channel == "discord" else None,
+                )
+            body = response.json() if response.content else {}
+            if channel == "telegram":
+                ok = response.is_success and isinstance(body, dict) and body.get("ok") is True
+                provider_id = str((body.get("result") or {}).get("message_id", "")) or None
+            else:
+                ok = response.is_success and isinstance(body, dict) and bool(body.get("id"))
+                provider_id = str(body.get("id")) if ok else None
+            status = "sent" if ok else "failed"
+            finished = messaging_store.finish_outbound_lease(
+                message_id, worker_id=worker_id, status=status,
+                provider_message_id=provider_id,
+            )
+            if not finished:
+                outcomes["skipped"] += 1
+            else:
+                outcomes[status] += 1
+        except (httpx.HTTPError, ValueError):
+            finished = messaging_store.finish_outbound_lease(
+                message_id, worker_id=worker_id, status="unknown"
+            )
+            if finished:
+                outcomes["unknown"] += 1
+            else:
+                outcomes["skipped"] += 1
+    return outcomes
+
+
 @app.get("/messaging/delivery/metrics")
 def messaging_delivery_metrics():
     """Return aggregate outbound delivery health without message content or secrets."""
