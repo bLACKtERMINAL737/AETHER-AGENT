@@ -28,6 +28,7 @@ def test_reject_coding_proposal_hides_unexpected_exception_details(monkeypatch):
         def reject(self, proposal_id):
             raise OSError("private path /Users/private/.env api_key=secret-value")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", BrokenCoding())
     response = TestClient(app_module.app, raise_server_exceptions=False).post(
         "/coding/proposals/proposal-2/reject", headers={"X-Aether-Token": "test-token"}
