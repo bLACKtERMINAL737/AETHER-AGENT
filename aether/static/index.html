@@ -155,6 +155,18 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       <textarea id="messagingOutText" rows="3" maxlength="20000" placeholder="Write a message intent…"></textarea>
       <div class="actions"><button id="queueMessaging" class="primary" type="button">Queue message intent</button></div>
     </div>
+    <div style="margin-top:16px">
+      <h3>Telegram Bot</h3>
+      <div id="telegramConnectorStatus" class="muted small" role="status">Checking Telegram connector configuration…</div>
+      <div class="grid" style="margin-top:8px">
+        <label>Telegram chat ID<input id="telegramChatId" maxlength="256" placeholder="Chat ID" autocomplete="off"></label>
+        <label>Message idempotency key<input id="telegramIdempotencyKey" maxlength="256" placeholder="Generated automatically" autocomplete="off" readonly></label>
+      </div>
+      <label for="telegramMessageText">Telegram message</label>
+      <textarea id="telegramMessageText" rows="3" maxlength="4096" placeholder="Send a text message through your configured Telegram bot…"></textarea>
+      <div class="actions"><button id="sendTelegramMessage" class="primary" type="button">Send via Telegram</button><button id="refreshTelegramStatus" type="button">Check Telegram setup</button></div>
+      <div class="muted small">Requires backend environment variables AETHER_TELEGRAM_BOT_TOKEN and AETHER_TELEGRAM_WEBHOOK_SECRET. Sending requires API authentication. Only send messages to recipients who have authorized contact.</div>
+    </div>
     <div id="messagingStatus" class="status" role="status" aria-live="polite"></div>
   </section>
   <div class="grid">
@@ -781,6 +793,44 @@ async function loadMessagingConversation(id,label){
     $("messagingDetailHint").textContent=label+" · "+id;
     setStatus("messagingStatus","Loaded "+(data.messages||[]).length+" message(s).","good");
   }catch(e){target.textContent="Could not load this conversation.";setStatus("messagingStatus",e.message,"bad");}
+}
+async function refreshTelegramConnectorStatus(){
+  const target=$("telegramConnectorStatus");
+  target.textContent="Checking connector configuration…";
+  try{
+    const result=await api("/messaging/telegram/status");
+    target.textContent=result.configured
+      ? "Telegram connector configured. Bot token and webhook secret are present; webhook URL still needs provider-side setup."
+      : "Telegram not fully configured. Backend token: "+(result.bot_token_configured?"present":"missing")+"; webhook secret: "+(result.webhook_secret_configured?"present":"missing")+".";
+    target.dataset.configured=String(Boolean(result.configured));
+  }catch(e){
+    target.textContent="Could not check Telegram configuration. Verify backend status and API access.";
+    target.dataset.configured="false";
+  }
+}
+$("refreshTelegramStatus").onclick=refreshTelegramConnectorStatus;
+$("sendTelegramMessage").onclick=async()=>{
+  const chatId=$("telegramChatId").value.trim();
+  const message=$("telegramMessageText").value.trim();
+  if(!chatId||!message){
+    setStatus("messagingStatus","Enter a Telegram chat ID and message.","bad");return;
+  }
+  if($("telegramConnectorStatus").dataset.configured!=="true"){
+    setStatus("messagingStatus","Telegram connector is not confirmed as configured. Check setup before sending.","bad");return;
+  }
+  const button=$("sendTelegramMessage");button.disabled=true;
+  const key=crypto.randomUUID();
+  $("telegramIdempotencyKey").value=key;
+  try{
+    const result=await api("/messaging/telegram/send",{method:"POST",body:JSON.stringify({chat_id:chatId,text:message,idempotency_key:key})});
+    const status=result.message&&result.message.status?result.message.status:"unknown";
+    $("telegramMessageText").value="";
+    setStatus("messagingStatus","Telegram API accepted the request; stored status: "+status+". This is not a read receipt.","good");
+    await refreshMessagingInbox();
+    await loadMessagingConversation(result.conversation_id,"telegram");
+  }catch(e){
+    setStatus("messagingStatus",e.message+" If the outcome is unknown, check Telegram and the inbox before retrying.","bad");
+  }finally{button.disabled=false;}
 }
 $("refreshMessaging").onclick=refreshMessagingInbox;
 $("queueMessaging").onclick=async()=>{
