@@ -52,11 +52,17 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
         if type(min_calls) is not int or not 0 <= min_calls <= 5:
             raise ValueError(f"Case {name!r}: min_tool_calls must be an integer from 0 to 5")
         expected_status = case.get("expected_task_status", "succeeded")
-        if expected_status not in {"succeeded", "failed", "unknown", "not_created"}:
+        if not isinstance(expected_status, str) or expected_status not in {
+            "succeeded", "failed", "unknown", "not_created"
+        }:
             raise ValueError(f"Case {name!r}: invalid expected_task_status")
-        if case.get("mode", "auto") not in {"auto", "manual"}:
+        mode = case.get("mode", "auto")
+        if not isinstance(mode, str) or mode not in {"auto", "manual"}:
             raise ValueError(f"Case {name!r}: mode must be auto or manual")
-        if case.get("task_type", "auto") not in {"auto", "general", "coding", "reasoning"}:
+        task_type = case.get("task_type", "auto")
+        if not isinstance(task_type, str) or task_type not in {
+            "auto", "general", "coding", "reasoning"
+        }:
             raise ValueError(f"Case {name!r}: invalid task_type")
         if case.get("mode", "auto") == "manual" and case.get("model_route") not in {
             "primary", "coding", "reasoning", "fallback"
