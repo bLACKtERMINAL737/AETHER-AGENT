@@ -1,4 +1,3 @@
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 import aether.app as app_module
@@ -9,9 +8,10 @@ def test_approve_coding_proposal_hides_unexpected_exception_details(monkeypatch)
         def approve(self, proposal_id):
             raise OSError("private path /Users/private/.env api_key=secret-value")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", BrokenCoding())
     response = TestClient(app_module.app, raise_server_exceptions=False).post(
-        "/coding/proposals/proposal-1/approve"
+        "/coding/proposals/proposal-1/approve", headers={"X-Aether-Token": "test-token"}
     )
 
     assert response.status_code == 502
@@ -30,7 +30,7 @@ def test_reject_coding_proposal_hides_unexpected_exception_details(monkeypatch):
 
     monkeypatch.setattr(app_module, "coding", BrokenCoding())
     response = TestClient(app_module.app, raise_server_exceptions=False).post(
-        "/coding/proposals/proposal-2/reject"
+        "/coding/proposals/proposal-2/reject", headers={"X-Aether-Token": "test-token"}
     )
 
     assert response.status_code == 502
@@ -47,9 +47,10 @@ def test_approve_coding_proposal_preserves_expected_http_errors(monkeypatch):
         def approve(self, proposal_id):
             raise KeyError("Proposal not found")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", MissingCoding())
     response = TestClient(app_module.app, raise_server_exceptions=False).post(
-        "/coding/proposals/missing/approve"
+        "/coding/proposals/missing/approve", headers={"X-Aether-Token": "test-token"}
     )
 
     assert response.status_code == 404
@@ -63,9 +64,10 @@ def test_reject_coding_proposal_preserves_expected_conflicts(monkeypatch):
         def reject(self, proposal_id):
             raise CodingError("Only pending proposals can be rejected")
 
+    monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     monkeypatch.setattr(app_module, "coding", ConflictCoding())
     response = TestClient(app_module.app, raise_server_exceptions=False).post(
-        "/coding/proposals/proposal-3/reject"
+        "/coding/proposals/proposal-3/reject", headers={"X-Aether-Token": "test-token"}
     )
 
     assert response.status_code == 409
