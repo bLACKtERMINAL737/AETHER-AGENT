@@ -5,8 +5,11 @@ External adapters must verify webhook signatures before calling inbound APIs.
 """
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
+
+from cryptography.fernet import Fernet, InvalidToken
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -69,7 +72,19 @@ class MessagingStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_msg_messages_conversation
                     ON messaging_messages(conversation_id, created_at, id);
+                CREATE TABLE IF NOT EXISTS messaging_delivery_targets (
+                    message_id TEXT PRIMARY KEY REFERENCES messaging_messages(id) ON DELETE CASCADE,
+                    ciphertext BLOB NOT NULL,
+                    created_at TEXT NOT NULL
+                );
             """)
+        raw_key = os.getenv("AETHER_MESSAGING_TARGET_KEY", "").strip()
+        self._target_cipher = None
+        if raw_key:
+            try:
+                self._target_cipher = Fernet(raw_key.encode("ascii"))
+            except (ValueError, UnicodeEncodeError) as exc:
+                raise ValueError("AETHER_MESSAGING_TARGET_KEY must be a valid Fernet key") from exc
 
     def connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path, timeout=10)
@@ -129,12 +144,23 @@ class MessagingStore:
             row = con.execute("SELECT * FROM messaging_messages WHERE id=?", (message_id,)).fetchone()
         return {"conversation_id": conversation_id, "message": dict(row), "duplicate": False}
 
-    def queue_outbound(self, *, channel: str, provider_user_id: str, text: str, idempotency_key: str) -> dict:
+    def queue_outbound(
+        self, *, channel: str, provider_user_id: str, text: str,
+        idempotency_key: str, delivery_target: str | None = None,
+    ) -> dict:
         channel = _validate_channel(channel)
         text = _validate_text(text)
         if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > MAX_ID_CHARS:
             raise MessagingContractError("idempotency_key is invalid")
         idempotency_key = idempotency_key.strip()
+        if delivery_target is not None:
+            if not isinstance(delivery_target, str) or not delivery_target.strip() or len(delivery_target) > MAX_ID_CHARS:
+                raise MessagingContractError("delivery_target is invalid")
+            delivery_target = delivery_target.strip()
+        encrypted_target = (
+            self._target_cipher.encrypt(delivery_target.encode("utf-8"))
+            if delivery_target is not None and self._target_cipher is not None else None
+        )
         conversation_id = self._scope(channel, provider_user_id)
         now = _now()
         with self.connect() as con:
@@ -157,8 +183,29 @@ class MessagingStore:
                 "VALUES(?,?,?,?,?,?,?,?,?)",
                 (message_id, conversation_id, channel, "outbound", text, "accepted", idempotency_key, now, now),
             )
+            if encrypted_target is not None:
+                con.execute(
+                    "INSERT INTO messaging_delivery_targets(message_id,ciphertext,created_at) VALUES(?,?,?)",
+                    (message_id, encrypted_target, now),
+                )
             row = con.execute("SELECT * FROM messaging_messages WHERE id=?", (message_id,)).fetchone()
         return {"conversation_id": conversation_id, "message": dict(row), "duplicate": False}
+
+    def get_delivery_target(self, message_id: str) -> str | None:
+        """Decrypt a delivery target for trusted backend workers; never include it in API message views."""
+        if self._target_cipher is None:
+            return None
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT ciphertext FROM messaging_delivery_targets WHERE message_id=?",
+                (message_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            return self._target_cipher.decrypt(bytes(row["ciphertext"])).decode("utf-8")
+        except (InvalidToken, UnicodeDecodeError):
+            return None
 
     def update_outbound_status(
         self, channel: str, idempotency_key: str, status: str,
