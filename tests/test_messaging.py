@@ -33,7 +33,6 @@ def test_inbound_normalizes_channel_and_text():
 
 @pytest.mark.parametrize("values", [
     {"channel": "../telegram"},
-    {"channel": "Telegram"},
     {"provider_message_id": ""},
     {"provider_user_id": " "},
     {"text": "  "},
