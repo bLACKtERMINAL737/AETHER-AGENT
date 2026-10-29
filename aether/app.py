@@ -83,7 +83,20 @@ async def lifespan(app: FastAPI):
             logger.info(
                 "Skipped coding proposal startup recovery because another process holds the apply lock"
             )
-    yield
+    worker_task = None
+    if os.getenv("AETHER_MESSAGING_WORKER_ENABLED", "").lower() == "true":
+        worker_task = asyncio.create_task(messaging_worker_loop())
+        logger.info("Messaging outbox worker started")
+    try:
+        yield
+    finally:
+        if worker_task is not None:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Messaging outbox worker stopped")
 
 
 app = FastAPI(title="AETHER CLAW API", version="0.4.0",
@@ -448,6 +461,37 @@ async def telegram_send(request: TelegramSendRequest):
         messaging_store.update_outbound_status("telegram", request.idempotency_key, "unknown")
         raise HTTPException(status_code=502, detail="Telegram request outcome is unknown; check delivery before retrying") from exc
 
+
+
+
+
+async def messaging_worker_loop() -> None:
+    """Continuously process the durable outbox when explicitly enabled."""
+    try:
+        interval = float(os.getenv("AETHER_MESSAGING_WORKER_INTERVAL_SECONDS", "2"))
+    except ValueError:
+        interval = 2.0
+    if not math.isfinite(interval):
+        interval = 2.0
+    interval = min(max(interval, 1.0), 60.0)
+    worker_id = f"aether-claw-{os.getpid()}"
+    while True:
+        try:
+            expired = messaging_store.expire_outbound_leases()
+            if expired:
+                logger.warning("Marked %s expired messaging leases as unknown", expired)
+            result = await deliver_outbound_batch(worker_id=worker_id, limit=10)
+            if result["claimed"]:
+                logger.info(
+                    "Messaging worker batch: claimed=%s sent=%s failed=%s unknown=%s skipped=%s",
+                    result["claimed"], result["sent"], result["failed"],
+                    result["unknown"], result["skipped"],
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Messaging outbox worker iteration failed")
+        await asyncio.sleep(interval)
 
 
 async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit: int = 10) -> dict:
