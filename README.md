@@ -256,3 +256,15 @@ The last reported local verification on `main` before the durable-workflow check
 - Improve provider error classification and reliability measurements.
 - Benchmark latency, reliability, and cost before introducing automatic cost-based routing.
 - Continue hardening the local review and coding workflow.
+
+
+### Durable messaging outbox worker
+
+The outbox worker is opt-in and disabled by default. Configure `AETHER_MESSAGING_TARGET_KEY` with a persistent Fernet key before enabling it. Then set:
+
+```bash
+export AETHER_MESSAGING_WORKER_ENABLED=true
+export AETHER_MESSAGING_WORKER_INTERVAL_SECONDS=2
+```
+
+The worker sends only target-backed messages that it can atomically lease. Telegram destinations are decrypted in the backend; Discord resolves the fixed `configured-webhook` reference through `AETHER_DISCORD_WEBHOOK_URL`. Transport errors and expired leases become `unknown` and are not automatically retried because delivery may already have occurred. The worker stops with the FastAPI application. Run one application worker process against a SQLite database; multi-process deployment needs a separately evaluated worker topology.
