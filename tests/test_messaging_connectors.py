@@ -100,16 +100,23 @@ async def test_discord_send_does_not_retry_unknown_idempotency_key(monkeypatch, 
         "AETHER_DISCORD_WEBHOOK_URL",
         "https://discord.com/api/webhooks/123456/secret-token",
     )
-    FakeAsyncClient.response = FakeResponse(200, {"id": "discord-msg-2"})
-    with pytest.raises(HTTPException) as error:
-        await app_module.discord_send(
-            app_module.DiscordSendRequest(text="hello", idempotency_key="same-key")
-        ) if False else _raise_unknown_after_first_send()
-    assert error.value.status_code == 409
 
+    class BrokenClient(FakeAsyncClient):
+        async def post(self, url, **kwargs):
+            raise httpx.ConnectError("connection dropped")
 
-async def _raise_unknown_after_first_send():
-    raise HTTPException(status_code=409, detail="test placeholder")
+    monkeypatch.setattr(app_module.httpx, "AsyncClient", BrokenClient)
+    request = app_module.DiscordSendRequest(text="hello", idempotency_key="same-key")
+    with pytest.raises(HTTPException) as first_error:
+        await app_module.discord_send(request)
+    assert first_error.value.status_code == 502
+    assert isolated_store.get_outbound("discord", "same-key")["status"] == "unknown"
+    call_count = len(FakeAsyncClient.calls)
+
+    with pytest.raises(HTTPException) as retry_error:
+        await app_module.discord_send(request)
+    assert retry_error.value.status_code == 409
+    assert len(FakeAsyncClient.calls) == call_count
 
 
 @pytest.mark.asyncio
