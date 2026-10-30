@@ -257,7 +257,7 @@ class MessagingStore:
                    WHERE m.direction='outbound' AND m.status='accepted'
                      AND l.message_id IS NULL
                      AND (r.message_id IS NULL OR
-                          (r.next_attempt_at <= ? AND r.retry_count < r.max_retries))
+                          (r.next_attempt_at <= ? AND r.retry_count <= r.max_retries))
                    ORDER BY COALESCE(r.next_attempt_at, m.created_at), m.id LIMIT ?""",
                 (now, limit),
             ).fetchall()
