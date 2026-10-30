@@ -26,7 +26,7 @@ class PlanningAndSpecialistRouter:
     async def chat_with_tools(self, message, task_type, **kwargs):
         if self.fail_role and f"You are the {self.fail_role} specialist" in message:
             raise RuntimeError("simulated specialist failure")
-        return {"answer": f"Verified result for {task_type}", "tool_calls": 0}
+        return {"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if "You are the qa_security specialist" in message else f"Verified result for {task_type}"), "tool_calls": 0}
 
 
 class NoTools:
@@ -201,9 +201,9 @@ async def test_orchestrator_runs_independent_tasks_concurrently_with_a_hard_cap(
         task = store.get_task(task_id)
         if task["title"].startswith("[qa_security]"):
             store.claim_task(task_id)
-            store.set_task_status(task_id, "succeeded", result={"answer": "QA complete"})
+            store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
             return {
-                "task_id": task_id, "status": "succeeded", "result": "QA complete",
+                "task_id": task_id, "status": "succeeded", "result": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}",
                 "tool_calls": 0, "tool_attempts": 0,
             }
         async with lock:
@@ -296,9 +296,9 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
         task = store.get_task(task_id)
         if task["title"].startswith("[qa_security]"):
             store.claim_task(task_id)
-            store.set_task_status(task_id, "succeeded", result={"answer": "reviewed"})
+            store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
             return {
-                "task_id": task_id, "status": "succeeded", "result": "reviewed",
+                "task_id": task_id, "status": "succeeded", "result": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}",
                 "tool_calls": 0, "tool_attempts": 0,
             }
         started.append(task["title"])
@@ -354,9 +354,9 @@ async def test_orchestrator_respects_configured_concurrency_limit(
         task = store.get_task(task_id)
         if task["title"].startswith("[qa_security]"):
             store.claim_task(task_id)
-            store.set_task_status(task_id, "succeeded", result={"answer": "QA complete"})
+            store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
             return {
-                "task_id": task_id, "status": "succeeded", "result": "QA complete",
+                "task_id": task_id, "status": "succeeded", "result": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}",
                 "tool_calls": 0, "tool_attempts": 0,
             }
         async with lock:
@@ -560,7 +560,7 @@ async def test_qa_timeout_preserves_durable_error_diagnostic(tmp_path, monkeypat
         if task["title"].startswith("[qa_security]"):
             qa_started.set()
             await asyncio.Event().wait()
-        store.set_task_status(task_id, "succeeded", result={"answer": "reviewed"})
+        store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
         return {
             "task_id": task_id,
             "status": "succeeded",
