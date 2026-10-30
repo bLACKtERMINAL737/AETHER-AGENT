@@ -27,8 +27,11 @@ class CodingEngine:
         ".ssh", ".aws", ".azure", ".gnupg",
     }
     EXCLUDED_SOURCE_NAMES = {
-        ".env", ".netrc", ".npmrc", ".pypirc", ".dockercfg",
-        "id_rsa", "id_ed25519", "known_hosts", "credentials", "credentials.json",
+        ".env", ".envrc", ".netrc", ".npmrc", ".pypirc", ".dockercfg",
+        "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "known_hosts",
+        "credentials", "credentials.json", "application_default_credentials.json",
+        "token", "access_token", "refresh_token", "api_key", "apikey",
+        "private_key", "private-key", "secret_key", "secret-key",
     }
     EXCLUDED_SOURCE_SUFFIXES = {
         ".pem", ".key", ".p12", ".pfx", ".p7b", ".p7c", ".p8", ".p10",
@@ -78,8 +81,15 @@ class CodingEngine:
             or name == ".env"
             or name.startswith(".env.")
             or Path(name).suffix.lower() in self.EXCLUDED_SOURCE_SUFFIXES
-            or "credential" in name
-            or "secret" in name
+            or any(
+                marker in part
+                for part in parts
+                for marker in ("credential", "secret", "private_key", "private-key")
+            )
+            or any(
+                marker in name
+                for marker in ("access_token", "refresh_token", "api_key", "apikey", "secret_key")
+            )
         ):
             raise CodingError(
                 f"Sensitive file cannot be sent to the model or included in a coding proposal: {relative}"

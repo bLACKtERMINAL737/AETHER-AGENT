@@ -590,6 +590,16 @@ def test_interrupted_apply_is_flagged_for_manual_review_after_restart(tmp_path: 
         "service-secret.txt",
         "private.pem",
         "signing.key",
+        ".envrc",
+        "id_ecdsa",
+        "id_dsa",
+        "application_default_credentials.json",
+        "access_token.json",
+        "refresh_token",
+        "api_key.txt",
+        "service_private_key.json",
+        "config/secrets/database.yml",
+        "config/credentials/production.yml",
     ],
 )
 def test_coding_source_reader_rejects_sensitive_files_before_reading(
