@@ -161,6 +161,32 @@ class SchedulerStore:
             )
             return cursor.rowcount == 1
 
+    def metrics(self) -> dict[str, Any]:
+        """Return aggregate scheduler health without exposing schedule identifiers."""
+        with self.connect() as con:
+            rows = con.execute(
+                "SELECT status, COUNT(*) AS count FROM scheduled_tasks GROUP BY status"
+            ).fetchall()
+            oldest_scheduled = con.execute(
+                "SELECT MIN(run_at) AS value FROM scheduled_tasks WHERE status='scheduled'"
+            ).fetchone()["value"]
+            oldest_running = con.execute(
+                "SELECT MIN(updated_at) AS value FROM scheduled_tasks WHERE status='running'"
+            ).fetchone()["value"]
+            oldest_unknown = con.execute(
+                "SELECT MIN(updated_at) AS value FROM scheduled_tasks WHERE status='unknown'"
+            ).fetchone()["value"]
+            total = con.execute("SELECT COUNT(*) AS count FROM scheduled_tasks").fetchone()["count"]
+        counts = {status: 0 for status in sorted(SCHEDULE_STATUSES)}
+        counts.update({row["status"]: row["count"] for row in rows})
+        return {
+            "total": total,
+            "by_status": counts,
+            "oldest_scheduled_run_at": oldest_scheduled,
+            "oldest_running_updated_at": oldest_running,
+            "oldest_unknown_updated_at": oldest_unknown,
+        }
+
     def mark_expired_claims_unknown(self, *, now: str | datetime | None = None) -> int:
         instant = _utc(now or datetime.now(timezone.utc))
         with self.connect() as con:
