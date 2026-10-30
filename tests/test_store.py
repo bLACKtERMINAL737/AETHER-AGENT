@@ -288,12 +288,12 @@ def test_session_search_matches_complete_words_not_substrings(tmp_path: Path):
 def test_session_search_finds_hyphenated_identifier_components(tmp_path: Path):
     store = TaskStore(tmp_path / "session-search.sqlite3")
     session = store.create_session("Identifier search")
-    store.add_session_message(session["id"], "user", "The project is AETHER-CLAW.")
+    store.add_session_message(session["id"], "user", "The project is MAXIMU-AGENT.")
 
     results = store.search_session_messages("CLAW")
 
     assert len(results) == 1
-    assert results[0]["content"] == "The project is AETHER-CLAW."
+    assert results[0]["content"] == "The project is MAXIMU-AGENT."
 
 
 def test_session_search_ignores_punctuation_only_query(tmp_path: Path):
