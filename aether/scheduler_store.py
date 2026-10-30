@@ -51,6 +51,19 @@ class SchedulerStore:
                 "CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due "
                 "ON scheduled_tasks(status, run_at)"
             )
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS schedule_reconciliation_audit (
+                  id TEXT PRIMARY KEY,
+                  schedule_id TEXT NOT NULL REFERENCES scheduled_tasks(id),
+                  note TEXT NOT NULL,
+                  evidence TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                )
+            """)
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS idx_schedule_audit_schedule "
+                "ON schedule_reconciliation_audit(schedule_id, created_at)"
+            )
 
     def connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
@@ -176,6 +189,41 @@ class SchedulerStore:
                 (status, task_id, result_json, error_text, instant, schedule_id, worker_id, instant),
             )
             return cursor.rowcount == 1
+
+    def record_reconciliation(self, schedule_id: str, note: str, evidence: str) -> dict[str, Any]:
+        note, evidence = note.strip(), evidence.strip()
+        if not note or len(note) > 2000 or not evidence or len(evidence) > 4000:
+            raise ValueError("note and evidence are required and must fit their size limits")
+        now = datetime.now(timezone.utc).isoformat()
+        audit_id = str(uuid4())
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT status FROM scheduled_tasks WHERE id=?", (schedule_id,)).fetchone()
+            if row is None:
+                raise KeyError("Schedule not found")
+            if row["status"] != "unknown":
+                raise ValueError("only unknown schedules can be reconciled")
+            con.execute(
+                "INSERT INTO schedule_reconciliation_audit "
+                "(id,schedule_id,note,evidence,created_at) VALUES(?,?,?,?,?)",
+                (audit_id, schedule_id, note, evidence, now),
+            )
+            saved = con.execute(
+                "SELECT id,schedule_id,note,evidence,created_at "
+                "FROM schedule_reconciliation_audit WHERE id=?", (audit_id,)
+            ).fetchone()
+            return dict(saved)
+
+    def list_reconciliation_audit(self, schedule_id: str) -> list[dict[str, Any]]:
+        with self.connect() as con:
+            if con.execute("SELECT 1 FROM scheduled_tasks WHERE id=?", (schedule_id,)).fetchone() is None:
+                raise KeyError("Schedule not found")
+            rows = con.execute(
+                "SELECT id,schedule_id,note,evidence,created_at "
+                "FROM schedule_reconciliation_audit WHERE schedule_id=? ORDER BY created_at,id",
+                (schedule_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
 
     def metrics(self) -> dict[str, Any]:
         """Return aggregate scheduler health without exposing schedule identifiers."""
