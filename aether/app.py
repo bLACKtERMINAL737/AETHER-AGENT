@@ -493,6 +493,25 @@ async def telegram_send(request: TelegramSendRequest):
 
 
 
+async def run_agent_task_with_lease_renewal(task_id: str, schedule_id: str, worker_id: str) -> None:
+    async def renew_while_running():
+        while True:
+            await asyncio.sleep(60)
+            renewed = scheduler_store.renew_claim(schedule_id, worker_id, lease_seconds=300)
+            if not renewed:
+                raise RuntimeError("Scheduler lease ownership was lost during execution")
+
+    heartbeat = asyncio.create_task(renew_while_running())
+    try:
+        await asyncio.wait_for(run_agent_task(task_id), timeout=agent_task_timeout_seconds())
+    finally:
+        heartbeat.cancel()
+        try:
+            await heartbeat
+        except asyncio.CancelledError:
+            pass
+
+
 async def scheduler_worker_loop() -> None:
     """Dispatch due schedules through the existing read-only specialist runner."""
     try:
@@ -525,7 +544,9 @@ async def scheduler_worker_loop() -> None:
                     task = store.create_task(title, str(item["input_text"]))
                     task_id = task["id"]
                     try:
-                        await asyncio.wait_for(run_agent_task(task_id), timeout=agent_task_timeout_seconds())
+                        await run_agent_task_with_lease_renewal(task_id, schedule_id, worker_id)
+                    except asyncio.CancelledError:
+                            pass
                     except asyncio.CancelledError:
                         saved = store.get_task(task_id)
                         if saved and saved["status"] in {"queued", "running"}:
