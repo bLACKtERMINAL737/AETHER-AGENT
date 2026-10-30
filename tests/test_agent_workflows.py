@@ -150,8 +150,9 @@ async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on
         if task["title"].startswith("[research]"):
             store.set_task_status(task_id, "failed", error="simulated failure")
             return {"task_id": task_id, "status": "failed", "result": "", "tool_calls": 0, "tool_attempts": 0}
-        store.set_task_status(task_id, "succeeded", result={"answer": "ok"})
-        return {"task_id": task_id, "status": "succeeded", "result": "ok", "tool_calls": 0, "tool_attempts": 0}
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "ok"
+        store.set_task_status(task_id, "succeeded", result={"answer": answer})
+        return {"task_id": task_id, "status": "succeeded", "result": answer, "tool_calls": 0, "tool_attempts": 0}
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
     result = await app_module.orchestrate_agent_work(
@@ -258,12 +259,13 @@ async def test_orchestrator_waits_for_all_prerequisites_before_dependent_task(
             assert {"[research] Prerequisite A", "[monitor] Prerequisite B"} <= completed
         store.claim_task(task_id)
         await asyncio.sleep(0.01)
-        store.set_task_status(task_id, "succeeded", result={"answer": title})
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if title.startswith("[qa_security]") else title
+        store.set_task_status(task_id, "succeeded", result={"answer": answer})
         async with lock:
             completed.add(title)
             completion_order.append(title)
         return {
-            "task_id": task_id, "status": "succeeded", "result": title,
+            "task_id": task_id, "status": "succeeded", "result": answer,
             "tool_calls": 0, "tool_attempts": 0,
         }
 
