@@ -25,7 +25,11 @@ async def test_scheduler_worker_dispatches_due_registered_specialist_once(monkey
         tasks.set_task_status(task_id, "succeeded", result={"summary": "Reviewed"})
         return {"status": "succeeded"}
 
-    async def stop_after_one_iteration(_delay):
+    real_sleep = asyncio.sleep
+
+    async def stop_after_one_iteration(delay):
+        if delay == 60:
+            await asyncio.Event().wait()
         raise asyncio.CancelledError()
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
@@ -127,8 +131,11 @@ async def test_lease_renewal_failure_cancels_in_flight_task(monkeypatch):
     started = asyncio.Event()
     cancelled = asyncio.Event()
 
+    real_sleep = asyncio.sleep
+
     async def fake_sleep(_seconds):
-        return None
+        # Yield once so the execution task starts before the lease is lost.
+        await real_sleep(0)
 
     async def long_running_task(_task_id):
         started.set()
