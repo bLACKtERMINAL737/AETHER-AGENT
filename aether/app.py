@@ -551,8 +551,6 @@ async def scheduler_worker_loop() -> None:
                     try:
                         await run_agent_task_with_lease_renewal(task_id, schedule_id, worker_id)
                     except asyncio.CancelledError:
-                            pass
-                    except asyncio.CancelledError:
                         saved = store.get_task(task_id)
                         if saved and saved["status"] in {"queued", "running"}:
                             store.set_task_status(
