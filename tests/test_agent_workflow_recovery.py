@@ -39,9 +39,9 @@ async def test_recovery_runs_only_checkpointed_queued_tasks(tmp_path, monkeypatc
         task = store.get_task(task_id_arg)
         assert task is not None and task["status"] == "queued"
         assert store.claim_task(task_id_arg)
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": "verified"})
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "verified")})
         executed.append(task_id_arg)
-        return {"task_id": task_id_arg, "status": "succeeded", "result": "verified", "tool_calls": 0, "tool_attempts": 0}
+        return {"task_id": task_id_arg, "status": "succeeded", "result": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "verified"), "tool_calls": 0, "tool_attempts": 0}
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
     result = await app_module.recover_agent_workflow(workflow_id)
@@ -70,9 +70,9 @@ async def test_recovery_never_replays_unknown_task_and_marks_partial(tmp_path, m
         task = store.get_task(task_id_arg)
         assert task is not None and task["status"] == "queued"
         assert store.claim_task(task_id_arg)
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": "reviewed"})
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "reviewed")})
         executed.append(task_id_arg)
-        return {"task_id": task_id_arg, "status": "succeeded", "result": "reviewed", "tool_calls": 0, "tool_attempts": 0}
+        return {"task_id": task_id_arg, "status": "succeeded", "result": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "reviewed"), "tool_calls": 0, "tool_attempts": 0}
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
     result = await app_module.recover_agent_workflow(workflow_id)
@@ -135,10 +135,11 @@ async def test_recovery_runs_prerequisite_with_later_plan_index_first(tmp_path, 
         assert store.claim_task(task_id_arg)
         if task_id_arg == first["id"]:
             assert second["id"] in executed, "dependent must wait for its prerequisite"
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": task["title"]})
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else task["title"]
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": answer})
         executed.append(task_id_arg)
         return {
-            "task_id": task_id_arg, "status": "succeeded", "result": task["title"],
+            "task_id": task_id_arg, "status": "succeeded", "result": answer,
             "tool_calls": 0, "tool_attempts": 0,
         }
 
@@ -279,12 +280,12 @@ async def test_recovery_accepts_not_started_qa_checkpoint_without_replaying_qa(t
         task = store.get_task(task_id_arg)
         assert task is not None and task["status"] == "queued"
         assert store.claim_task(task_id_arg)
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": "verified"})
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "verified")})
         executed.append(task_id_arg)
         return {
             "task_id": task_id_arg,
             "status": "succeeded",
-            "result": "verified",
+            "result": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "verified"),
             "tool_calls": 0,
             "tool_attempts": 0,
         }
@@ -600,9 +601,9 @@ async def test_recovery_task_timeout_marks_task_unknown_without_replay(
         assert store.claim_task(task_id_arg)
         if task_id_arg == task_id:
             await never_release.wait()
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": "reviewed"})
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "reviewed")})
         return {
-            "task_id": task_id_arg, "status": "succeeded", "result": "reviewed",
+            "task_id": task_id_arg, "status": "succeeded", "result": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "reviewed"),
             "tool_calls": 0, "tool_attempts": 0,
         }
 
@@ -642,9 +643,9 @@ async def test_recovery_qa_timeout_persists_uncertain_workflow_state(
                 "tool_calls": 0, "tool_attempts": 0,
             }
         await never_release.wait()
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": "reviewed"})
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "reviewed")})
         return {
-            "task_id": task_id_arg, "status": "succeeded", "result": "reviewed",
+            "task_id": task_id_arg, "status": "succeeded", "result": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "reviewed"),
             "tool_calls": 0, "tool_attempts": 0,
         }
 
@@ -689,11 +690,12 @@ async def test_recovery_diagnostics_cover_failed_and_uncertain_outcomes(
             else "unknown" if is_problem and problem == "task_unknown"
             else "succeeded"
         )
-        store.set_task_status(task_id_arg, status, result={"answer": "test outcome"})
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") and status == "succeeded" else "test outcome"
+        store.set_task_status(task_id_arg, status, result={"answer": answer})
         return {
             "task_id": task_id_arg,
             "status": status,
-            "result": "test outcome",
+            "result": answer,
             "tool_calls": 0,
             "tool_attempts": 0,
         }

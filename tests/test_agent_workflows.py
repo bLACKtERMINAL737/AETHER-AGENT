@@ -26,7 +26,7 @@ class PlanningAndSpecialistRouter:
     async def chat_with_tools(self, message, task_type, **kwargs):
         if self.fail_role and f"You are the {self.fail_role} specialist" in message:
             raise RuntimeError("simulated specialist failure")
-        return {"answer": f"Verified result for {task_type}", "tool_calls": 0}
+        return {"answer": ("{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if "You are the qa_security specialist" in message else f"Verified result for {task_type}"), "tool_calls": 0}
 
 
 class NoTools:
@@ -150,8 +150,9 @@ async def test_orchestrator_executes_dependencies_first_and_blocks_dependents_on
         if task["title"].startswith("[research]"):
             store.set_task_status(task_id, "failed", error="simulated failure")
             return {"task_id": task_id, "status": "failed", "result": "", "tool_calls": 0, "tool_attempts": 0}
-        store.set_task_status(task_id, "succeeded", result={"answer": "ok"})
-        return {"task_id": task_id, "status": "succeeded", "result": "ok", "tool_calls": 0, "tool_attempts": 0}
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else "ok"
+        store.set_task_status(task_id, "succeeded", result={"answer": answer})
+        return {"task_id": task_id, "status": "succeeded", "result": answer, "tool_calls": 0, "tool_attempts": 0}
 
     monkeypatch.setattr(app_module, "run_agent_task", fake_run)
     result = await app_module.orchestrate_agent_work(
@@ -201,9 +202,9 @@ async def test_orchestrator_runs_independent_tasks_concurrently_with_a_hard_cap(
         task = store.get_task(task_id)
         if task["title"].startswith("[qa_security]"):
             store.claim_task(task_id)
-            store.set_task_status(task_id, "succeeded", result={"answer": "QA complete"})
+            store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
             return {
-                "task_id": task_id, "status": "succeeded", "result": "QA complete",
+                "task_id": task_id, "status": "succeeded", "result": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}",
                 "tool_calls": 0, "tool_attempts": 0,
             }
         async with lock:
@@ -258,12 +259,13 @@ async def test_orchestrator_waits_for_all_prerequisites_before_dependent_task(
             assert {"[research] Prerequisite A", "[monitor] Prerequisite B"} <= completed
         store.claim_task(task_id)
         await asyncio.sleep(0.01)
-        store.set_task_status(task_id, "succeeded", result={"answer": title})
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if title.startswith("[qa_security]") else title
+        store.set_task_status(task_id, "succeeded", result={"answer": answer})
         async with lock:
             completed.add(title)
             completion_order.append(title)
         return {
-            "task_id": task_id, "status": "succeeded", "result": title,
+            "task_id": task_id, "status": "succeeded", "result": answer,
             "tool_calls": 0, "tool_attempts": 0,
         }
 
@@ -296,9 +298,9 @@ async def test_orchestrator_marks_timed_out_task_unknown_and_blocks_dependents(
         task = store.get_task(task_id)
         if task["title"].startswith("[qa_security]"):
             store.claim_task(task_id)
-            store.set_task_status(task_id, "succeeded", result={"answer": "reviewed"})
+            store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
             return {
-                "task_id": task_id, "status": "succeeded", "result": "reviewed",
+                "task_id": task_id, "status": "succeeded", "result": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}",
                 "tool_calls": 0, "tool_attempts": 0,
             }
         started.append(task["title"])
@@ -354,9 +356,9 @@ async def test_orchestrator_respects_configured_concurrency_limit(
         task = store.get_task(task_id)
         if task["title"].startswith("[qa_security]"):
             store.claim_task(task_id)
-            store.set_task_status(task_id, "succeeded", result={"answer": "QA complete"})
+            store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
             return {
-                "task_id": task_id, "status": "succeeded", "result": "QA complete",
+                "task_id": task_id, "status": "succeeded", "result": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}",
                 "tool_calls": 0, "tool_attempts": 0,
             }
         async with lock:
@@ -560,7 +562,7 @@ async def test_qa_timeout_preserves_durable_error_diagnostic(tmp_path, monkeypat
         if task["title"].startswith("[qa_security]"):
             qa_started.set()
             await asyncio.Event().wait()
-        store.set_task_status(task_id, "succeeded", result={"answer": "reviewed"})
+        store.set_task_status(task_id, "succeeded", result={"answer": "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}"})
         return {
             "task_id": task_id,
             "status": "succeeded",
@@ -636,3 +638,44 @@ def test_http_exception_diagnostic_keeps_non_sensitive_detail():
         phase="Agent task",
     )
     assert message == "Provider is unavailable"
+
+@pytest.mark.parametrize(
+    ("qa_answer", "expected_verdict", "expected_status"),
+    [
+        ('{"verdict":"PASS","summary":"Evidence is sufficient.","findings":[{"severity":"low","title":"Minor note","detail":"Non-blocking."}]}', "PASS", "succeeded"),
+        ('{"verdict":"PASS","summary":"A critical issue remains.","findings":[{"severity":"critical","title":"Unsafe behavior","detail":"Must be fixed."}]}', "NEEDS_ATTENTION", "partial"),
+        ("The review looks good to me.", "UNVERIFIED", "partial"),
+        ('{"verdict":"NEEDS_ATTENTION","summary":"Important evidence is missing.","findings":[{"severity":"high","title":"Missing verification","detail":"No test evidence."}]}', "NEEDS_ATTENTION", "partial"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_qa_quality_gate_requires_explicit_structured_pass(
+    tmp_path, monkeypatch, qa_answer, expected_verdict, expected_status
+):
+    store, _router = configure(monkeypatch, tmp_path)
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert task is not None
+        assert store.claim_task(task_id)
+        is_qa = task["title"].startswith("[qa_security]")
+        answer = qa_answer if is_qa else "Specialist evidence collected."
+        store.set_task_status(
+            task_id, "succeeded",
+            result={"role": "qa_security" if is_qa else "research", "answer": answer},
+        )
+        return {
+            "task_id": task_id, "status": "succeeded", "result": answer,
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Inspect implementation and verify its quality")
+    )
+
+    assert result["status"] == expected_status
+    assert result["qa_review"]["verdict"] == expected_verdict
+    assert result["diagnostics"]["qa_verdict"] == expected_verdict
+    if expected_status == "partial":
+        assert any(item["category"] == "qa_quality_gate" for item in result["diagnostics"]["failures"])
