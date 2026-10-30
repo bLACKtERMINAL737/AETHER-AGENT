@@ -145,6 +145,22 @@ class SchedulerStore:
                     claimed.append(dict(claimed_row))
         return claimed
 
+    def renew_claim(self, schedule_id: str, worker_id: str, *,
+                    lease_seconds: int = 300,
+                    now: str | datetime | None = None) -> bool:
+        """Extend an active lease only while its current owner still holds it."""
+        if not 1 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 1 and 3600")
+        instant = _utc(now or datetime.now(timezone.utc))
+        expires = (datetime.fromisoformat(instant) + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as con:
+            cursor = con.execute(
+                "UPDATE scheduled_tasks SET lease_expires_at=?,updated_at=? "
+                "WHERE id=? AND status='running' AND lease_owner=? AND lease_expires_at>?",
+                (expires, instant, schedule_id, worker_id, instant),
+            )
+            return cursor.rowcount == 1
+
     def finish_claim(self, schedule_id: str, worker_id: str, status: str, *,
                      task_id: str | None = None, result_json: str | None = None,
                      error_text: str | None = None,
