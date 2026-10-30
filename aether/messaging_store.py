@@ -495,10 +495,37 @@ class MessagingStore:
         for counts in by_channel.values():
             for status in ("accepted", "sent", "delivered", "failed", "unknown"):
                 counts.setdefault(status, 0)
+        with self.connect() as con:
+            queue = con.execute(
+                """SELECT
+                     SUM(CASE WHEN m.status='accepted' AND l.message_id IS NULL THEN 1 ELSE 0 END) AS pending,
+                     SUM(CASE WHEN l.message_id IS NOT NULL THEN 1 ELSE 0 END) AS leased,
+                     SUM(CASE WHEN m.status='unknown' THEN 1 ELSE 0 END) AS unknown,
+                     MIN(CASE WHEN m.status='accepted' AND l.message_id IS NULL THEN m.created_at END) AS oldest_pending_at,
+                     SUM(CASE WHEN r.message_id IS NOT NULL THEN 1 ELSE 0 END) AS scheduled_retries
+                   FROM messaging_messages m
+                   LEFT JOIN messaging_delivery_leases l ON l.message_id=m.id
+                   LEFT JOIN messaging_delivery_retries r ON r.message_id=m.id
+                   WHERE m.direction='outbound'"""
+            ).fetchone()
+            retry_rows = con.execute(
+                """SELECT COUNT(*) AS count, MIN(next_attempt_at) AS next_attempt_at
+                   FROM messaging_delivery_retries r
+                   JOIN messaging_messages m ON m.id=r.message_id
+                   WHERE m.status='accepted'"""
+            ).fetchone()
         return {
             "total_outbound": sum(by_status.values()),
             "by_status": by_status,
             "by_channel": by_channel,
+            "queue": {
+                "pending": queue["pending"] or 0,
+                "leased": queue["leased"] or 0,
+                "unknown": queue["unknown"] or 0,
+                "scheduled_retries": queue["scheduled_retries"] or 0,
+                "next_retry_at": retry_rows["next_attempt_at"],
+                "oldest_pending_at": queue["oldest_pending_at"],
+            },
             "recent_failures": [dict(row) for row in recent_failures[:20]],
         }
 
