@@ -293,7 +293,7 @@ def test_session_search_finds_hyphenated_identifier_components(tmp_path: Path):
     results = store.search_session_messages("CLAW")
 
     assert len(results) == 1
-    assert results[0]["content"] == "The project is MAXIMU-AGENT."
+    assert results[0]["content"] == "The project is AETHER-CLAW."
 
 
 def test_session_search_ignores_punctuation_only_query(tmp_path: Path):
