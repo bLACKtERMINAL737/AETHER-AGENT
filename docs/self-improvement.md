@@ -1,4 +1,4 @@
-# AETHER CLAW Self-Improvement Engine: Safe MVP
+# Maximu Agent Self-Improvement Engine: Safe MVP
 
 ## Integrated workflow
 
