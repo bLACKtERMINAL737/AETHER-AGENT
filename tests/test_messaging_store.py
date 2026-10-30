@@ -242,3 +242,27 @@ def test_unknown_delivery_reconciliation_requires_evidence_and_is_audited(tmp_pa
     assert tuple(audit) == ("unknown", "sent", "Confirmed in provider conversation")
     with pytest.raises(ValueError, match="only unknown"):
         store.reconcile_unknown(message_id, status="failed", evidence="Checked again")
+
+
+
+def test_delivery_metrics_include_queue_depth_and_retry_schedule(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "metrics.sqlite3")
+    store.queue_outbound(
+        channel="telegram", provider_user_id="u1", text="pending",
+        idempotency_key="metrics-pending", delivery_target="100",
+    )
+    claimed = store.queue_outbound(
+        channel="telegram", provider_user_id="u2", text="leased",
+        idempotency_key="metrics-leased", delivery_target="200",
+    )
+    store.claim_outbound(worker_id="metrics-worker")
+    metrics = store.delivery_metrics()
+    assert metrics["queue"]["leased"] == 1
+    assert metrics["queue"]["pending"] == 1
+    assert metrics["queue"]["unknown"] == 0
+    assert metrics["queue"]["scheduled_retries"] == 0
+    assert "text" not in metrics["queue"]
+    assert "message_id" not in metrics["queue"]
