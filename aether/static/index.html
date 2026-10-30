@@ -244,6 +244,30 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
     </div>
   </section>
 
+  <section class="panel" style="margin-top:16px" aria-labelledby="schedulerHeading">
+    <div class="top">
+      <div><h2 id="schedulerHeading">Scheduler</h2><div class="muted small">Create and monitor durable schedules. Scheduled tasks must use a registered specialist title prefix, for example [research] Summarize release notes. The worker is disabled unless explicitly enabled on the backend.</div></div>
+      <button id="refreshSchedules" type="button">Refresh schedules</button>
+    </div>
+    <div class="task-grid">
+      <div>
+        <label for="scheduleTitle">Specialist task title</label>
+        <input id="scheduleTitle" maxlength="200" placeholder="[research] Summarize release notes">
+        <label for="scheduleInput">Task description</label>
+        <textarea id="scheduleInput" maxlength="20000" placeholder="Describe the read-only specialist task"></textarea>
+        <label for="scheduleRunAt">Run at (your local time)</label>
+        <input id="scheduleRunAt" type="datetime-local">
+        <div class="actions"><button class="primary" id="createSchedule" type="button">Create schedule</button></div>
+        <div id="schedulerStatus" class="status" role="status" aria-live="polite"></div>
+      </div>
+      <div>
+        <h3>Scheduler health</h3>
+        <div id="schedulerMetrics" class="task-detail" aria-live="polite">Loading scheduler metrics…</div>
+        <h3 style="margin-top:14px">Schedules</h3>
+        <div id="scheduleList" class="task-list" aria-live="polite">Loading schedules…</div>
+      </div>
+    </div>
+  </section>
   <section class="panel" style="margin-top:16px" aria-labelledby="tasksHeading">
     <div class="top"><div><h2 id="tasksHeading">Task Journal</h2><div class="muted">Review durable task records and tool execution outcomes.</div></div><button id="refreshTasks">Refresh tasks</button></div>
     <div class="task-grid">
@@ -281,6 +305,61 @@ const $ = id => document.getElementById(id);
 
 let currentProposal = null;
 function setStatus(id, text, kind=""){const el=$(id);el.textContent=text;el.className="status "+kind;}
+
+function localDateTimeToIso(value){
+ const date=new Date(value);
+ if(!value || Number.isNaN(date.getTime())) throw new Error("Choose a valid run time.");
+ return date.toISOString();
+}
+function renderScheduleList(items){
+ const host=$("scheduleList");host.replaceChildren();
+ if(!items.length){host.textContent="No schedules yet.";return;}
+ for(const item of items){
+  const card=document.createElement("div");card.className="task-item";
+  const head=document.createElement("div");head.className="task-head";
+  const title=document.createElement("strong");title.textContent=item.title;
+  const state=document.createElement("span");state.className="task-state "+item.status;state.textContent=item.status;
+  head.append(title,state);card.append(head);
+  const meta=document.createElement("div");meta.className="muted small";meta.textContent="Run at "+new Date(item.run_at).toLocaleString();card.append(meta);
+  if(item.task_id){const task=document.createElement("div");task.className="muted small";task.textContent="Task record: "+item.task_id;card.append(task);}
+  if(item.error_text){const error=document.createElement("div");error.className="muted small";error.textContent=item.error_text;card.append(error);}
+  if(item.status==="scheduled"){
+   const cancel=document.createElement("button");cancel.type="button";cancel.textContent="Cancel schedule";cancel.style.marginTop="8px";
+   cancel.addEventListener("click",async()=>{
+    cancel.disabled=true;
+    try{await api("/scheduler/schedules/"+encodeURIComponent(item.id),{method:"DELETE"});setStatus("schedulerStatus","Schedule cancelled.","good");await refreshSchedules();}
+    catch(e){setStatus("schedulerStatus",e.message,"bad");cancel.disabled=false;}
+   });
+   card.append(cancel);
+  }
+  host.append(card);
+ }
+}
+async function refreshSchedules(){
+ try{
+  const [list,metrics]=await Promise.all([api("/scheduler/schedules?limit=100"),api("/scheduler/metrics")]);
+  renderScheduleList(list.schedules||[]);
+  $("schedulerMetrics").textContent=JSON.stringify(metrics,null,2);
+ }catch(e){$("scheduleList").textContent=e.message;$("schedulerMetrics").textContent="Unable to load scheduler metrics.";}
+}
+$("refreshSchedules")?.addEventListener("click",refreshSchedules);
+$("createSchedule")?.addEventListener("click",async()=>{
+ const button=$("createSchedule");button.disabled=true;
+ try{
+  const runAt=localDateTimeToIso($("scheduleRunAt").value);
+  const idempotencyKey=(crypto.randomUUID?crypto.randomUUID():Date.now()+"-"+Math.random().toString(16).slice(2));
+  await api("/scheduler/schedules",{method:"POST",body:JSON.stringify({
+   title:$("scheduleTitle").value.trim(),
+   input:$("scheduleInput").value.trim(),
+   run_at:runAt,
+   idempotency_key:idempotencyKey
+  })});
+  $("scheduleTitle").value="";$("scheduleInput").value="";$("scheduleRunAt").value="";
+  setStatus("schedulerStatus","Schedule created. It will run only if the backend scheduler worker is enabled.","good");
+  await refreshSchedules();
+ }catch(e){setStatus("schedulerStatus",e.message,"bad");}
+ finally{button.disabled=false;}
+});
 async function api(url, options={}) {
   const token = sessionStorage.getItem("aetherApiToken") || "";
   const headers = {"Content-Type":"application/json", ...(token ? {"X-Aether-Token":token} : {}), ...(options.headers || {})};
