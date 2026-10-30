@@ -86,6 +86,21 @@ class MessagingStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_msg_delivery_leases_until
                     ON messaging_delivery_leases(lease_until);
+                CREATE TABLE IF NOT EXISTS messaging_delivery_retries (
+                    message_id TEXT PRIMARY KEY REFERENCES messaging_messages(id) ON DELETE CASCADE,
+                    retry_count INTEGER NOT NULL DEFAULT 0 CHECK(retry_count >= 0),
+                    max_retries INTEGER NOT NULL DEFAULT 3 CHECK(max_retries BETWEEN 0 AND 5),
+                    next_attempt_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS messaging_delivery_reconciliations (
+                    id TEXT PRIMARY KEY,
+                    message_id TEXT NOT NULL REFERENCES messaging_messages(id) ON DELETE CASCADE,
+                    previous_status TEXT NOT NULL,
+                    new_status TEXT NOT NULL,
+                    evidence TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
             """)
         raw_key = os.getenv("AETHER_MESSAGING_TARGET_KEY", "").strip()
         self._target_cipher = None
@@ -238,10 +253,13 @@ class MessagingStore:
                 """SELECT m.* FROM messaging_messages m
                    JOIN messaging_delivery_targets t ON t.message_id=m.id
                    LEFT JOIN messaging_delivery_leases l ON l.message_id=m.id
+                   LEFT JOIN messaging_delivery_retries r ON r.message_id=m.id
                    WHERE m.direction='outbound' AND m.status='accepted'
                      AND l.message_id IS NULL
-                   ORDER BY m.created_at, m.id LIMIT ?""",
-                (limit,),
+                     AND (r.message_id IS NULL OR
+                          (r.next_attempt_at <= ? AND r.retry_count <= r.max_retries))
+                   ORDER BY COALESCE(r.next_attempt_at, m.created_at), m.id LIMIT ?""",
+                (now, limit),
             ).fetchall()
             for row in rows:
                 con.execute(
@@ -309,6 +327,91 @@ class MessagingStore:
                 )
                 con.execute("DELETE FROM messaging_delivery_leases WHERE message_id=?", (message_id,))
         return len(ids)
+
+    def retry_outbound_lease(
+        self, message_id: str, *, worker_id: str, delay_seconds: int,
+        max_retries: int = 3,
+    ) -> str:
+        """Schedule a bounded retry only after a provider's explicit rate-limit response."""
+        if not 1 <= delay_seconds <= 300:
+            raise ValueError("delay_seconds must be between 1 and 300")
+        if not 0 <= max_retries <= 5:
+            raise ValueError("max_retries must be between 0 and 5")
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        next_attempt = (now_dt + timedelta(seconds=delay_seconds)).isoformat()
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            lease = con.execute(
+                "SELECT lease_owner, lease_until FROM messaging_delivery_leases WHERE message_id=?",
+                (message_id,),
+            ).fetchone()
+            if (lease is None or lease["lease_owner"] != worker_id
+                    or lease["lease_until"] < now):
+                return "lease_lost"
+            existing = con.execute(
+                "SELECT retry_count FROM messaging_delivery_retries WHERE message_id=?",
+                (message_id,),
+            ).fetchone()
+            retry_count = (existing["retry_count"] if existing else 0) + 1
+            if retry_count > max_retries:
+                con.execute(
+                    "UPDATE messaging_messages SET status='failed', updated_at=? WHERE id=? AND status='accepted'",
+                    (now, message_id),
+                )
+                con.execute("DELETE FROM messaging_delivery_leases WHERE message_id=?", (message_id,))
+                return "exhausted"
+            con.execute(
+                """INSERT INTO messaging_delivery_retries(message_id,retry_count,max_retries,next_attempt_at,updated_at)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(message_id) DO UPDATE SET
+                     retry_count=excluded.retry_count,
+                     max_retries=excluded.max_retries,
+                     next_attempt_at=excluded.next_attempt_at,
+                     updated_at=excluded.updated_at""",
+                (message_id, retry_count, max_retries, next_attempt, now),
+            )
+            con.execute("DELETE FROM messaging_delivery_leases WHERE message_id=?", (message_id,))
+            return "scheduled"
+
+    def reconcile_unknown(
+        self, message_id: str, *, status: str, evidence: str,
+        provider_message_id: str | None = None,
+    ) -> dict:
+        """Manually resolve an unknown delivery with an auditable operator note."""
+        if status not in {"sent", "delivered", "failed"}:
+            raise MessagingContractError("reconciliation status must be sent, delivered, or failed")
+        if not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 1000:
+            raise MessagingContractError("reconciliation evidence is required and must be at most 1000 characters")
+        if provider_message_id is not None and (
+            not isinstance(provider_message_id, str) or not provider_message_id.strip()
+            or len(provider_message_id) > MAX_ID_CHARS
+        ):
+            raise MessagingContractError("provider_message_id is invalid")
+        now = _now()
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                "SELECT status FROM messaging_messages WHERE id=? AND direction='outbound'",
+                (message_id,),
+            ).fetchone()
+            if row is None:
+                raise MessagingContractError("outbound message not found")
+            if row["status"] != "unknown":
+                raise MessagingContractError("only unknown messages can be reconciled")
+            con.execute(
+                """UPDATE messaging_messages SET status=?,
+                   provider_message_id=COALESCE(?,provider_message_id), updated_at=?
+                   WHERE id=? AND status='unknown'""",
+                (status, provider_message_id, now, message_id),
+            )
+            con.execute(
+                """INSERT INTO messaging_delivery_reconciliations
+                   (id,message_id,previous_status,new_status,evidence,created_at)
+                   VALUES(?,?,?,?,?,?)""",
+                (str(uuid4()), message_id, "unknown", status, evidence.strip(), now),
+            )
+            return {"message_id": message_id, "status": status, "reconciled_at": now}
 
     def update_outbound_status(
         self, channel: str, idempotency_key: str, status: str,

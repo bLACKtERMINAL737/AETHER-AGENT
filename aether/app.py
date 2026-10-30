@@ -26,6 +26,7 @@ from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .messaging_store import MessagingStore
+from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
@@ -207,6 +208,12 @@ class ChatRequest(BaseModel):
         if not valid_signature:
             raise ValueError("image bytes do not match the declared image type")
         return value
+
+
+class MessagingReconcileRequest(BaseModel):
+    status: Literal["sent", "delivered", "failed"]
+    evidence: str = Field(min_length=1, max_length=1000)
+    provider_message_id: str | None = Field(default=None, max_length=MAX_ID_CHARS)
 
 
 class DiscordSendRequest(BaseModel):
@@ -483,8 +490,8 @@ async def messaging_worker_loop() -> None:
             result = await deliver_outbound_batch(worker_id=worker_id, limit=10)
             if result["claimed"]:
                 logger.info(
-                    "Messaging worker batch: claimed=%s sent=%s failed=%s unknown=%s skipped=%s",
-                    result["claimed"], result["sent"], result["failed"],
+                    "Messaging worker batch: claimed=%s sent=%s retried=%s failed=%s unknown=%s skipped=%s",
+                    result["claimed"], result["sent"], result["retried"], result["failed"],
                     result["unknown"], result["skipped"],
                 )
         except asyncio.CancelledError:
@@ -497,7 +504,7 @@ async def messaging_worker_loop() -> None:
 async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit: int = 10) -> dict:
     """Deliver one leased outbox batch. Expired/uncertain sends are never auto-retried."""
     claimed = messaging_store.claim_outbound(worker_id=worker_id, limit=limit, lease_seconds=60)
-    outcomes = {"claimed": len(claimed), "sent": 0, "failed": 0, "unknown": 0, "skipped": 0}
+    outcomes = {"claimed": len(claimed), "sent": 0, "retried": 0, "failed": 0, "unknown": 0, "skipped": 0}
     for item in claimed:
         message_id = item["id"]
         channel = item["channel"]
@@ -541,6 +548,23 @@ async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit
                     url, json=payload,
                     params={"wait": "true"} if channel == "discord" else None,
                 )
+            if response.status_code == 429:
+                retry_after = 5
+                try:
+                    retry_after = int(response.headers.get("Retry-After", "5"))
+                except (TypeError, ValueError):
+                    pass
+                retry_result = messaging_store.retry_outbound_lease(
+                    message_id, worker_id=worker_id,
+                    delay_seconds=min(max(retry_after, 1), 300), max_retries=3,
+                )
+                if retry_result == "scheduled":
+                    outcomes["retried"] += 1
+                elif retry_result == "exhausted":
+                    outcomes["failed"] += 1
+                else:
+                    outcomes["skipped"] += 1
+                continue
             body = response.json() if response.content else {}
             if channel == "telegram":
                 ok = response.is_success and isinstance(body, dict) and body.get("ok") is True
@@ -566,6 +590,18 @@ async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit
             else:
                 outcomes["skipped"] += 1
     return outcomes
+
+
+@app.post("/messaging/outbox/{message_id}/reconcile")
+def reconcile_messaging_delivery(message_id: str, request: MessagingReconcileRequest):
+    """Resolve an uncertain delivery after checking the provider's actual state."""
+    try:
+        return messaging_store.reconcile_unknown(
+            message_id, status=request.status, evidence=request.evidence,
+            provider_message_id=request.provider_message_id,
+        )
+    except MessagingContractError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/messaging/delivery/metrics")

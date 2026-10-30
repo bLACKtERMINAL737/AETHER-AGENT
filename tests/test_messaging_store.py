@@ -176,3 +176,69 @@ def test_expired_lease_becomes_unknown_not_automatically_requeued(tmp_path: Path
     assert store.expire_outbound_leases() == 1
     assert store.get_outbound("telegram", "claim-expiry")["status"] == "unknown"
     assert store.claim_outbound(worker_id="worker-b") == []
+
+
+
+def test_rate_limit_retry_is_delayed_and_bounded(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "retry.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u", text="hello",
+        idempotency_key="retry-1", delivery_target="123",
+    )
+    message_id = queued["message"]["id"]
+    assert store.claim_outbound(worker_id="w1")
+    assert store.retry_outbound_lease(
+        message_id, worker_id="w1", delay_seconds=30, max_retries=2
+    ) == "scheduled"
+    assert store.claim_outbound(worker_id="w2") == []
+    with store.connect() as con:
+        con.execute(
+            "UPDATE messaging_delivery_retries SET next_attempt_at=? WHERE message_id=?",
+            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), message_id),
+        )
+    assert store.claim_outbound(worker_id="w2")
+    assert store.retry_outbound_lease(
+        message_id, worker_id="w2", delay_seconds=1, max_retries=2
+    ) == "scheduled"
+    with store.connect() as con:
+        con.execute(
+            "UPDATE messaging_delivery_retries SET next_attempt_at=? WHERE message_id=?",
+            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), message_id),
+        )
+    assert store.claim_outbound(worker_id="w3")
+    assert store.retry_outbound_lease(
+        message_id, worker_id="w3", delay_seconds=1, max_retries=2
+    ) == "exhausted"
+    assert store.get_outbound("telegram", "retry-1")["status"] == "failed"
+
+
+def test_unknown_delivery_reconciliation_requires_evidence_and_is_audited(tmp_path: Path):
+    store = MessagingStore(tmp_path / "reconcile.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u", text="hello",
+        idempotency_key="unknown-1",
+    )
+    store.update_outbound_status("telegram", "unknown-1", "unknown")
+    message_id = queued["message"]["id"]
+    with pytest.raises(ValueError, match="evidence"):
+        store.reconcile_unknown(message_id, status="sent", evidence=" ")
+    result = store.reconcile_unknown(
+        message_id, status="sent", evidence="Confirmed in provider conversation",
+        provider_message_id="provider-123",
+    )
+    assert result["status"] == "sent"
+    saved = store.get_outbound("telegram", "unknown-1")
+    assert saved["status"] == "sent"
+    assert saved["provider_message_id"] == "provider-123"
+    with store.connect() as con:
+        audit = con.execute(
+            "SELECT previous_status,new_status,evidence FROM messaging_delivery_reconciliations WHERE message_id=?",
+            (message_id,),
+        ).fetchone()
+    assert tuple(audit) == ("unknown", "sent", "Confirmed in provider conversation")
+    with pytest.raises(ValueError, match="only unknown"):
+        store.reconcile_unknown(message_id, status="failed", evidence="Checked again")
