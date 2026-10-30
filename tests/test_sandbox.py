@@ -127,8 +127,10 @@ def test_test_runner_bounds_captured_output_without_truncating_pipe_drain(
     sandbox = DockerTestSandbox(workspace, timeout_seconds=10)
     monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
 
+    real_popen = subprocess.Popen
+
     def fake_popen(_command, **kwargs):
-        return subprocess.Popen(
+        return real_popen(
             [
                 sys.executable, "-c",
                 "import sys; sys.stdout.write('x' * 100000 + 'END'); "
