@@ -88,3 +88,46 @@ def test_scheduler_routes_require_api_token(monkeypatch, tmp_path):
     client = make_client(monkeypatch, tmp_path)
     response = client.get("/scheduler/schedules")
     assert response.status_code == 401
+
+def test_unknown_schedule_reconciliation_audit_api(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+    created = client.post("/scheduler/schedules", json=payload(), headers=auth())
+    schedule_id = created.json()["id"]
+    scheduler = app_module.scheduler_store
+    scheduler.claim_due("test-worker", now="2026-11-01T10:01:00+00:00", lease_seconds=1)
+    scheduler.mark_expired_claims_unknown(now="2026-11-01T10:01:02+00:00")
+
+    response = client.post(
+        f"/scheduler/schedules/{schedule_id}/reconcile",
+        json={"note": "Reviewed task journal", "evidence": "No confirmed completion found."},
+        headers=auth(),
+    )
+    assert response.status_code == 200
+    assert response.json()["schedule_id"] == schedule_id
+    assert client.get(
+        f"/scheduler/schedules/{schedule_id}/audit", headers=auth()
+    ).json()["entries"][0]["note"] == "Reviewed task journal"
+    assert scheduler.get_schedule(schedule_id)["status"] == "unknown"
+
+    duplicate = client.post(
+        f"/scheduler/schedules/{schedule_id}/reconcile",
+        json={"note": "Again", "evidence": "Still uncertain."},
+        headers=auth(),
+    )
+    assert duplicate.status_code == 200
+    assert len(client.get(
+        f"/scheduler/schedules/{schedule_id}/audit", headers=auth()
+    ).json()["entries"]) == 2
+
+
+def test_reconciliation_api_rejects_pending_schedule_and_requires_auth(monkeypatch, tmp_path):
+    client = make_client(monkeypatch, tmp_path)
+    created = client.post("/scheduler/schedules", json=payload(), headers=auth())
+    schedule_id = created.json()["id"]
+    body = {"note": "Checked", "evidence": "Not due yet"}
+    assert client.post(
+        f"/scheduler/schedules/{schedule_id}/reconcile", json=body, headers=auth()
+    ).status_code == 409
+    assert client.post(
+        f"/scheduler/schedules/{schedule_id}/reconcile", json=body
+    ).status_code == 401
