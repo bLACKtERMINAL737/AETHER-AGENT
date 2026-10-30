@@ -67,7 +67,7 @@ async def test_chat_opt_in_memory_reaches_router_and_persists_turn(tmp_path, mon
     [
         ("Remember this code: CLAW-7391", "CLAW-7391"),
         ("Please remember that I prefer short answers", "I prefer short answers"),
-        ("মনে রাখো: AETHER CLAW", "AETHER CLAW"),
+        ("মনে রাখো: Maximu Agent", "Maximu Agent"),
         ("মনে রেখো আমার প্রজেক্টের নাম AETHER", "আমার প্রজেক্টের নাম AETHER"),
     ],
 )
@@ -141,7 +141,7 @@ async def test_chat_returns_only_saved_code_for_explicit_code_recall(tmp_path, m
     store = TaskStore(tmp_path / "concise-recall.sqlite3")
     store.add_memory(
         "note",
-        "AETHER CLAW",
+        "Maximu Agent",
         source="explicit_chat_request",
         tags=["chat", "user-requested"],
     )
@@ -248,7 +248,7 @@ async def test_chat_general_recall_returns_explicitly_saved_project_fact(tmp_pat
     store = TaskStore(tmp_path / "general-recall.sqlite3")
     store.add_memory(
         "note",
-        "My project name is AETHER CLAW",
+        "My project name is Maximu Agent",
         source="explicit_chat_request",
         tags=["chat", "user-requested"],
     )
@@ -262,7 +262,7 @@ async def test_chat_general_recall_returns_explicitly_saved_project_fact(tmp_pat
         )
     )
 
-    assert result["answer"] == "My project name is AETHER CLAW"
+    assert result["answer"] == "My project name is Maximu Agent"
 
 
 @pytest.mark.asyncio
@@ -270,7 +270,7 @@ async def test_chat_general_recall_does_not_invent_missing_facts(tmp_path, monke
     store = TaskStore(tmp_path / "general-recall-empty.sqlite3")
     store.add_memory(
         "note",
-        "My project name is AETHER CLAW",
+        "My project name is Maximu Agent",
         source="explicit_chat_request",
         tags=["chat", "user-requested"],
     )
@@ -325,7 +325,7 @@ async def test_chat_general_recall_missing_fact_fails_closed(tmp_path, monkeypat
     store = TaskStore(tmp_path / "general-recall-missing.sqlite3")
     store.add_memory(
         "note",
-        "My project name is AETHER CLAW",
+        "My project name is Maximu Agent",
         source="explicit_chat_request",
         tags=["chat", "user-requested"],
     )
