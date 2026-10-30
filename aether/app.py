@@ -1363,6 +1363,9 @@ async def recover_agent_workflow(workflow_id: str):
                 })
         final_qa = checkpoint.get("qa_review")
         qa_status = final_qa.get("status") if isinstance(final_qa, dict) else None
+        if isinstance(final_qa, dict) and qa_status == "succeeded":
+            final_qa.update(parse_qa_verdict(final_qa.get("result", "")))
+        qa_verdict = final_qa.get("verdict", "UNVERIFIED") if isinstance(final_qa, dict) else "UNVERIFIED"
         if qa_status and qa_status != "succeeded":
             failures.append({
                 "task_id": final_qa.get("task_id"),
@@ -1371,9 +1374,18 @@ async def recover_agent_workflow(workflow_id: str):
                 "category": "qa_review_failed",
                 "reason": str(final_qa.get("error") or "QA review did not succeed.")[:500],
             })
+        if qa_status == "succeeded" and qa_verdict != "PASS":
+            failures.append({
+                "task_id": final_qa.get("task_id"),
+                "title": "QA quality gate",
+                "status": qa_verdict.lower(),
+                "category": "qa_quality_gate",
+                "reason": str(final_qa.get("summary") or "QA did not explicitly approve this workflow.")[:500],
+            })
         checkpoint["diagnostics"] = {
             "task_counts": task_counts,
             "qa_status": qa_status,
+            "qa_verdict": qa_verdict,
             "failure_count": len(failures),
             "failures": failures,
         }
@@ -1381,6 +1393,7 @@ async def recover_agent_workflow(workflow_id: str):
             all(item.get("status") == "succeeded" for item in outcomes)
             and isinstance(final_qa, dict)
             and final_qa.get("status") == "succeeded"
+            and qa_verdict == "PASS"
         )
         final_status = "succeeded" if all_ok else "partial"
         store.update_workflow(
@@ -1490,6 +1503,36 @@ async def recover_agent_workflow(workflow_id: str):
         raise
 
 
+def parse_qa_verdict(result: Any) -> dict[str, Any]:
+    """Parse a strict QA verdict; malformed output never passes."""
+    answer = result.get("answer") if isinstance(result, dict) else result
+    if not isinstance(answer, str) or not answer.strip():
+        return {"verdict": "UNVERIFIED", "summary": "QA returned no structured verdict.", "findings": []}
+    raw = answer.strip()
+    if raw.startswith(chr(96) * 3):
+        raw = re.sub(r"^" + chr(96) * 3 + r"(?:json)?\s*|\s*" + chr(96) * 3 + r"$", "", raw, flags=re.IGNORECASE).strip()
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return {"verdict": "UNVERIFIED", "summary": "QA output was not valid JSON.", "findings": []}
+    if not isinstance(payload, dict):
+        return {"verdict": "UNVERIFIED", "summary": "QA output must be a JSON object.", "findings": []}
+    verdict, summary, findings = payload.get("verdict"), payload.get("summary"), payload.get("findings")
+    if not isinstance(verdict, str) or verdict.upper() not in {"PASS", "NEEDS_ATTENTION"} or not isinstance(summary, str) or not summary.strip() or not isinstance(findings, list):
+        return {"verdict": "UNVERIFIED", "summary": "QA JSON did not match the required schema.", "findings": []}
+    normalized = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            return {"verdict": "UNVERIFIED", "summary": "QA findings contained an invalid entry.", "findings": []}
+        severity = finding.get("severity")
+        if not isinstance(severity, str) or severity.lower() not in {"critical", "high", "medium", "low"}:
+            return {"verdict": "UNVERIFIED", "summary": "QA finding severity was missing or invalid.", "findings": []}
+        normalized.append({**finding, "severity": severity.lower()})
+    blocking = sum(1 for item in normalized if item["severity"] in {"critical", "high"})
+    final_verdict = "NEEDS_ATTENTION" if blocking else verdict.upper()
+    return {"verdict": final_verdict, "summary": summary.strip()[:1000], "findings": normalized[:50], "blocking_findings": blocking}
+
+
 @app.post("/agents/orchestrate")
 async def orchestrate_agent_work(request: AgentPlanRequest):
     """Execute dependency-ready tasks concurrently with bounded, durable checkpoints."""
@@ -1585,6 +1628,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                     "reason": str(reason)[:500],
                 })
         qa_status = qa_review.get("status") if isinstance(qa_review, dict) else None
+        qa_verdict = qa_review.get("verdict", "UNVERIFIED") if isinstance(qa_review, dict) else "UNVERIFIED"
         if qa_status and qa_status != "succeeded":
             qa_reason = qa_review.get("error") or "QA review did not succeed."
             failures.append({
@@ -1594,9 +1638,18 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "category": "qa_review_failed",
                 "reason": str(qa_reason)[:500],
             })
+        elif qa_status == "succeeded" and qa_verdict != "PASS":
+            failures.append({
+                "task_id": qa_review.get("task_id"),
+                "title": "QA quality gate",
+                "status": qa_verdict.lower(),
+                "category": "qa_quality_gate",
+                "reason": str(qa_review.get("summary") or "QA did not explicitly approve this workflow.")[:500],
+            })
         return {
             "task_counts": counts,
             "qa_status": qa_status,
+            "qa_verdict": qa_verdict,
             "failure_count": len(failures),
             "failures": failures,
         }
@@ -1789,7 +1842,11 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         outcomes = ordered_outcomes()
         qa = store.create_task(
             "[qa_security] Review specialist results",
-            "Review this goal and the specialist results for correctness, security risks, and missing tests.\n"
+            "Review this goal and the specialist results independently for correctness, security risks, and missing tests. "
+            "Do not assume a task is correct merely because it reports success. Verify evidence and identify unsupported claims. "
+            "Return ONLY JSON with exact shape: {\\"verdict\\":\\"PASS|NEEDS_ATTENTION\\",\\"summary\\":\\"...\\",\\"findings\\":[{\\"severity\\":\\"critical|high|medium|low\\",\\"title\\":\\"...\\",\\"detail\\":\\"...\\"}]}. "
+            "Use PASS only when no critical or high-severity issue remains; otherwise use NEEDS_ATTENTION. "
+            "If evidence is insufficient, use NEEDS_ATTENTION and explain why.\n"
             + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False),
         )
         checkpoint["qa_review"] = {"task_id": qa["id"], "status": "queued"}
@@ -1803,6 +1860,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 "result": qa_result.get("result", ""),
                 "tool_calls": qa_result.get("tool_calls", 0),
                 "tool_attempts": qa_result.get("tool_attempts", 0),
+                **parse_qa_verdict(qa_result.get("result", "")),
             }
         except asyncio.CancelledError:
             saved_qa = store.get_task(qa["id"])
@@ -1831,13 +1889,13 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             }
         checkpoint["qa_review"] = review
         checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
-        all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded"
+        all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded" and review.get("verdict") == "PASS"
         final_status = "succeeded" if all_ok else "partial"
         store.update_workflow(
             workflow_id,
             final_status,
             results=checkpoint,
-            error=None if all_ok else "One or more specialist tasks or the QA review did not succeed.",
+            error=None if all_ok else "One or more specialist tasks failed or the QA quality gate did not explicitly pass.",
         )
         return {
             "workflow_id": workflow_id,

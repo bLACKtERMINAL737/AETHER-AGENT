@@ -636,3 +636,44 @@ def test_http_exception_diagnostic_keeps_non_sensitive_detail():
         phase="Agent task",
     )
     assert message == "Provider is unavailable"
+
+@pytest.mark.parametrize(
+    ("qa_answer", "expected_verdict", "expected_status"),
+    [
+        ('{"verdict":"PASS","summary":"Evidence is sufficient.","findings":[{"severity":"low","title":"Minor note","detail":"Non-blocking."}]}', "PASS", "succeeded"),
+        ('{"verdict":"PASS","summary":"A critical issue remains.","findings":[{"severity":"critical","title":"Unsafe behavior","detail":"Must be fixed."}]}', "NEEDS_ATTENTION", "partial"),
+        ("The review looks good to me.", "UNVERIFIED", "partial"),
+        ('{"verdict":"NEEDS_ATTENTION","summary":"Important evidence is missing.","findings":[{"severity":"high","title":"Missing verification","detail":"No test evidence."}]}', "NEEDS_ATTENTION", "partial"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_qa_quality_gate_requires_explicit_structured_pass(
+    tmp_path, monkeypatch, qa_answer, expected_verdict, expected_status
+):
+    store, _router = configure(monkeypatch, tmp_path)
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert task is not None
+        assert store.claim_task(task_id)
+        is_qa = task["title"].startswith("[qa_security]")
+        answer = qa_answer if is_qa else "Specialist evidence collected."
+        store.set_task_status(
+            task_id, "succeeded",
+            result={"role": "qa_security" if is_qa else "research", "answer": answer},
+        )
+        return {
+            "task_id": task_id, "status": "succeeded", "result": answer,
+            "tool_calls": 0, "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Inspect implementation and verify its quality")
+    )
+
+    assert result["status"] == expected_status
+    assert result["qa_review"]["verdict"] == expected_verdict
+    assert result["diagnostics"]["qa_verdict"] == expected_verdict
+    if expected_status == "partial":
+        assert any(item["category"] == "qa_quality_gate" for item in result["diagnostics"]["failures"])
