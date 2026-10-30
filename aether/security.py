@@ -61,12 +61,12 @@ class LocalAPIProtection:
 
     Health and static UI are intentionally public so the UI can load and report status.
     When no token is configured, API calls are restricted to loopback clients as a
-    development fallback. Configure AETHER_API_TOKEN for an explicit bearer token.
+    development fallback. Configure CROWS_API_TOKEN for an explicit bearer token.
     """
 
     def __init__(self, app):
         self.app = app
-        self.token = os.getenv("AETHER_API_TOKEN", "").strip()
+        self.token = os.getenv("CROWS_API_TOKEN", "").strip()
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -92,14 +92,14 @@ class LocalAPIProtection:
             if self.token:
                 auth = headers.get("authorization", "")
                 bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-                supplied = headers.get("x-aether-token", "") or bearer
+                supplied = headers.get("x-crows-token", "") or headers.get("x-aether-token", "") or bearer
                 if not supplied or not hmac.compare_digest(supplied, self.token):
-                    response = JSONResponse({"detail": "Valid Aether API token required"}, status_code=401,
+                    response = JSONResponse({"detail": "Valid Crows API token required"}, status_code=401,
                                              headers={"WWW-Authenticate": "Bearer"})
                     await response(scope, receive, send)
                     return
             elif not _is_loopback(client_host):
-                response = JSONResponse({"detail": "Configure AETHER_API_TOKEN for non-loopback access"}, status_code=403)
+                response = JSONResponse({"detail": "Configure CROWS_API_TOKEN for non-loopback access"}, status_code=403)
                 await response(scope, receive, send)
                 return
 

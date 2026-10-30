@@ -6,8 +6,8 @@ This integration supports the Telegram Bot API when explicitly configured.
 
 Set these environment variables on the **backend**:
 
-- `AETHER_TELEGRAM_BOT_TOKEN`: token from the official Telegram bot setup.
-- `AETHER_TELEGRAM_WEBHOOK_SECRET`: a high-entropy secret used as Telegram's webhook secret token. Telegram allows a constrained character set for this value; configure it to match the provider's documented requirements.
+- `CROWS_TELEGRAM_BOT_TOKEN`: token from the official Telegram bot setup.
+- `CROWS_TELEGRAM_WEBHOOK_SECRET`: a high-entropy secret used as Telegram's webhook secret token. Telegram allows a constrained character set for this value; configure it to match the provider's documented requirements.
 
 Never commit either value to source control or expose the bot token in the browser.
 
@@ -23,7 +23,7 @@ The webhook bypasses shared API-token middleware only so Telegram can reach it; 
 
 Telegram send requests are not assumed to be idempotent by Telegram. If a request outcome is unknown, the connector records `unknown` and refuses to automatically resend the same idempotency key. Check the conversation/provider before choosing a new key, or a duplicate message could be sent.
 
-The send endpoint requires the existing Maximu Agent API protection. `sent` means Telegram accepted the send request and returned a message ID; it is not a read receipt.
+The send endpoint requires the existing Crows API protection. `sent` means Telegram accepted the send request and returned a message ID; it is not a read receipt.
 
 ## Limitations
 

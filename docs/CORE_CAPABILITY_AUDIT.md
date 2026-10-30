@@ -1,4 +1,4 @@
-# Maximu Agent — Core Capability Audit
+# Crows — Core Capability Audit
 
 Audit baseline: `main` at merge commit `d7ac510` (PR #220).
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "maximu-agent"
+name = "crows"
 version = "0.4.0"
-description = "Maximu Agent — local-first hybrid AI agent"
+description = "Crows — local-first hybrid AI agent"
 requires-python = ">=3.11"
 dependencies = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pydantic>=2.6", "httpx>=0.27", "ddgs>=9.0", "cryptography>=42.0"]
 

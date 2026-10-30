@@ -1,12 +1,12 @@
-# OpenJiuwen Proposal Submission — Maximu Agent
+# OpenJiuwen Proposal Submission — Crows
 
 > Working draft targeting submission completion by 29 October 2026. Re-check every item against the final recorded demo before submission.
 
 ## Project name
-**Maximu Agent — a local-first AI agent for controlled, verifiable task execution**
+**Crows — a local-first AI agent for controlled, verifiable task execution**
 
 ## Overview
-Maximu Agent is a modular AI-agent foundation designed to make AI-assisted work safer to inspect and recover. Instead of silently changing a project, it separates proposal from execution, records task and tool states in SQLite, and requires explicit user approval for code changes. It supports configurable OpenAI-compatible model routes, optional local-model fallback, workspace-scoped file tools, persistent chat sessions and explicit memory, and an optional Docker-based test runner.
+Crows is a modular AI-agent foundation designed to make AI-assisted work safer to inspect and recover. Instead of silently changing a project, it separates proposal from execution, records task and tool states in SQLite, and requires explicit user approval for code changes. It supports configurable OpenAI-compatible model routes, optional local-model fallback, workspace-scoped file tools, persistent chat sessions and explicit memory, and an optional Docker-based test runner.
 
 This is an evolving MVP, not a production-ready autonomous agent. The submission focuses on a demonstrable developer workflow: propose a code change, validate it in an isolated disposable copy, review the diff, then decide whether to apply it.
 
@@ -23,7 +23,7 @@ The relevant test workflow has a successful GitHub Actions run on commit `fc09e6
 ## Problem and target scenario
 AI coding assistants can produce plausible edits, but developers still need to know what changed, whether tests pass, whether the intended files were touched, and what happens if execution is interrupted.
 
-**Scenario:** a solo developer asks Maximu Agent to improve a small function in an existing local project. The agent reads selected workspace files, creates a reviewable proposal, and—when the optional Docker runner is enabled—tests the candidate against a disposable snapshot. A passing candidate remains pending for explicit approval; the original workspace is not silently overwritten by the test-and-fix loop.
+**Scenario:** a solo developer asks Crows to improve a small function in an existing local project. The agent reads selected workspace files, creates a reviewable proposal, and—when the optional Docker runner is enabled—tests the candidate against a disposable snapshot. A passing candidate remains pending for explicit approval; the original workspace is not silently overwritten by the test-and-fix loop.
 
 ## Technical approach
 
@@ -69,7 +69,7 @@ Use a disposable test project and non-sensitive sample data. Never show API keys
 
 | Time | Show | Proof / narration |
 |---|---|---|
-| 0:00–0:20 | Introduce Maximu Agent and local health status | Local-first agent focused on controlled execution, explicit approval, and recoverable state. |
+| 0:00–0:20 | Introduce Crows and local health status | Local-first agent focused on controlled execution, explicit approval, and recoverable state. |
 | 0:20–0:45 | Show configured model routes without secrets | Explain specialist routing and optional fallback. |
 | 0:45–1:20 | Submit a small coding task and inspect proposal diff | Only selected files are eligible; proposal is pending review. |
 | 1:20–1:55 | Run test-and-fix on a disposable test project | Show actual test result and state whether Docker is enabled. |
