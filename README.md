@@ -1,4 +1,4 @@
-# AETHER CLAW
+# Maximu Agent
 
 A local-first, modular AI agent foundation focused on reliable task execution, explicit approval, and safe-by-default local development.
 
@@ -25,7 +25,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 
 ## Safety and scope
 
-AETHER CLAW is an evolving MVP, not a production-ready autonomous agent.
+Maximu Agent is an evolving MVP, not a production-ready autonomous agent.
 
 - Keep the API bound to localhost. Do not expose the service or UI to a public network.
 - Set `AETHER_API_TOKEN` to require a shared token for API routes. Health, UI assets, and API schema/docs remain reachable without that token.
@@ -121,7 +121,7 @@ If model-provider variables are absent, local health checks and tools can still 
 
 ## Build the optional Docker sandbox
 
-Build the image once from the repository root. At runtime, AETHER CLAW uses `--pull=never`, so it will not pull images automatically.
+Build the image once from the repository root. At runtime, Maximu Agent uses `--pull=never`, so it will not pull images automatically.
 
 ```bash
 docker build -f Dockerfile.sandbox -t aether-sandbox:latest .
@@ -224,7 +224,7 @@ Memory is explicit and local; the application does not silently infer or save me
 
 ### Model routing, retries, and fallback
 
-AETHER CLAW selects a provider using the requested task type:
+Maximu Agent selects a provider using the requested task type:
 
 - `coding` uses the configured coding-specialist provider when available.
 - Other tasks, and coding tasks without a configured coding provider, use the primary provider.
@@ -234,7 +234,7 @@ Transient failures eligible for retry/fallback are network errors, timeouts, and
 
 The chat UI supports **Auto** and **Manual** model modes. Auto mode uses a local, deterministic task-intent heuristic (no extra model call) and routes coding tasks to the configured coding specialist; other task classes currently use the primary route unless explicitly configured otherwise. Manual mode requires an explicit configured route (`primary`, `coding`, or `fallback`). Fallback can be disabled per chat request; when enabled, fallback is used only for transient errors. `GET /models` lists configured routes without returning API credentials. This initial routing heuristic is intentionally conservative and should be evaluated against real tasks before claiming benchmark-driven optimization.
 
-The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, AETHER CLAW raises the last provider error.
+The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, Maximu Agent raises the last provider error.
 
 Successful chat responses include `route`, `model`, `fallback_used`, `attempts`, and a sanitized `attempt_history` list. Each history entry records the route, total attempt number, outcome, and (for failures) exception type only; it deliberately excludes exception messages, prompts, response bodies, and credentials. The attempt count includes calls made to both the selected and fallback providers. If no usable route is configured, the router raises a configuration error.
 
