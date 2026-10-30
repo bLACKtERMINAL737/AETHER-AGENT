@@ -100,7 +100,7 @@ Set these environment variables for the routes you want to use:
 | `CROWS_REASONING_MODEL_BASE_URL` | Optional reasoning-specialist API base URL |
 | `CROWS_REASONING_MODEL_API_KEY` | Optional reasoning-specialist API key |
 | `CROWS_REASONING_MODEL_NAME` | Optional reasoning-specialist model identifier |
-| `CROWS_DB_PATH` | SQLite database path; default `./data/crows.sqlite3` |
+| `CROWS_DB_PATH` | SQLite database path; default `./data/aether.sqlite3` (preserved for existing installations) |
 | `CROWS_MESSAGING_TARGET_KEY` | Optional Fernet key used to encrypt persisted outbound delivery destinations; required before a background worker can resume Telegram deliveries |
 | `CROWS_WORKSPACE` | Workspace directory allowed for workspace tools; default `./workspace` |
 | `CROWS_ENABLE_TEST_RUNNER` | Set to `true` to enable Docker-backed pytest; default `false` |
