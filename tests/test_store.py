@@ -288,7 +288,7 @@ def test_session_search_matches_complete_words_not_substrings(tmp_path: Path):
 def test_session_search_finds_hyphenated_identifier_components(tmp_path: Path):
     store = TaskStore(tmp_path / "session-search.sqlite3")
     session = store.create_session("Identifier search")
-    store.add_session_message(session["id"], "user", "The project is MAXIMU-AGENT.")
+    store.add_session_message(session["id"], "user", "The project is AETHER-CLAW.")
 
     results = store.search_session_messages("CLAW")
 
