@@ -2048,6 +2048,12 @@ def create_schedule(request: ScheduleCreateRequest):
     return _public_schedule(saved)
 
 
+@app.get("/scheduler/metrics")
+def scheduler_metrics():
+    """Expose aggregate schedule health without leaking schedule or lease identifiers."""
+    return scheduler_store.metrics()
+
+
 @app.get("/scheduler/schedules")
 def list_schedules(limit: int = 50):
     if not 1 <= limit <= 200:
