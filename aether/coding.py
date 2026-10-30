@@ -252,6 +252,10 @@ class CodingEngine:
         try:
             # Validate every target and detect edits made since the proposal was generated.
             for change in changes:
+                # Revalidate persisted proposals at apply time. Older pending
+                # proposals may have been created before source-secret filtering
+                # was introduced, so approval alone must not bypass the boundary.
+                self._reject_sensitive_source(change["path"])
                 target = self._safe_path(change["path"])
                 current = target.read_text(encoding="utf-8")
                 digest = hashlib.sha256(current.encode("utf-8")).hexdigest()

@@ -79,6 +79,33 @@ def test_cannot_apply_before_approval(tmp_path: Path):
     assert "return 1" in source.read_text(encoding="utf-8")
 
 
+
+
+
+def test_apply_rejects_legacy_proposal_targeting_sensitive_file(tmp_path: Path):
+    import hashlib
+
+    engine, store, workspace, _ = make_engine(tmp_path, "{}")
+    secret = workspace / ".env"
+    original = "SERVICE_TOKEN=must-not-be-overwritten\n"
+    secret.write_text(original, encoding="utf-8")
+    proposal = store.create_proposal("legacy sensitive proposal", [{
+        "path": ".env",
+        "original_content": original,
+        "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+        "content": "SERVICE_TOKEN=changed\n",
+        "diff": "",
+    }])
+
+    # Simulate a proposal persisted before the source-reading denylist existed.
+    engine.approve(proposal["id"])
+    with pytest.raises(CodingError, match="Sensitive file cannot be sent"):
+        engine.apply(proposal["id"])
+
+    assert secret.read_text(encoding="utf-8") == original
+    assert store.get_proposal(proposal["id"])["status"] == "approved"
+
+
 def test_approved_proposal_applies_atomically_and_marks_applied(tmp_path: Path):
     engine, store, workspace, source = make_engine(tmp_path, "{}")
     original = source.read_text(encoding="utf-8")
