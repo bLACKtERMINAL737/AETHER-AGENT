@@ -209,6 +209,12 @@ class ChatRequest(BaseModel):
         return value
 
 
+class MessagingReconcileRequest(BaseModel):
+    status: Literal["sent", "delivered", "failed"]
+    evidence: str = Field(min_length=1, max_length=1000)
+    provider_message_id: str | None = Field(default=None, max_length=MAX_ID_CHARS)
+
+
 class DiscordSendRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     idempotency_key: str = Field(min_length=1, max_length=256)
@@ -566,6 +572,18 @@ async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit
             else:
                 outcomes["skipped"] += 1
     return outcomes
+
+
+@app.post("/messaging/outbox/{message_id}/reconcile")
+def reconcile_messaging_delivery(message_id: str, request: MessagingReconcileRequest):
+    """Resolve an uncertain delivery after checking the provider's actual state."""
+    try:
+        return messaging_store.reconcile_unknown(
+            message_id, status=request.status, evidence=request.evidence,
+            provider_message_id=request.provider_message_id,
+        )
+    except MessagingContractError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/messaging/delivery/metrics")
