@@ -18,7 +18,7 @@ def inbound(**overrides):
         "channel": "telegram",
         "provider_message_id": "provider-msg-1",
         "provider_user_id": "user-42",
-        "text": "  Hello AETHER CLAW  ",
+        "text": "  Hello Maximu Agent  ",
         "received_at": "2026-10-29T12:00:00+00:00",
     }
     values.update(overrides)
@@ -28,7 +28,7 @@ def inbound(**overrides):
 def test_inbound_normalizes_channel_and_text():
     message = inbound(channel=" Telegram ")
     assert message.channel == "telegram"
-    assert message.text == "Hello AETHER CLAW"
+    assert message.text == "Hello Maximu Agent"
 
 
 @pytest.mark.parametrize("values", [
