@@ -490,8 +490,8 @@ async def messaging_worker_loop() -> None:
             result = await deliver_outbound_batch(worker_id=worker_id, limit=10)
             if result["claimed"]:
                 logger.info(
-                    "Messaging worker batch: claimed=%s sent=%s failed=%s unknown=%s skipped=%s",
-                    result["claimed"], result["sent"], result["failed"],
+                    "Messaging worker batch: claimed=%s sent=%s retried=%s failed=%s unknown=%s skipped=%s",
+                    result["claimed"], result["sent"], result["retried"], result["failed"],
                     result["unknown"], result["skipped"],
                 )
         except asyncio.CancelledError:
@@ -504,7 +504,7 @@ async def messaging_worker_loop() -> None:
 async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit: int = 10) -> dict:
     """Deliver one leased outbox batch. Expired/uncertain sends are never auto-retried."""
     claimed = messaging_store.claim_outbound(worker_id=worker_id, limit=limit, lease_seconds=60)
-    outcomes = {"claimed": len(claimed), "sent": 0, "failed": 0, "unknown": 0, "skipped": 0}
+    outcomes = {"claimed": len(claimed), "sent": 0, "retried": 0, "failed": 0, "unknown": 0, "skipped": 0}
     for item in claimed:
         message_id = item["id"]
         channel = item["channel"]
@@ -559,7 +559,7 @@ async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit
                     delay_seconds=min(max(retry_after, 1), 300), max_retries=3,
                 )
                 if retry_result == "scheduled":
-                    outcomes["failed"] += 1
+                    outcomes["retried"] += 1
                 elif retry_result == "exhausted":
                     outcomes["failed"] += 1
                 else:
