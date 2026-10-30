@@ -2689,7 +2689,7 @@ def list_memory(limit: int = 100, category: str | None = None):
 def export_memories():
     """Export saved local memories as a portable, versioned JSON document."""
     return {
-        "format": "crows-memory-export",
+        "format": "aether-memory-export",
         "version": 1,
         "memories": store.list_memories(limit=10000),
     }
@@ -2733,7 +2733,7 @@ def export_sessions(limit: int = 100):
         session_data["messages"] = store.list_session_messages(session["id"], limit=10000)
         archive.append(session_data)
     return {
-        "format": "crows-conversation-export",
+        "format": "aether-conversation-export",
         "version": 1,
         "sessions": archive,
     }
