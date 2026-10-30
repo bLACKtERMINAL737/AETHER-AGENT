@@ -506,15 +506,31 @@ async def run_agent_task_with_lease_renewal(task_id: str, schedule_id: str, work
             if not renewed:
                 raise RuntimeError("Scheduler lease ownership was lost during execution")
 
+    execution = asyncio.create_task(
+        asyncio.wait_for(run_agent_task(task_id), timeout=agent_task_timeout_seconds())
+    )
     heartbeat = asyncio.create_task(renew_while_running())
     try:
-        await asyncio.wait_for(run_agent_task(task_id), timeout=agent_task_timeout_seconds())
+        done, _ = await asyncio.wait(
+            {execution, heartbeat}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if heartbeat in done:
+            # A failed renewal means this worker no longer has authority to
+            # continue dispatching. Stop local execution and leave the outcome
+            # uncertain for explicit reconciliation.
+            heartbeat.result()
+            await execution
+        else:
+            await execution
     finally:
-        heartbeat.cancel()
-        try:
-            await heartbeat
-        except asyncio.CancelledError:
-            pass
+        for task in (heartbeat, execution):
+            if not task.done():
+                task.cancel()
+        for task in (heartbeat, execution):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 async def scheduler_worker_loop() -> None:
