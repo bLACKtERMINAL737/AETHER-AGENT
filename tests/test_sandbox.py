@@ -47,21 +47,25 @@ def test_test_runner_has_network_disabled_and_read_only_flags(tmp_path: Path, mo
     sandbox = DockerTestSandbox(workspace)
     captured = {}
 
-    class Result:
-        returncode = 0
-        stdout = "ok"
-        stderr = ""
+    import io
+
+    class Process:
+        stdout = io.BytesIO(b"ok")
+        stderr = io.BytesIO(b"")
+
+        def wait(self, timeout=None):
+            return 0
 
     def fake_which(name):
         return "/usr/bin/docker"
 
-    def fake_run(command, **kwargs):
+    def fake_popen(command, **kwargs):
         captured["command"] = command
         captured["kwargs"] = kwargs
-        return Result()
+        return Process()
 
     monkeypatch.setattr("aether.sandbox.shutil.which", fake_which)
-    monkeypatch.setattr("aether.sandbox.subprocess.run", fake_run)
+    monkeypatch.setattr("aether.sandbox.subprocess.Popen", fake_popen)
     result = sandbox.run_pytest()
 
     assert result["passed"] is True
