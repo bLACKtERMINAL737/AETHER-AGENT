@@ -25,8 +25,6 @@ async def test_scheduler_worker_dispatches_due_registered_specialist_once(monkey
         tasks.set_task_status(task_id, "succeeded", result={"summary": "Reviewed"})
         return {"status": "succeeded"}
 
-    real_sleep = asyncio.sleep
-
     async def stop_after_one_iteration(delay):
         if delay == 60:
             await asyncio.Event().wait()
