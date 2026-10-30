@@ -135,10 +135,11 @@ async def test_recovery_runs_prerequisite_with_later_plan_index_first(tmp_path, 
         assert store.claim_task(task_id_arg)
         if task_id_arg == first["id"]:
             assert second["id"] in executed, "dependent must wait for its prerequisite"
-        store.set_task_status(task_id_arg, "succeeded", result={"answer": task["title"]})
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") else task["title"]
+        store.set_task_status(task_id_arg, "succeeded", result={"answer": answer})
         executed.append(task_id_arg)
         return {
-            "task_id": task_id_arg, "status": "succeeded", "result": task["title"],
+            "task_id": task_id_arg, "status": "succeeded", "result": answer,
             "tool_calls": 0, "tool_attempts": 0,
         }
 
