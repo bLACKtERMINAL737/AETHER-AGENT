@@ -201,3 +201,35 @@ async def test_outbox_worker_sends_discord_to_fixed_configured_webhook(monkeypat
     assert isolated_store.get_outbound("discord", "worker-discord")["status"] == "sent"
     assert FakeAsyncClient.calls[-1][0] == "https://discord.com/api/webhooks/123456/secret-token"
     assert FakeAsyncClient.calls[-1][1]["params"] == {"wait": "true"}
+
+
+
+@pytest.mark.asyncio
+async def test_worker_schedules_retry_only_for_explicit_rate_limit(monkeypatch, isolated_store):
+    from cryptography.fernet import Fernet
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    isolated_store.__init__(isolated_store.db_path)
+    isolated_store.queue_outbound(
+        channel="telegram", provider_user_id="chat-rate", text="rate limited",
+        idempotency_key="worker-rate", delivery_target="555",
+    )
+    monkeypatch.setenv("AETHER_TELEGRAM_BOT_TOKEN", "test-token")
+
+    class RateLimitedResponse(FakeResponse):
+        status_code = 429
+        headers = {"Retry-After": "12"}
+        is_success = False
+
+    FakeAsyncClient.response = RateLimitedResponse(429, {"ok": False})
+    result = await app_module.deliver_outbound_batch(worker_id="worker-rate")
+    assert result["retried"] == 1
+    assert isolated_store.get_outbound("telegram", "worker-rate")["status"] == "accepted"
+    with isolated_store.connect() as con:
+        retry = con.execute(
+            "SELECT retry_count,next_attempt_at FROM messaging_delivery_retries"
+        ).fetchone()
+    assert retry["retry_count"] == 1
+    scheduled = datetime.fromisoformat(retry["next_attempt_at"])
+    assert scheduled > datetime.now(timezone.utc)
