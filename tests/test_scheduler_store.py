@@ -97,3 +97,53 @@ def test_renew_claim_rejects_expired_lease_and_invalid_duration(tmp_path):
     ) is False
     with pytest.raises(ValueError):
         store.renew_claim(schedule["id"], "worker-a", lease_seconds=0)
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from aether.scheduler_store import SchedulerStore
+
+
+def make_unknown_schedule(store):
+    due = datetime.now(timezone.utc) - timedelta(minutes=2)
+    saved = store.create_schedule(
+        "[research] Verify uncertain run", "Inspect the task journal",
+        due, "audit-unknown-1"
+    )
+    store.claim_due("scheduler-worker", lease_seconds=1)
+    store.mark_expired_claims_unknown(now=datetime.now(timezone.utc) + timedelta(seconds=2))
+    return saved
+
+
+def test_reconciliation_audit_is_append_only_and_does_not_change_unknown_state(tmp_path):
+    store = SchedulerStore(tmp_path / "reconcile.sqlite3")
+    schedule = make_unknown_schedule(store)
+
+    first = store.record_reconciliation(
+        schedule["id"], "Reviewed task journal", "Task remained unknown; no provider result found."
+    )
+    second = store.record_reconciliation(
+        schedule["id"], "Checked provider logs", "No confirmed completion or safe retry evidence."
+    )
+
+    assert first["id"] != second["id"]
+    entries = store.list_reconciliation_audit(schedule["id"])
+    assert len(entries) == 2
+    assert entries[0]["note"] == "Reviewed task journal"
+    assert store.get_schedule(schedule["id"])["status"] == "unknown"
+
+
+def test_reconciliation_requires_unknown_schedule_and_valid_note(tmp_path):
+    store = SchedulerStore(tmp_path / "reconcile-validation.sqlite3")
+    scheduled = store.create_schedule(
+        "[research] Still pending", "Do not execute", "2027-01-01T00:00:00+00:00", "pending-audit"
+    )
+    with pytest.raises(ValueError, match="only unknown"):
+        store.record_reconciliation(scheduled["id"], "Checked", "Evidence")
+    with pytest.raises(ValueError, match="required"):
+        store.record_reconciliation(scheduled["id"], " ", "Evidence")
+    with pytest.raises(KeyError):
+        store.record_reconciliation("missing", "Checked", "Evidence")
+    with pytest.raises(KeyError):
+        store.list_reconciliation_audit("missing")
