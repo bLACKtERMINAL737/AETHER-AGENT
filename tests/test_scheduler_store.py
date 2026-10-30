@@ -63,3 +63,37 @@ def test_schedule_rejects_naive_timestamps_and_invalid_limits(tmp_path: Path):
         store.list_schedules(0)
     with pytest.raises(ValueError, match="worker_id"):
         store.claim_due(" ")
+
+
+def test_renew_claim_extends_only_current_unexpired_owner_lease(tmp_path):
+    store = SchedulerStore(tmp_path / "renew.sqlite3")
+    schedule = store.create_schedule(
+        "[research] Renew lease", "Check lease ownership",
+        "2026-11-01T10:00:00+00:00", "renew-lease-1"
+    )
+    claimed = store.claim_due(
+        "worker-a", now="2026-11-01T10:01:00+00:00", lease_seconds=60
+    )
+    assert len(claimed) == 1
+    assert store.renew_claim(
+        schedule["id"], "worker-a", now="2026-11-01T10:01:30+00:00", lease_seconds=300
+    ) is True
+    renewed = store.get_schedule(schedule["id"])
+    assert renewed["lease_expires_at"] == "2026-11-01T10:06:30+00:00"
+    assert store.renew_claim(
+        schedule["id"], "worker-b", now="2026-11-01T10:01:31+00:00"
+    ) is False
+
+
+def test_renew_claim_rejects_expired_lease_and_invalid_duration(tmp_path):
+    store = SchedulerStore(tmp_path / "expired-renew.sqlite3")
+    schedule = store.create_schedule(
+        "[research] Expired lease", "Check expired lease",
+        "2026-11-01T10:00:00+00:00", "renew-lease-2"
+    )
+    store.claim_due("worker-a", now="2026-11-01T10:01:00+00:00", lease_seconds=10)
+    assert store.renew_claim(
+        schedule["id"], "worker-a", now="2026-11-01T10:01:11+00:00"
+    ) is False
+    with pytest.raises(ValueError):
+        store.renew_claim(schedule["id"], "worker-a", lease_seconds=0)
