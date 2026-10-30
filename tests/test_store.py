@@ -782,3 +782,72 @@ def test_execution_metrics_report_aggregate_states_without_task_content(tmp_path
     serialized = str(metrics)
     for secret in ("private input", "private workflow goal", "private error", "private_tool"):
         assert secret not in serialized
+
+
+
+def test_concurrent_task_claim_has_exactly_one_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = TaskStore(tmp_path / "concurrent-task-claim.sqlite3")
+    task = store.create_task("One execution", "Must be claimed once")
+    stores = [TaskStore(store.db_path) for _ in range(8)]
+    barrier = Barrier(len(stores))
+
+    def claim(candidate):
+        barrier.wait(timeout=5)
+        return candidate.claim_task(task["id"])
+
+    with ThreadPoolExecutor(max_workers=len(stores)) as pool:
+        outcomes = list(pool.map(claim, stores))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == len(stores) - 1
+    assert store.get_task(task["id"])["status"] == "running"
+
+
+def test_stale_task_status_write_cannot_reopen_unknown_task(tmp_path):
+    import pytest
+
+    store = TaskStore(tmp_path / "stale-task-write.sqlite3")
+    task = store.create_task("Interrupted", "Do not replay")
+    assert store.claim_task(task["id"])
+    store.set_task_status(task["id"], "unknown", error="worker interrupted")
+
+    with pytest.raises(ValueError, match="Invalid task status transition"):
+        store.set_task_status(task["id"], "running")
+    with pytest.raises(ValueError, match="Invalid task status transition"):
+        store.set_task_status(task["id"], "succeeded", result={"late": True})
+
+    saved = store.get_task(task["id"])
+    assert saved["status"] == "unknown"
+    assert saved["result_json"] is None
+    assert saved["error_text"] == "worker interrupted"
+
+
+def test_interrupted_recovery_marks_running_tool_unknown_without_replay(tmp_path):
+    store = TaskStore(tmp_path / "interrupted-tool.sqlite3")
+    task = store.create_task("Tool interruption", "Call tool once")
+    assert store.claim_task(task["id"])
+    execution_id = store.begin_tool(task["id"], "external.write", {"value": "x"})
+
+    assert store.mark_interrupted_as_unknown() == 2
+    saved_task = store.get_task(task["id"])
+    saved_tool = store.list_tool_executions(task["id"])[0]
+
+    assert saved_task["status"] == "unknown"
+    assert saved_tool["id"] == execution_id
+    assert saved_tool["status"] == "unknown"
+    assert saved_tool["result_json"] is None
+
+
+def test_terminal_task_result_is_not_overwritten_by_late_same_state_write(tmp_path):
+    store = TaskStore(tmp_path / "terminal-task-write.sqlite3")
+    task = store.create_task("First result wins", "Prevent late overwrite")
+    assert store.claim_task(task["id"])
+    store.set_task_status(task["id"], "succeeded", result={"answer": "first"})
+    store.set_task_status(task["id"], "succeeded", result={"answer": "late"})
+
+    saved = store.get_task(task["id"])
+    assert saved["status"] == "succeeded"
+    assert saved["result_json"] == '{"answer": "first"}'
