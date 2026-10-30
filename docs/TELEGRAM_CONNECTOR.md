@@ -23,7 +23,7 @@ The webhook bypasses shared API-token middleware only so Telegram can reach it; 
 
 Telegram send requests are not assumed to be idempotent by Telegram. If a request outcome is unknown, the connector records `unknown` and refuses to automatically resend the same idempotency key. Check the conversation/provider before choosing a new key, or a duplicate message could be sent.
 
-The send endpoint requires the existing AETHER CLAW API protection. `sent` means Telegram accepted the send request and returned a message ID; it is not a read receipt.
+The send endpoint requires the existing Maximu Agent API protection. `sent` means Telegram accepted the send request and returned a message ID; it is not a read receipt.
 
 ## Limitations
 
