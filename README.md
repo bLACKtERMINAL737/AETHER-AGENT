@@ -268,3 +268,10 @@ export AETHER_MESSAGING_WORKER_INTERVAL_SECONDS=2
 ```
 
 The worker sends only target-backed messages that it can atomically lease. Telegram destinations are decrypted in the backend; Discord resolves the fixed `configured-webhook` reference through `AETHER_DISCORD_WEBHOOK_URL`. Transport errors and expired leases become `unknown` and are not automatically retried because delivery may already have occurred. The worker stops with the FastAPI application. Run one application worker process against a SQLite database; multi-process deployment needs a separately evaluated worker topology.
+
+
+### Messaging outbox retry and reconciliation
+
+The opt-in outbox worker retries only explicit HTTP 429 rate-limit responses, honoring a bounded `Retry-After` delay (1–300 seconds) and at most three scheduled retries. Other HTTP failures and transport errors are not automatically retried; ambiguous outcomes remain `unknown`. Exhausted rate-limited deliveries become `failed`.
+
+After checking the provider directly, an operator can resolve an `unknown` outbound record through the authenticated `POST /messaging/outbox/{message_id}/reconcile` endpoint with a final status (`sent`, `delivered`, or `failed`), a short evidence note, and optionally the provider message ID. Reconciliation is one-way and recorded in an audit table; it does not resend a message.
