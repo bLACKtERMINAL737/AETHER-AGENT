@@ -217,6 +217,37 @@ class TaskStore:
             if (workflow := self.get_workflow(row["id"])) is not None
         ]
 
+    def execution_metrics(self) -> dict[str, Any]:
+        """Return aggregate task/workflow/tool health without exposing task content or IDs."""
+        with self.connect() as con:
+            task_rows = con.execute(
+                "SELECT status, COUNT(*) AS count FROM tasks GROUP BY status"
+            ).fetchall()
+            workflow_rows = con.execute(
+                "SELECT status, COUNT(*) AS count FROM agent_workflows GROUP BY status"
+            ).fetchall()
+            tool_rows = con.execute(
+                "SELECT status, COUNT(*) AS count FROM tool_executions GROUP BY status"
+            ).fetchall()
+            task_age = con.execute(
+                "SELECT MIN(created_at) AS oldest_queued_at FROM tasks WHERE status='queued'"
+            ).fetchone()
+            workflow_age = con.execute(
+                "SELECT MIN(updated_at) AS oldest_unknown_at FROM agent_workflows WHERE status='unknown'"
+            ).fetchone()
+        def counts(rows: list[sqlite3.Row], statuses: tuple[str, ...]) -> dict[str, int]:
+            result = {row["status"]: row["count"] for row in rows}
+            for status in statuses:
+                result.setdefault(status, 0)
+            return result
+        return {
+            "tasks": counts(task_rows, ("queued", "running", "succeeded", "failed", "unknown")),
+            "workflows": counts(workflow_rows, ("running", "succeeded", "partial", "failed", "unknown")),
+            "tool_executions": counts(tool_rows, ("running", "succeeded", "failed", "unknown")),
+            "oldest_queued_task_at": task_age["oldest_queued_at"],
+            "oldest_unknown_workflow_updated_at": workflow_age["oldest_unknown_at"],
+        }
+
     def claim_workflow_recovery(self, workflow_id: str) -> bool:
         """Atomically claim an unknown workflow for one explicit recovery attempt."""
         with self.connect() as con:
