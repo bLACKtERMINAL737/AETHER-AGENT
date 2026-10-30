@@ -22,6 +22,18 @@ class CodingEngine:
     MAX_FILE_BYTES = 100_000
     MAX_TOTAL_BYTES = 250_000
     MAX_RESPONSE_BYTES = 300_000
+    EXCLUDED_SOURCE_DIRS = {
+        ".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", "data",
+        ".ssh", ".aws", ".azure", ".gnupg",
+    }
+    EXCLUDED_SOURCE_NAMES = {
+        ".env", ".netrc", ".npmrc", ".pypirc", ".dockercfg",
+        "id_rsa", "id_ed25519", "known_hosts", "credentials", "credentials.json",
+    }
+    EXCLUDED_SOURCE_SUFFIXES = {
+        ".pem", ".key", ".p12", ".pfx", ".p7b", ".p7c", ".p8", ".p10",
+        ".der", ".crt",
+    }
 
     def __init__(self, workspace: Path, store: TaskStore, router: ModelRouter,
                  enable_test_runner: bool = False, test_timeout_seconds: int = 60,
@@ -56,6 +68,23 @@ class CodingEngine:
             raise CodingError(f"File does not exist: {relative}")
         return target
 
+    def _reject_sensitive_source(self, relative: str) -> None:
+        path = Path(relative)
+        parts = [part.casefold() for part in path.parts]
+        name = parts[-1] if parts else ""
+        if (
+            any(part in self.EXCLUDED_SOURCE_DIRS for part in parts[:-1])
+            or name in self.EXCLUDED_SOURCE_NAMES
+            or name == ".env"
+            or name.startswith(".env.")
+            or Path(name).suffix.lower() in self.EXCLUDED_SOURCE_SUFFIXES
+            or "credential" in name
+            or "secret" in name
+        ):
+            raise CodingError(
+                f"Sensitive file cannot be sent to the model or included in a coding proposal: {relative}"
+            )
+
     def read_sources(self, paths: list[str]) -> list[dict[str, str]]:
         if not paths or len(paths) > self.MAX_FILES:
             raise CodingError(f"Select between 1 and {self.MAX_FILES} files")
@@ -63,6 +92,7 @@ class CodingEngine:
             raise CodingError("Duplicate file paths are not allowed")
         sources, total = [], 0
         for relative in paths:
+            self._reject_sensitive_source(relative)
             target = self._safe_path(relative)
             if target.stat().st_size > self.MAX_FILE_BYTES:
                 raise CodingError(f"File is too large: {relative}")
