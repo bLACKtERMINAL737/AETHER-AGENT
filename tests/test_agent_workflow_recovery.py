@@ -689,11 +689,12 @@ async def test_recovery_diagnostics_cover_failed_and_uncertain_outcomes(
             else "unknown" if is_problem and problem == "task_unknown"
             else "succeeded"
         )
-        store.set_task_status(task_id_arg, status, result={"answer": "test outcome"})
+        answer = "{\"verdict\":\"PASS\",\"summary\":\"Evidence is sufficient.\",\"findings\":[]}" if task["title"].startswith("[qa_security]") and status == "succeeded" else "test outcome"
+        store.set_task_status(task_id_arg, status, result={"answer": answer})
         return {
             "task_id": task_id_arg,
             "status": status,
-            "result": "test outcome",
+            "result": answer,
             "tool_calls": 0,
             "tool_attempts": 0,
         }
