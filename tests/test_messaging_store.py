@@ -258,7 +258,7 @@ def test_delivery_metrics_include_queue_depth_and_retry_schedule(tmp_path: Path,
         channel="telegram", provider_user_id="u2", text="leased",
         idempotency_key="metrics-leased", delivery_target="200",
     )
-    store.claim_outbound(worker_id="metrics-worker")
+    store.claim_outbound(worker_id="metrics-worker", limit=1)
     metrics = store.delivery_metrics()
     assert metrics["queue"]["leased"] == 1
     assert metrics["queue"]["pending"] == 1
