@@ -514,7 +514,7 @@ async def scheduler_worker_loop() -> None:
                 task_id = None
                 try:
                     title = str(item["title"]).strip()
-                    match = re.match(r"^\\[([a-z_]+)\\]\\s+.+$", title)
+                    match = re.match(r"^\[([a-z_]+)\]\s+.+$", title)
                     known_roles = {role["id"] for role in list_agent_roles()}
                     if not match or match.group(1) not in known_roles:
                         scheduler_store.finish_claim(
