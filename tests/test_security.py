@@ -64,7 +64,7 @@ async def test_remote_client_requires_token_when_token_is_unconfigured(monkeypat
         response = await client.get("/private")
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "Configure AETHER_API_TOKEN for non-loopback access"
+    assert response.json()["detail"] == "Configure CROWS_API_TOKEN for non-loopback access"
 
 
 @pytest.mark.asyncio

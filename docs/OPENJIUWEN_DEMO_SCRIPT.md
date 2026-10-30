@@ -1,4 +1,4 @@
-# Maximu Agent — 3-minute demo recording checklist
+# Crows — 3-minute demo recording checklist
 
 ## Before recording
 - [ ] Checkout the exact submission candidate and record its commit SHA.
@@ -11,8 +11,8 @@
 
 ## Spoken script and actions (target 2:50)
 
-**0:00–0:20 — Why Maximu Agent**
-“AI can write code quickly, but reliable agents must also show what they intend to change, verify the candidate, and handle uncertain outcomes. Maximu Agent is a local-first agent foundation built around those boundaries.”
+**0:00–0:20 — Why Crows**
+“AI can write code quickly, but reliable agents must also show what they intend to change, verify the candidate, and handle uncertain outcomes. Crows is a local-first agent foundation built around those boundaries.”
 
 **0:20–0:45 — Local configuration**
 Show health status and configured route names only.
@@ -35,7 +35,7 @@ Show database health or persisted task/session state.
 “Task and tool outcomes are journaled. Interrupted work with an uncertain result is marked unknown instead of being blindly replayed.”
 
 **2:45–3:00 — Close**
-“Maximu Agent’s core principle is simple: propose, test, review, then apply. It is an evolving MVP, and this submission demonstrates safeguards implemented today.”
+“Crows’s core principle is simple: propose, test, review, then apply. It is an evolving MVP, and this submission demonstrates safeguards implemented today.”
 
 ## After recording
 - [ ] Verify exported duration is no more than 3:00.

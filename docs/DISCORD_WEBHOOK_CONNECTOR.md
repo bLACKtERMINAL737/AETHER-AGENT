@@ -4,7 +4,7 @@ This integration sends text messages to one backend-configured Discord incoming 
 
 ## Configuration
 
-Set `AETHER_DISCORD_WEBHOOK_URL` on the backend only. Treat the URL as a credential: do not commit it, return it from APIs, or expose it in frontend code. The connector accepts HTTPS URLs on Discord's official webhook hosts with the expected `/api/webhooks/` path. Requests never supply an arbitrary target URL, reducing SSRF risk.
+Set `CROWS_DISCORD_WEBHOOK_URL` on the backend only. Treat the URL as a credential: do not commit it, return it from APIs, or expose it in frontend code. The connector accepts HTTPS URLs on Discord's official webhook hosts with the expected `/api/webhooks/` path. Requests never supply an arbitrary target URL, reducing SSRF risk.
 
 ## Endpoints
 
@@ -20,4 +20,4 @@ A successful webhook response with a Discord message ID is recorded as `sent`; t
 
 - One configured webhook destination only.
 - No inbound Discord messages, Gateway bot, per-user routing, attachments, embeds, or multi-server destination management.
-- Keep the endpoint protected by the existing Maximu Agent API authentication and only send content to destinations you are authorized to use.
+- Keep the endpoint protected by the existing Crows API authentication and only send content to destinations you are authorized to use.

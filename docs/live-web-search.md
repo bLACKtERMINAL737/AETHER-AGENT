@@ -1,6 +1,6 @@
-# Live web search in Maximu Agent
+# Live web search in Crows
 
-Maximu Agent registers `web.search` and `web.open` tools. For current, recent, unfamiliar, or otherwise unverified questions, the model should search first, open relevant public pages, synthesize evidence into a direct explanation, include clickable Markdown links to the exact source URLs, and explain what each source supports. It should note uncertainty or conflicting sources rather than presenting snippets as guaranteed truth.
+Crows registers `web.search` and `web.open` tools. For current, recent, unfamiliar, or otherwise unverified questions, the model should search first, open relevant public pages, synthesize evidence into a direct explanation, include clickable Markdown links to the exact source URLs, and explain what each source supports. It should note uncertainty or conflicting sources rather than presenting snippets as guaranteed truth.
 
 ## How it works
 
@@ -19,7 +19,7 @@ Install or update project dependencies in the active virtual environment:
 pip install -e ".[dev]"
 ```
 
-Restart Maximu Agent after installing dependencies. Existing provider configuration remains unchanged.
+Restart Crows after installing dependencies. Existing provider configuration remains unchanged.
 
 ## Privacy and trust
 

@@ -27,5 +27,5 @@ def test_model_timeout_accepts_values_within_supported_range(monkeypatch, timeou
 def test_model_timeout_rejects_invalid_values(monkeypatch, timeout):
     monkeypatch.setenv("AETHER_MODEL_TIMEOUT_SECONDS", timeout)
 
-    with pytest.raises(ValueError, match="AETHER_MODEL_TIMEOUT_SECONDS"):
+    with pytest.raises(ValueError, match="CROWS_MODEL_TIMEOUT_SECONDS"):
         Settings.from_env()

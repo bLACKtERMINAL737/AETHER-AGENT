@@ -1,4 +1,4 @@
-# Maximu Agent
+# Crows
 
 A local-first, modular AI agent foundation focused on reliable task execution, explicit approval, and safe-by-default local development.
 
@@ -25,12 +25,12 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 
 ## Safety and scope
 
-Maximu Agent is an evolving MVP, not a production-ready autonomous agent.
+Crows is an evolving MVP, not a production-ready autonomous agent.
 
 - Keep the API bound to localhost. Do not expose the service or UI to a public network.
-- Set `AETHER_API_TOKEN` to require a shared token for API routes. Health, UI assets, and API schema/docs remain reachable without that token.
+- Set `CROWS_API_TOKEN` to require a shared token for API routes. Health, UI assets, and API schema/docs remain reachable without that token.
 - If no token is configured, API requests are restricted to loopback clients. This is a development fallback, not protection from other local processes.
-- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-Aether-Token` header.
+- The UI keeps the entered token in the current browser tab's session storage and sends it using the `X-Crows-Token` header.
 - State-changing requests that include an `Origin` header must use the same loopback host and port. This is defense in depth, not a replacement for keeping the service local.
 - Coding proposals can modify only explicitly selected, existing files. Creating new files and arbitrary shell access are not supported by the coding workflow.
 - Proposal changes require review and explicit approval. Applying a proposal checks the original file state to detect stale files.
@@ -71,13 +71,13 @@ Generate a local token:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
-export AETHER_API_TOKEN='paste-generated-token-here'
+export CROWS_API_TOKEN='paste-generated-token-here'
 ```
 
 On PowerShell:
 
 ```powershell
-$env:AETHER_API_TOKEN="paste-generated-token-here"
+$env:CROWS_API_TOKEN="paste-generated-token-here"
 ```
 
 Start the server after setting the variable, then enter the same token in the local UI. Never commit the token.
@@ -88,31 +88,31 @@ Set these environment variables for the routes you want to use:
 
 | Variable | Purpose |
 | --- | --- |
-| `AETHER_MODEL_BASE_URL` | Base URL for the default OpenAI-compatible API |
-| `AETHER_MODEL_API_KEY` | API key for the default route |
-| `AETHER_MODEL_NAME` | Model identifier for the default route |
-| `AETHER_CODING_MODEL_BASE_URL` | Optional coding-specialist API base URL |
-| `AETHER_CODING_MODEL_API_KEY` | Optional coding-specialist API key |
-| `AETHER_CODING_MODEL_NAME` | Optional coding-specialist model identifier |
-| `AETHER_FALLBACK_MODEL_BASE_URL` | Optional fallback API base URL |
-| `AETHER_FALLBACK_MODEL_API_KEY` | Optional fallback API key |
-| `AETHER_FALLBACK_MODEL_NAME` | Optional fallback model identifier |
-| `AETHER_REASONING_MODEL_BASE_URL` | Optional reasoning-specialist API base URL |
-| `AETHER_REASONING_MODEL_API_KEY` | Optional reasoning-specialist API key |
-| `AETHER_REASONING_MODEL_NAME` | Optional reasoning-specialist model identifier |
-| `AETHER_DB_PATH` | SQLite database path; default `./data/aether.sqlite3` |
-| `AETHER_MESSAGING_TARGET_KEY` | Optional Fernet key used to encrypt persisted outbound delivery destinations; required before a background worker can resume Telegram deliveries |
-| `AETHER_WORKSPACE` | Workspace directory allowed for workspace tools; default `./workspace` |
-| `AETHER_ENABLE_TEST_RUNNER` | Set to `true` to enable Docker-backed pytest; default `false` |
-| `AETHER_TEST_TIMEOUT_SECONDS` | Test timeout in seconds, clamped to 5–120 |
-| `AETHER_SANDBOX_IMAGE` | Local sandbox image name; default `aether-sandbox:latest` |
-| `AETHER_TEST_PROJECT` | Optional project path to test instead of the configured workspace |
+| `CROWS_MODEL_BASE_URL` | Base URL for the default OpenAI-compatible API |
+| `CROWS_MODEL_API_KEY` | API key for the default route |
+| `CROWS_MODEL_NAME` | Model identifier for the default route |
+| `CROWS_CODING_MODEL_BASE_URL` | Optional coding-specialist API base URL |
+| `CROWS_CODING_MODEL_API_KEY` | Optional coding-specialist API key |
+| `CROWS_CODING_MODEL_NAME` | Optional coding-specialist model identifier |
+| `CROWS_FALLBACK_MODEL_BASE_URL` | Optional fallback API base URL |
+| `CROWS_FALLBACK_MODEL_API_KEY` | Optional fallback API key |
+| `CROWS_FALLBACK_MODEL_NAME` | Optional fallback model identifier |
+| `CROWS_REASONING_MODEL_BASE_URL` | Optional reasoning-specialist API base URL |
+| `CROWS_REASONING_MODEL_API_KEY` | Optional reasoning-specialist API key |
+| `CROWS_REASONING_MODEL_NAME` | Optional reasoning-specialist model identifier |
+| `CROWS_DB_PATH` | SQLite database path; default `./data/aether.sqlite3` (preserved for existing installations) |
+| `CROWS_MESSAGING_TARGET_KEY` | Optional Fernet key used to encrypt persisted outbound delivery destinations; required before a background worker can resume Telegram deliveries |
+| `CROWS_WORKSPACE` | Workspace directory allowed for workspace tools; default `./workspace` |
+| `CROWS_ENABLE_TEST_RUNNER` | Set to `true` to enable Docker-backed pytest; default `false` |
+| `CROWS_TEST_TIMEOUT_SECONDS` | Test timeout in seconds, clamped to 5–120 |
+| `CROWS_SANDBOX_IMAGE` | Local sandbox image name; default `crows-sandbox:latest` |
+| `CROWS_TEST_PROJECT` | Optional project path to test instead of the configured workspace |
 
 Generate a messaging-target encryption key (keep it private and back it up securely):
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-export AETHER_MESSAGING_TARGET_KEY='paste-generated-key-here'
+export CROWS_MESSAGING_TARGET_KEY='paste-generated-key-here'
 ```
 
 The key is never stored in SQLite. Losing it makes previously encrypted delivery destinations unreadable. Outbound message content and delivery state remain in the inbox/outbox; the destination is stored separately as authenticated ciphertext. Discord stores only the fixed `configured-webhook` reference, never the webhook URL. Without this key, current synchronous sends continue to work, but no recoverable Telegram target is persisted and a future background worker must not claim those messages.
@@ -121,19 +121,19 @@ If model-provider variables are absent, local health checks and tools can still 
 
 ## Build the optional Docker sandbox
 
-Build the image once from the repository root. At runtime, Maximu Agent uses `--pull=never`, so it will not pull images automatically.
+Build the image once from the repository root. At runtime, Crows uses `--pull=never`, so it will not pull images automatically.
 
 ```bash
-docker build -f Dockerfile.sandbox -t aether-sandbox:latest .
-export AETHER_ENABLE_TEST_RUNNER=true
-export AETHER_SANDBOX_IMAGE=aether-sandbox:latest
+docker build -f Dockerfile.sandbox -t crows-sandbox:latest .
+export CROWS_ENABLE_TEST_RUNNER=true
+export CROWS_SANDBOX_IMAGE=crows-sandbox:latest
 ```
 
 PowerShell:
 
 ```powershell
-$env:AETHER_ENABLE_TEST_RUNNER="true"
-$env:AETHER_SANDBOX_IMAGE="aether-sandbox:latest"
+$env:CROWS_ENABLE_TEST_RUNNER="true"
+$env:CROWS_SANDBOX_IMAGE="crows-sandbox:latest"
 ```
 
 The test runner works on a temporary copy. Its Docker configuration disables network access, uses a read-only root filesystem, drops capabilities, enables `no-new-privileges`, runs as a non-root UID, and applies PID, memory, CPU, and timeout limits. Test changes to the snapshot are discarded.
@@ -156,7 +156,7 @@ The agent endpoints have different execution guarantees:
 
 - `POST /agents/plan` asks the configured model for a bounded plan and does not execute it.
 - `POST /agents/delegate` validates a supplied plan and creates queued task records; it does not run them.
-- `POST /agents/orchestrate` validates a model-generated plan and dependency graph, stores a durable workflow record, runs up to three dependency-ready specialist tasks concurrently, blocks downstream tasks when prerequisites fail, and checkpoints each task result plus a final QA/security review. Each specialist and QA task has a configurable timeout (`AETHER_AGENT_TASK_TIMEOUT_SECONDS`, default 120 seconds, clamped to 1–600); timed-out tasks are marked `unknown` and their dependents are blocked rather than replayed. The concurrency limit is configurable with `AETHER_AGENT_MAX_CONCURRENCY` (default 3, clamped to 1–3). Workflow checkpoints also expose structured diagnostics: status counts and a bounded failure list that distinguishes timeouts, uncertain outcomes, task failures, dependency blocks, and QA failures. If an orchestration request is cancelled, active task outcomes are conservatively marked `unknown`, the workflow checkpoint records the interruption, and automatic replay is avoided.
+- `POST /agents/orchestrate` validates a model-generated plan and dependency graph, stores a durable workflow record, runs up to three dependency-ready specialist tasks concurrently, blocks downstream tasks when prerequisites fail, and checkpoints each task result plus a final QA/security review. Each specialist and QA task has a configurable timeout (`CROWS_AGENT_TASK_TIMEOUT_SECONDS`, default 120 seconds, clamped to 1–600); timed-out tasks are marked `unknown` and their dependents are blocked rather than replayed. The concurrency limit is configurable with `CROWS_AGENT_MAX_CONCURRENCY` (default 3, clamped to 1–3). Workflow checkpoints also expose structured diagnostics: status counts and a bounded failure list that distinguishes timeouts, uncertain outcomes, task failures, dependency blocks, and QA failures. If an orchestration request is cancelled, active task outcomes are conservatively marked `unknown`, the workflow checkpoint records the interruption, and automatic replay is avoided.
 - `GET /agents/workflows?limit=50` lists recent workflow runs.
 - `GET /agents/workflows/{workflow_id}` returns the saved plan, task checkpoints, QA result, timestamps, and workflow status.
 - `POST /agents/workflows/{workflow_id}/recover` explicitly continues an interrupted workflow only when its recorded queued tasks are still queued in the task journal.
@@ -199,7 +199,7 @@ Session endpoints:
 - `POST /sessions` — create a session
 - `GET /sessions` — list sessions
 - `GET /sessions/{session_id}` — retrieve a session and its messages
-- `GET /sessions/export?limit=100` — export up to 1,000 recent sessions with up to 10,000 messages per session in a versioned JSON archive (`aether-conversation-export`, version 1). Treat exported files as private conversation data.
+- `GET /sessions/export?limit=100` — export up to 1,000 recent sessions with up to 10,000 messages per session in a versioned JSON archive (`crows-conversation-export`, version 1). Treat exported files as private conversation data.
 - `DELETE /sessions/{session_id}` — delete a session and its messages
 - `POST /chat` — chat with optional `session_id`, `task_type`, and `use_saved_memories` (default `false`)
 
@@ -209,7 +209,7 @@ Memory endpoints:
 - `GET /memory?limit=100&category=preference` — list memories
 - `POST /memory/search` — search saved records by keywords
 - `DELETE /memory/{memory_id}` — delete a saved record
-- `GET /memory/export` — export saved records as a versioned JSON document (`format: aether-memory-export`, `version: 1`) for local backup or migration. The export contains memory content and metadata; keep the downloaded file private.
+- `GET /memory/export` — export saved records as a versioned JSON document (`format: crows-memory-export`, `version: 1`) for local backup or migration. The export contains memory content and metadata; keep the downloaded file private.
 
 Memory is explicit and local; the application does not silently infer or save memories from chats.
 
@@ -224,7 +224,7 @@ Memory is explicit and local; the application does not silently infer or save me
 
 ### Model routing, retries, and fallback
 
-Maximu Agent selects a provider using the requested task type:
+Crows selects a provider using the requested task type:
 
 - `coding` uses the configured coding-specialist provider when available.
 - Other tasks, and coding tasks without a configured coding provider, use the primary provider.
@@ -234,7 +234,7 @@ Transient failures eligible for retry/fallback are network errors, timeouts, and
 
 The chat UI supports **Auto** and **Manual** model modes. Auto mode uses a local, deterministic task-intent heuristic (no extra model call) and routes coding tasks to the configured coding specialist; other task classes currently use the primary route unless explicitly configured otherwise. Manual mode requires an explicit configured route (`primary`, `coding`, or `fallback`). Fallback can be disabled per chat request; when enabled, fallback is used only for transient errors. `GET /models` lists configured routes without returning API credentials. This initial routing heuristic is intentionally conservative and should be evaluated against real tasks before claiming benchmark-driven optimization.
 
-The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, Maximu Agent raises the last provider error.
+The router allows **1–3 attempts per provider** (`max_attempts`; default **2**). Retries of the same provider use a short increasing delay: 0.25 seconds before the second attempt, then 0.5 seconds before the third. If the selected provider exhausts its attempts with a transient error, the configured fallback gets its own bounded attempts. If fallback also fails, Crows raises the last provider error.
 
 Successful chat responses include `route`, `model`, `fallback_used`, `attempts`, and a sanitized `attempt_history` list. Each history entry records the route, total attempt number, outcome, and (for failures) exception type only; it deliberately excludes exception messages, prompts, response bodies, and credentials. The attempt count includes calls made to both the selected and fallback providers. If no usable route is configured, the router raises a configuration error.
 
@@ -260,14 +260,14 @@ The last reported local verification on `main` before the durable-workflow check
 
 ### Durable messaging outbox worker
 
-The outbox worker is opt-in and disabled by default. Configure `AETHER_MESSAGING_TARGET_KEY` with a persistent Fernet key before enabling it. Then set:
+The outbox worker is opt-in and disabled by default. Configure `CROWS_MESSAGING_TARGET_KEY` with a persistent Fernet key before enabling it. Then set:
 
 ```bash
-export AETHER_MESSAGING_WORKER_ENABLED=true
-export AETHER_MESSAGING_WORKER_INTERVAL_SECONDS=2
+export CROWS_MESSAGING_WORKER_ENABLED=true
+export CROWS_MESSAGING_WORKER_INTERVAL_SECONDS=2
 ```
 
-The worker sends only target-backed messages that it can atomically lease. Telegram destinations are decrypted in the backend; Discord resolves the fixed `configured-webhook` reference through `AETHER_DISCORD_WEBHOOK_URL`. Transport errors and expired leases become `unknown` and are not automatically retried because delivery may already have occurred. The worker stops with the FastAPI application. Run one application worker process against a SQLite database; multi-process deployment needs a separately evaluated worker topology.
+The worker sends only target-backed messages that it can atomically lease. Telegram destinations are decrypted in the backend; Discord resolves the fixed `configured-webhook` reference through `CROWS_DISCORD_WEBHOOK_URL`. Transport errors and expired leases become `unknown` and are not automatically retried because delivery may already have occurred. The worker stops with the FastAPI application. Run one application worker process against a SQLite database; multi-process deployment needs a separately evaluated worker topology.
 
 
 ### Messaging outbox retry and reconciliation

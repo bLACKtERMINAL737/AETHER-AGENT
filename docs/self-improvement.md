@@ -1,4 +1,4 @@
-# Maximu Agent Self-Improvement Engine: Safe MVP
+# Crows Self-Improvement Engine: Safe MVP
 
 ## Integrated workflow
 
