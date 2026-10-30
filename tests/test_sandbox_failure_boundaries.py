@@ -72,10 +72,25 @@ def test_run_pytest_timeout_is_reported_as_failure(tmp_path: Path, monkeypatch):
     sandbox = DockerTestSandbox(workspace, timeout_seconds=5)
     monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
 
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"], output="partial output")
+    import io
 
-    monkeypatch.setattr("aether.sandbox.subprocess.run", timeout)
+    class TimedOutProcess:
+        stdout = io.BytesIO(b"partial output")
+        stderr = io.BytesIO(b"")
+
+        def wait(self, timeout=None):
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("docker run", timeout)
+            return -9
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(
+        "aether.sandbox.subprocess.Popen",
+        lambda *args, **kwargs: TimedOutProcess(),
+    )
+    monkeypatch.setattr("aether.sandbox.subprocess.run", lambda *args, **kwargs: None)
     result = sandbox.run_pytest()
 
     assert result["passed"] is False
@@ -96,7 +111,7 @@ def test_run_pytest_wraps_docker_launch_oserror(tmp_path: Path, monkeypatch):
     def launch_error(*args, **kwargs):
         raise OSError("permission denied")
 
-    monkeypatch.setattr("aether.sandbox.subprocess.run", launch_error)
+    monkeypatch.setattr("aether.sandbox.subprocess.Popen", launch_error)
     with pytest.raises(SandboxError, match="Could not start Docker"):
         sandbox.run_pytest()
 
