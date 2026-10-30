@@ -1421,7 +1421,15 @@ async def recover_agent_workflow(workflow_id: str):
             qa_checkpoint = checkpoint.get("qa_review")
             if isinstance(qa_checkpoint, dict) and isinstance(qa_checkpoint.get("task_id"), str):
                 qa_task = store.get_task(qa_checkpoint["task_id"])
-                if qa_task and qa_task.get("status") in {"running", "unknown"}:
+                if qa_task and qa_task.get("status") in {"succeeded", "failed"}:
+                    qa_checkpoint["status"] = qa_task["status"]
+                    qa_checkpoint.pop("error", None)
+                    if qa_task.get("result_json"):
+                        try:
+                            qa_checkpoint["result"] = json.loads(qa_task["result_json"])
+                        except (TypeError, ValueError):
+                            qa_checkpoint["result"] = ""
+                elif qa_task and qa_task.get("status") in {"running", "unknown"}:
                     qa_checkpoint["status"] = "unknown"
                     qa_checkpoint["error"] = (
                         "Recovery was interrupted during QA; inspect task and tool journals before retrying."
@@ -1458,7 +1466,15 @@ async def recover_agent_workflow(workflow_id: str):
             qa_checkpoint = checkpoint.get("qa_review")
             if isinstance(qa_checkpoint, dict) and isinstance(qa_checkpoint.get("task_id"), str):
                 qa_task = store.get_task(qa_checkpoint["task_id"])
-                if qa_task and qa_task.get("status") in {"running", "unknown"}:
+                if qa_task and qa_task.get("status") in {"succeeded", "failed"}:
+                    qa_checkpoint["status"] = qa_task["status"]
+                    qa_checkpoint.pop("error", None)
+                    if qa_task.get("result_json"):
+                        try:
+                            qa_checkpoint["result"] = json.loads(qa_task["result_json"])
+                        except (TypeError, ValueError):
+                            qa_checkpoint["result"] = ""
+                elif qa_task and qa_task.get("status") in {"running", "unknown"}:
                     qa_checkpoint["status"] = "unknown"
                     qa_checkpoint["error"] = (
                         "Recovery was interrupted during QA; inspect task and tool journals before retrying."
