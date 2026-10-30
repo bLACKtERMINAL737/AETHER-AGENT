@@ -709,3 +709,31 @@ async def test_recovery_diagnostics_cover_failed_and_uncertain_outcomes(
     assert diagnostics["qa_status"] == expected_qa_status
     assert diagnostics["failure_count"] == 1
     assert diagnostics["failures"][0]["category"] == expected_category
+
+
+
+def test_concurrent_workflow_recovery_claim_has_exactly_one_winner(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    db_path = tmp_path / "concurrent-recovery.sqlite3"
+    store = TaskStore(db_path)
+    workflow = store.create_workflow("Concurrent recovery", [])
+    store.update_workflow(
+        workflow["id"], "unknown",
+        results={"tasks": [], "qa_review": None},
+        error="simulated interruption",
+    )
+    stores = [TaskStore(db_path) for _ in range(8)]
+    barrier = Barrier(len(stores))
+
+    def claim(candidate):
+        barrier.wait(timeout=5)
+        return candidate.claim_workflow_recovery(workflow["id"])
+
+    with ThreadPoolExecutor(max_workers=len(stores)) as pool:
+        outcomes = list(pool.map(claim, stores))
+
+    assert outcomes.count(True) == 1
+    assert outcomes.count(False) == len(stores) - 1
+    assert store.get_workflow(workflow["id"])["status"] == "running"
