@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a privacy-conscious, repeatable evaluation set against a local AETHER CLAW API.
+"""Run a privacy-conscious, repeatable evaluation set against a local Maximu Agent API.
 
 Example:
   AETHER_API_TOKEN=... python scripts/agent_eval.py \
@@ -187,7 +187,7 @@ def run_case(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, required=True, help="JSON evaluation case file")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="AETHER CLAW API URL")
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Maximu Agent API URL")
     parser.add_argument("--output", type=Path, default=Path("agent-eval-report.json"))
     parser.add_argument("--timeout", type=float, default=90.0)
     args = parser.parse_args()
