@@ -779,6 +779,6 @@ def test_execution_metrics_report_aggregate_states_without_task_content(tmp_path
     assert metrics["workflows"]["unknown"] == 1
     assert metrics["tool_executions"]["failed"] == 1
     assert metrics["oldest_queued_task_at"] == queued["created_at"]
-    serialized = json.dumps(metrics)
+    serialized = str(metrics)
     for secret in ("private input", "private workflow goal", "private error", "private_tool"):
         assert secret not in serialized
