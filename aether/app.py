@@ -26,6 +26,7 @@ from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .messaging_store import MessagingStore
+from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
@@ -547,6 +548,23 @@ async def deliver_outbound_batch(*, worker_id: str = "aether-claw-worker", limit
                     url, json=payload,
                     params={"wait": "true"} if channel == "discord" else None,
                 )
+            if response.status_code == 429:
+                retry_after = 5
+                try:
+                    retry_after = int(response.headers.get("Retry-After", "5"))
+                except (TypeError, ValueError):
+                    pass
+                retry_result = messaging_store.retry_outbound_lease(
+                    message_id, worker_id=worker_id,
+                    delay_seconds=min(max(retry_after, 1), 300), max_retries=3,
+                )
+                if retry_result == "scheduled":
+                    outcomes["failed"] += 1
+                elif retry_result == "exhausted":
+                    outcomes["failed"] += 1
+                else:
+                    outcomes["skipped"] += 1
+                continue
             body = response.json() if response.content else {}
             if channel == "telegram":
                 ok = response.is_success and isinstance(body, dict) and body.get("ok") is True
