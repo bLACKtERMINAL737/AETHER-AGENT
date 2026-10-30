@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "project-aether"
+name = "maximu-agent"
 version = "0.4.0"
 description = "Maximu Agent — local-first hybrid AI agent"
 requires-python = ">=3.11"
