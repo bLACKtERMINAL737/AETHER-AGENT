@@ -1402,7 +1402,17 @@ async def recover_agent_workflow(workflow_id: str):
         try:
             for outcome in outcomes:
                 task = store.get_task(outcome["task_id"])
-                if task and task.get("status") in {"running", "unknown"}:
+                if task and task.get("status") in {"succeeded", "failed"}:
+                    # The task journal is authoritative if cancellation arrived
+                    # after the task committed but before its workflow checkpoint.
+                    outcome["status"] = task["status"]
+                    outcome.pop("error", None)
+                    if task.get("result_json"):
+                        try:
+                            outcome["result"] = json.loads(task["result_json"])
+                        except (TypeError, ValueError):
+                            outcome["result"] = ""
+                elif task and task.get("status") in {"running", "unknown"}:
                     outcome["status"] = "unknown"
                     outcome["error"] = (
                         "Recovery was interrupted while this task was running; "
@@ -1429,7 +1439,17 @@ async def recover_agent_workflow(workflow_id: str):
         try:
             for outcome in outcomes:
                 task = store.get_task(outcome["task_id"])
-                if task and task.get("status") in {"running", "unknown"}:
+                if task and task.get("status") in {"succeeded", "failed"}:
+                    # The task journal is authoritative if cancellation arrived
+                    # after the task committed but before its workflow checkpoint.
+                    outcome["status"] = task["status"]
+                    outcome.pop("error", None)
+                    if task.get("result_json"):
+                        try:
+                            outcome["result"] = json.loads(task["result_json"])
+                        except (TypeError, ValueError):
+                            outcome["result"] = ""
+                elif task and task.get("status") in {"running", "unknown"}:
                     outcome["status"] = "unknown"
                     outcome["error"] = (
                         "Recovery was interrupted while this task was running; "
