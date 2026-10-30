@@ -153,7 +153,7 @@ async def test_outbox_worker_sends_telegram_and_finishes_lease(monkeypatch, isol
     FakeAsyncClient.response = FakeResponse(200, {"ok": True, "result": {"message_id": 123}})
     monkeypatch.setenv("AETHER_TELEGRAM_BOT_TOKEN", "test-token")
     result = await app_module.deliver_outbound_batch(worker_id="worker-test")
-    assert result == {"claimed": 1, "sent": 1, "failed": 0, "unknown": 0, "skipped": 0}
+    assert result == {"claimed": 1, "sent": 1, "retried": 0, "failed": 0, "unknown": 0, "skipped": 0}
     assert isolated_store.get_outbound("telegram", "worker-telegram")["status"] == "sent"
     assert "98765" in FakeAsyncClient.calls[-1][1]["json"].values()
 
