@@ -147,3 +147,92 @@ def test_reconciliation_requires_unknown_schedule_and_valid_note(tmp_path):
         store.record_reconciliation("missing", "Checked", "Evidence")
     with pytest.raises(KeyError):
         store.list_reconciliation_audit("missing")
+
+
+
+def test_concurrent_workers_have_exactly_one_claim_winner(tmp_path: Path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    path = tmp_path / "concurrent-claims.sqlite3"
+    stores = [SchedulerStore(path) for _ in range(8)]
+    stores[0].create_schedule(
+        "One due task", "Must have one owner", "2026-01-01T00:00:00+00:00", "one-owner"
+    )
+    barrier = Barrier(len(stores))
+
+    def claim(index):
+        barrier.wait(timeout=5)
+        return stores[index].claim_due(
+            f"worker-{index}", now="2026-01-02T00:00:00+00:00", limit=10
+        )
+
+    with ThreadPoolExecutor(max_workers=len(stores)) as pool:
+        results = list(pool.map(claim, range(len(stores))))
+
+    claimed = [item for batch in results for item in batch]
+    assert len(claimed) == 1
+    assert claimed[0]["lease_owner"].startswith("worker-")
+
+
+def test_finish_claim_cannot_overwrite_expired_or_recovered_schedule(tmp_path: Path):
+    store = SchedulerStore(tmp_path / "stale-finish.sqlite3")
+    schedule = store.create_schedule(
+        "Due", "Do work", "2026-01-01T00:00:00+00:00", "stale-finish"
+    )
+    store.claim_due(
+        "worker-old", now="2026-01-02T00:00:00+00:00", lease_seconds=5
+    )
+
+    assert store.finish_claim(
+        schedule["id"], "worker-old", "completed",
+        now="2026-01-02T00:00:06+00:00", result_json='{"ok": true}'
+    ) is False
+    assert store.mark_expired_claims_unknown(
+        now="2026-01-02T00:00:06+00:00"
+    ) == 1
+    assert store.finish_claim(
+        schedule["id"], "worker-old", "completed",
+        now="2026-01-02T00:00:07+00:00"
+    ) is False
+
+    saved = store.get_schedule(schedule["id"])
+    assert saved["status"] == "unknown"
+    assert saved["result_json"] is None
+    assert saved["lease_owner"] is None
+
+
+def test_expired_lease_cannot_be_resurrected_by_renewal(tmp_path: Path):
+    store = SchedulerStore(tmp_path / "no-resurrection.sqlite3")
+    schedule = store.create_schedule(
+        "Due", "Do work", "2026-01-01T00:00:00+00:00", "no-resurrection"
+    )
+    store.claim_due(
+        "worker-a", now="2026-01-02T00:00:00+00:00", lease_seconds=5
+    )
+    assert store.mark_expired_claims_unknown(
+        now="2026-01-02T00:00:06+00:00"
+    ) == 1
+
+    assert store.renew_claim(
+        schedule["id"], "worker-a",
+        now="2026-01-02T00:00:07+00:00", lease_seconds=300
+    ) is False
+    assert store.get_schedule(schedule["id"])["status"] == "unknown"
+
+
+def test_claim_due_respects_limit_and_due_order(tmp_path: Path):
+    store = SchedulerStore(tmp_path / "claim-order.sqlite3")
+    for index, run_at in enumerate((
+        "2026-01-01T00:03:00+00:00",
+        "2026-01-01T00:01:00+00:00",
+        "2026-01-01T00:02:00+00:00",
+    )):
+        store.create_schedule(f"Task {index}", "Run", run_at, f"ordered-{index}")
+
+    claimed = store.claim_due(
+        "worker-a", now="2026-01-02T00:00:00+00:00", limit=2
+    )
+    assert [item["title"] for item in claimed] == ["Task 1", "Task 2"]
+    assert store.metrics()["by_status"]["scheduled"] == 1
+    assert store.metrics()["by_status"]["running"] == 2
