@@ -114,3 +114,35 @@ def test_run_pytest_rejects_invalid_or_option_like_image_reference(
 
     with pytest.raises(SandboxError, match="Invalid sandbox image reference"):
         sandbox.run_pytest()
+
+
+def test_test_runner_bounds_captured_output_without_truncating_pipe_drain(
+    tmp_path: Path, monkeypatch
+):
+    import subprocess
+    import sys
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    sandbox = DockerTestSandbox(workspace, timeout_seconds=10)
+    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
+
+    def fake_popen(_command, **kwargs):
+        return subprocess.Popen(
+            [
+                sys.executable, "-c",
+                "import sys; sys.stdout.write('x' * 100000 + 'END'); "
+                "sys.stderr.write('y' * 90000 + 'ERR')",
+            ],
+            **kwargs,
+        )
+
+    monkeypatch.setattr("aether.sandbox.subprocess.Popen", fake_popen)
+    result = sandbox.run_pytest()
+
+    assert result["stdout"].endswith("END")
+    assert result["stderr"].endswith("ERR")
+    assert len(result["stdout"].encode("utf-8")) <= 12_000
+    assert len(result["stderr"].encode("utf-8")) <= 12_000
+    assert result["stdout_truncated"] is True
+    assert result["stderr_truncated"] is True

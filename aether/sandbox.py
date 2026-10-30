@@ -3,8 +3,27 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
+
+
+MAX_OUTPUT_BYTES = 12_000
+
+
+def _capture_bounded_output(stream, limit: int = MAX_OUTPUT_BYTES) -> tuple[bytes, int]:
+    """Drain a child pipe completely while retaining only its final bounded tail."""
+    tail = bytearray()
+    total = 0
+    while True:
+        chunk = stream.read(8192)
+        if not chunk:
+            break
+        total += len(chunk)
+        tail.extend(chunk)
+        if len(tail) > limit:
+            del tail[:-limit]
+    return bytes(tail), total
 
 
 class SandboxError(RuntimeError):
@@ -117,8 +136,10 @@ class DockerTestSandbox:
             snapshot = Path(temp) / "workspace"
             snapshot.mkdir(mode=0o777)
             self._snapshot(snapshot)
+            cid_file = Path(temp) / "container-id"
             command = [
                 "docker", "run", "--rm", "--pull=never",
+                "--cidfile", str(cid_file),
                 "--network=none", "--read-only",
                 "--cap-drop=ALL", "--security-opt=no-new-privileges",
                 "--pids-limit", str(self.pids_limit),
@@ -130,29 +151,63 @@ class DockerTestSandbox:
                 "python", "-m", "pytest", "-q",
             ]
             try:
-                result = subprocess.run(
-                    command, capture_output=True, text=True, timeout=self.timeout_seconds,
-                    check=False, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+                process = subprocess.Popen(
+                    command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
                 )
-                return {
+                assert process.stdout is not None and process.stderr is not None
+                stdout_result: list[tuple[bytes, int]] = []
+                stderr_result: list[tuple[bytes, int]] = []
+                stdout_reader = threading.Thread(
+                    target=lambda: stdout_result.append(_capture_bounded_output(process.stdout)),
+                    daemon=True,
+                )
+                stderr_reader = threading.Thread(
+                    target=lambda: stderr_result.append(_capture_bounded_output(process.stderr)),
+                    daemon=True,
+                )
+                stdout_reader.start()
+                stderr_reader.start()
+                timed_out = False
+                try:
+                    returncode = process.wait(timeout=self.timeout_seconds)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    process.kill()
+                    process.wait()
+                    # Killing the Docker CLI alone can leave its container running.
+                    # Use the cidfile to stop the container so --rm can clean it up.
+                    try:
+                        container_id = cid_file.read_text(encoding="ascii").strip()
+                        if container_id:
+                            subprocess.run(
+                                ["docker", "kill", container_id],
+                                capture_output=True, text=True, timeout=5,
+                                check=False,
+                                env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+                            )
+                    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+                        pass
+                    returncode = None
+                stdout_reader.join(timeout=5)
+                stderr_reader.join(timeout=5)
+                stdout_bytes, stdout_total = stdout_result[0] if stdout_result else (b"", 0)
+                stderr_bytes, stderr_total = stderr_result[0] if stderr_result else (b"", 0)
+                output = {
                     "command": command,
-                    "returncode": result.returncode,
-                    "passed": result.returncode == 0,
-                    "stdout": result.stdout[-12000:],
-                    "stderr": result.stderr[-12000:],
+                    "returncode": returncode,
+                    "passed": returncode == 0 and not timed_out,
+                    "stdout": stdout_bytes.decode("utf-8", errors="replace"),
+                    "stderr": stderr_bytes.decode("utf-8", errors="replace"),
+                    "stdout_truncated": stdout_total > MAX_OUTPUT_BYTES,
+                    "stderr_truncated": stderr_total > MAX_OUTPUT_BYTES,
                     "timeout_seconds": self.timeout_seconds,
                     "sandboxed": True,
                     "network": "disabled",
                     "workspace_mode": "disposable-copy",
                 }
-            except subprocess.TimeoutExpired as exc:
-                return {
-                    "command": command, "returncode": None, "passed": False,
-                    "stdout": str(exc.stdout or "")[-12000:],
-                    "stderr": str(exc.stderr or "")[-12000:],
-                    "timeout_seconds": self.timeout_seconds, "timed_out": True,
-                    "sandboxed": True, "network": "disabled",
-                    "workspace_mode": "disposable-copy",
-                }
+                if timed_out:
+                    output["timed_out"] = True
+                return output
             except OSError as exc:
                 raise SandboxError(f"Could not start Docker: {exc}") from exc
