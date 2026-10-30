@@ -1844,7 +1844,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "[qa_security] Review specialist results",
             "Review this goal and the specialist results independently for correctness, security risks, and missing tests. "
             "Do not assume a task is correct merely because it reports success. Verify evidence and identify unsupported claims. "
-            "Return ONLY JSON with exact shape: {\\"verdict\\":\\"PASS|NEEDS_ATTENTION\\",\\"summary\\":\\"...\\",\\"findings\\":[{\\"severity\\":\\"critical|high|medium|low\\",\\"title\\":\\"...\\",\\"detail\\":\\"...\\"}]}. "
+            "Return only a JSON object with keys verdict, summary, and findings. Verdict must be PASS or NEEDS_ATTENTION. Each finding must include severity, title, and detail. Severity must be critical, high, medium, or low. "
             "Use PASS only when no critical or high-severity issue remains; otherwise use NEEDS_ATTENTION. "
             "If evidence is insufficient, use NEEDS_ATTENTION and explain why.\n"
             + json.dumps({"goal": request.goal, "results": outcomes}, ensure_ascii=False),
