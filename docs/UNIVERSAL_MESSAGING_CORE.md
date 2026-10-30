@@ -1,6 +1,6 @@
 # Universal Messaging Core
 
-AETHER CLAW's provider-neutral messaging contract is the foundation for a web inbox and optional channel adapters. It is not itself a connected social network integration.
+Maximu Agent's provider-neutral messaging contract is the foundation for a web inbox and optional channel adapters. It is not itself a connected social network integration.
 
 ## Contract
 

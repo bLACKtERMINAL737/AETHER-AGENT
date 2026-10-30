@@ -1,15 +1,15 @@
-# Reproducible AETHER CLAW agent evaluation
+# Reproducible Maximu Agent agent evaluation
 
 The evaluation runner checks actual /chat responses against observable task-journal outcomes. It is intended for a local, non-sensitive workspace, not a public deployment.
 
 ## Setup
 
-1. Start AETHER CLAW on loopback and configure a working model route.
+1. Start Maximu Agent on loopback and configure a working model route.
 2. Set AETHER_API_TOKEN in the same shell used to run the evaluation if API protection is enabled. Never put the token in the case file or report.
 3. Create the fixture in the configured workspace at eval-fixtures/known_fact.txt with this content:
 
 ```text
-AETHER CLAW evaluation marker: AETHER_EVAL_MARKER_9241
+Maximu Agent evaluation marker: AETHER_EVAL_MARKER_9241
 The sample project is named Northstar Demo.
 ```
 

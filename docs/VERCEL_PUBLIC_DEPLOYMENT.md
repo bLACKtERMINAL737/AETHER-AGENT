@@ -2,7 +2,7 @@
 
 ## Current status
 
-AETHER CLAW's existing FastAPI application is designed for local-first use. Deploying the current HTML page to Vercel makes the page public, but **does not make the agent a safe public service**. The current API uses a shared `AETHER_API_TOKEN` or loopback-only fallback, and the application stores local task, session, memory, workflow, and workspace state in its configured SQLite/workspace paths. Do not expose that local-agent API directly to the internet.
+Maximu Agent's existing FastAPI application is designed for local-first use. Deploying the current HTML page to Vercel makes the page public, but **does not make the agent a safe public service**. The current API uses a shared `AETHER_API_TOKEN` or loopback-only fallback, and the application stores local task, session, memory, workflow, and workspace state in its configured SQLite/workspace paths. Do not expose that local-agent API directly to the internet.
 
 ## Safe first step: public UI preview
 

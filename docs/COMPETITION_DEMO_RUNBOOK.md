@@ -1,4 +1,4 @@
-# AETHER CLAW — Competition Demo Runbook
+# Maximu Agent — Competition Demo Runbook
 
 This runbook is a repeatable, honest demonstration of the current MVP. It showcases local control, model routing, explicit review of coding changes, and optional isolated testing. It does not claim that the agent is fully autonomous or that cloud-model requests remain on the machine.
 
@@ -19,7 +19,7 @@ Show one end-to-end flow:
 
 ## Minimum AI-agent acceptance gates (must pass before submission)
 
-The submission should prove that AETHER CLAW executes agent work, not just that the API starts or a model produces fluent text. Run these checks on the exact release candidate and record the result honestly.
+The submission should prove that Maximu Agent executes agent work, not just that the API starts or a model produces fluent text. Run these checks on the exact release candidate and record the result honestly.
 
 - [ ] **Reasoning and tool use:** ask a task that requires a workspace tool. Confirm the task journal shows the actual tool name, arguments, execution result, and final status. A guessed answer without a successful tool result is a failure.
 - [ ] **Read a known file:** create a harmless file under the configured workspace with two unique lines. Ask chat to read that exact relative path and report both lines. Confirm `workspace.read_file` executed successfully in the task journal. Listing or searching the file is not a substitute for reading it.
@@ -66,7 +66,7 @@ The competition demo is limited to 3 minutes. Record a concise, reproducible tak
 
 ### Suggested 180-second structure
 
-1. **0:00–0:20 — Problem and positioning.** Introduce AETHER CLAW as a local-first, modular AI agent foundation for task execution with explicit review and safe local development. Avoid claiming production readiness or that all inference is local when a cloud provider is selected.
+1. **0:00–0:20 — Problem and positioning.** Introduce Maximu Agent as a local-first, modular AI agent foundation for task execution with explicit review and safe local development. Avoid claiming production readiness or that all inference is local when a cloud provider is selected.
 2. **0:20–0:40 — Live status.** Show the local UI and healthy API; briefly show the configured route without exposing provider IDs that are sensitive, tokens, or keys.
 3. **0:40–1:05 — Real tool execution.** Ask a short task requiring a workspace tool. Show the task journal's actual tool name, arguments, result, and status. Only include this if the exact release candidate passes the tool-use acceptance gates above.
 4. **1:05–2:25 — Approval-first coding.** Use a harmless sample project, create a proposal, inspect the diff, and show that files remain unchanged until explicit approval. Apply only after reviewing the diff. If this flow is not verified, do not stage it as a successful demo.
@@ -79,7 +79,7 @@ The competition demo is limited to 3 minutes. Record a concise, reproducible tak
 
 Before submitting, verify the competition portal's current field requirements and prepare these items:
 
-- [ ] **Project name:** AETHER CLAW.
+- [ ] **Project name:** Maximu Agent.
 - [ ] **Project overview:** concise description of the problem, target users, and value.
 - [ ] **Scenario:** one concrete user workflow demonstrated in the video.
 - [ ] **Technical approach:** local-first API/UI, configurable model routes, workspace tools, persistent task/session state, approval-gated coding, and optional Docker test isolation—only describe capabilities present in the submitted revision.

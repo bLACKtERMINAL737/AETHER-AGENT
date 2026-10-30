@@ -1,4 +1,4 @@
-"""Provider-neutral contracts for AETHER CLAW's universal messaging layer.
+"""Provider-neutral contracts for Maximu Agent's universal messaging layer.
 
 This module deliberately does not claim that any platform connector is enabled.
 Concrete adapters must implement the contract and comply with each provider's

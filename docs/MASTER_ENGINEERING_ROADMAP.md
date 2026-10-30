@@ -1,10 +1,10 @@
-# AETHER CLAW — Master Engineering Roadmap
+# Maximu Agent — Master Engineering Roadmap
 
 Planning baseline: repository source/docs inspected on 29 October 2026.
 Competition deadline: organizer details supplied by the project owner list 10 November 2026 for preliminary entries. Re-check the portal before submitting.
 
 ## Product thesis
-AETHER CLAW is a local-first, model-flexible agent platform for controlled, verifiable execution of developer and knowledge-work tasks. Users should be able to choose automatic or manual model routing, inspect plans and tool actions, recover from interruptions without unsafe replay, and approve consequential changes.
+Maximu Agent is a local-first, model-flexible agent platform for controlled, verifiable execution of developer and knowledge-work tasks. Users should be able to choose automatic or manual model routing, inspect plans and tool actions, recover from interruptions without unsafe replay, and approve consequential changes.
 
 “More capable” must be demonstrated with reproducible end-to-end tasks, transparent outcomes, security tests, latency/cost measurements, and a useful demo. Do not claim superiority over other agents without a fair benchmark.
 
@@ -12,13 +12,13 @@ AETHER CLAW is a local-first, model-flexible agent platform for controlled, veri
 The preliminary entry requires project title, project introduction, application scenario, and technical solution. Prepare these before spending time on nonessential UI polish.
 
 ### Recommended title
-AETHER CLAW — A Local-First Agent for Verifiable, Approval-Gated Workflows
+Maximu Agent — A Local-First Agent for Verifiable, Approval-Gated Workflows
 
 ### Short introduction
-AETHER CLAW is a modular AI agent designed to turn user goals into inspectable, tool-assisted workflows while keeping execution accountable. It combines configurable model routes, workspace-scoped tools, durable task journals, dependency-aware orchestration, explicit memory, and approval-gated coding proposals. Interrupted or uncertain work is recorded for inspection rather than silently replayed. Optional isolated testing helps validate proposed code changes before a user approves them.
+Maximu Agent is a modular AI agent designed to turn user goals into inspectable, tool-assisted workflows while keeping execution accountable. It combines configurable model routes, workspace-scoped tools, durable task journals, dependency-aware orchestration, explicit memory, and approval-gated coding proposals. Interrupted or uncertain work is recorded for inspection rather than silently replayed. Optional isolated testing helps validate proposed code changes before a user approves them.
 
 ### Application scenario
-A solo developer or small engineering team asks the agent to investigate a bug in an existing project. AETHER CLAW inspects approved workspace files, proposes a bounded plan, invokes registered tools, records each tool outcome, prepares a reviewable code diff, optionally runs tests on a disposable snapshot, and waits for explicit approval before applying changes. If a provider or task fails, the journal exposes the failure and preserves uncertain outcomes for deliberate recovery.
+A solo developer or small engineering team asks the agent to investigate a bug in an existing project. Maximu Agent inspects approved workspace files, proposes a bounded plan, invokes registered tools, records each tool outcome, prepares a reviewable code diff, optionally runs tests on a disposable snapshot, and waits for explicit approval before applying changes. If a provider or task fails, the journal exposes the failure and preserves uncertain outcomes for deliberate recovery.
 
 ### Technical solution
 - FastAPI service and lightweight UI, intended to run locally.

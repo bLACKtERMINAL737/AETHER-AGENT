@@ -1,4 +1,4 @@
-# AETHER CLAW — Core Capability Audit
+# Maximu Agent — Core Capability Audit
 
 Audit baseline: `main` at merge commit `d7ac510` (PR #220).
 

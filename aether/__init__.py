@@ -1,1 +1,1 @@
-"""AETHER CLAW agent package."""
+"""Maximu Agent agent package."""

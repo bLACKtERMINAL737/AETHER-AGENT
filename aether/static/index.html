@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AETHER CLAW</title>
+<title>Maximu Agent</title>
 <style>
 :root{color-scheme:dark;--bg:#05080d;--panel:#0b111a;--line:#1b2b3b;--text:#eaf6ff;--muted:#91a5b8;--accent:#38bdf8;--accent-strong:#7dd3fc;--good:#6ee7b7;--bad:#fca5a5;--user-bubble:#0b2535}
 *{box-sizing:border-box}html{background:var(--bg);scroll-behavior:smooth}body{margin:0;background:radial-gradient(850px 420px at 50% -20%,#0b3044 0,transparent 68%),var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -66,19 +66,19 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
 <body>
 <div class="app-shell">
 <aside class="app-sidebar" aria-label="Conversation navigation">
-  <div class="brand"><span class="brand-mark">A</span><span>AETHER CLAW</span></div>
+  <div class="brand"><span class="brand-mark">A</span><span>Maximu Agent</span></div>
   <button type="button" class="sidebar-action" id="sidebarNewChat"><span aria-hidden="true">＋</span> New chat</button>
   <div class="sidebar-label">Recent chats</div>
   <div class="sidebar-history" id="sidebarHistory"></div>
   <div class="sidebar-bottom">AI can make mistakes. Review important results.</div>
 </aside>
 <main class="app-main">
-  <div class="app-topbar"><div class="app-topbar-title">AETHER CLAW</div><div class="app-topbar-controls" id="modelControls"></div></div>
-  <div class="top"><div><h1>AETHER CLAW</h1><div class="muted">Your local-first AI workspace</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
+  <div class="app-topbar"><div class="app-topbar-title">Maximu Agent</div><div class="app-topbar-controls" id="modelControls"></div></div>
+  <div class="top"><div><h1>Maximu Agent</h1><div class="muted">Your local-first AI workspace</div></div><span class="pill">LOCAL API · REVIEW BEFORE APPLY</span></div>
   <div class="warning">Keep the API bound to 127.0.0.1. Review every diff before approving. The test runner requires a locally built Docker sandbox image.</div>
   <section class="panel" style="margin-top:14px">
-    <label for="apiToken">AETHER CLAW API token (optional unless AETHER_API_TOKEN is configured)</label>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="apiToken" type="password" autocomplete="off" placeholder="Paste local API token" aria-label="AETHER CLAW API token"><button id="saveToken">Save for this tab</button><button id="clearToken">Clear</button></div>
+    <label for="apiToken">Maximu Agent API token (optional unless AETHER_API_TOKEN is configured)</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="apiToken" type="password" autocomplete="off" placeholder="Paste local API token" aria-label="Maximu Agent API token"><button id="saveToken">Save for this tab</button><button id="clearToken">Clear</button></div>
     <div class="muted small">Token is kept in this browser tab's session storage and sent only as an API header.</div>
     <div id="tokenStatus" class="status" role="status"></div>
   </section>
@@ -117,7 +117,7 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
     <div id="imagePreview" hidden style="margin:4px 0 10px"><img id="imagePreviewImg" alt="Selected image preview" style="max-width:180px;max-height:140px;border-radius:12px;border:1px solid #394451"></div>
     <div class="chat-composer" role="group" aria-label="Message composer">
       <label class="sr-only" for="chatInput">Message</label>
-      <textarea id="chatInput" maxlength="20000" placeholder="Message AETHER CLAW…" aria-label="Message AETHER CLAW"></textarea>
+      <textarea id="chatInput" maxlength="20000" placeholder="Message Maximu Agent…" aria-label="Message Maximu Agent"></textarea>
       <button class="primary chat-send-button" id="sendChat" type="button" aria-label="Send message" title="Send message">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" /></svg>
       </button>
@@ -184,7 +184,7 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       <label for="dir">Workspace folder</label>
       <div style="display:flex;gap:8px"><input id="dir" value="." aria-label="Workspace folder"><button id="refresh">Refresh</button></div>
       <div id="files" class="files">Loading workspace files…</div>
-      <label for="instruction">What should AETHER CLAW change?</label>
+      <label for="instruction">What should Maximu Agent change?</label>
       <textarea id="instruction" placeholder="Example: Find and fix the off-by-one bug. Keep the public API unchanged."></textarea>
       <div class="actions"><button class="primary" id="propose">Generate proposal</button><button id="health">Check API</button></div>
       <div id="leftStatus" class="status" role="status"></div>
@@ -207,17 +207,17 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
   </div>
   <section class="panel" style="margin-top:16px">
     <h2>3. Test and fix loop</h2>
-    <div class="muted small">AETHER CLAW can make up to 3 attempts on a disposable copy, feed sandbox test failures into the next attempt, and stop when tests pass. The real workspace is not changed. A passing result creates a pending proposal that still requires your review and approval.</div>
+    <div class="muted small">Maximu Agent can make up to 3 attempts on a disposable copy, feed sandbox test failures into the next attempt, and stop when tests pass. The real workspace is not changed. A passing result creates a pending proposal that still requires your review and approval.</div>
     <div class="actions"><button class="primary" id="iterate">Try code → test → fix (max 3 rounds)</button><button id="runTests">Run sandboxed pytest</button></div>
     <div id="testStatus" class="status" role="status"></div><pre id="testOutput" style="display:none"></pre>
   </section>
   <section class="panel" style="margin-top:16px">
     <h2>4. Long-term memory</h2>
-    <div class="muted small">Memory is stored locally in SQLite. AETHER CLAW does not automatically inject these records into model prompts; search and review them explicitly.</div>
+    <div class="muted small">Memory is stored locally in SQLite. Maximu Agent does not automatically inject these records into model prompts; search and review them explicitly.</div>
     <label for="memoryCategory">Category</label>
     <input id="memoryCategory" maxlength="80" value="preference">
     <label for="memoryContent">Memory content</label>
-    <textarea id="memoryContent" maxlength="4000" placeholder="A fact or preference you explicitly want AETHER CLAW to remember"></textarea>
+    <textarea id="memoryContent" maxlength="4000" placeholder="A fact or preference you explicitly want Maximu Agent to remember"></textarea>
     <label for="memoryTags">Tags (comma-separated)</label>
     <input id="memoryTags" maxlength="300" placeholder="project, style">
     <div class="actions"><button class="primary" id="saveMemory">Save memory</button></div>
@@ -385,7 +385,7 @@ function renderChatMessages(messages){
   box.append(empty);return;
  }
  for(const msg of messages){
-  const roleName=msg.role==="user"?"You":msg.role==="assistant"?"AETHER CLAW":"System";
+  const roleName=msg.role==="user"?"You":msg.role==="assistant"?"Maximu Agent":"System";
   const card=document.createElement("article");card.className="chat-message "+(msg.role==="user"?"user":msg.role==="assistant"?"assistant":"system");
   const head=document.createElement("div");head.className="chat-message-head";
   const role=document.createElement("strong");role.className="chat-message-role";role.textContent=roleName;
@@ -488,7 +488,7 @@ async function sendChat(){
  const message=$("chatInput").value.trim()||(imageForRequest?"Please describe and analyze this image.":"");
  if(!message){setStatus("chatStatus","Enter a message or attach an image first.","bad");return;}
  const viewGeneration=sessionLoadGeneration;
- $("sendChat").disabled=true;setStatus("chatStatus","AETHER CLAW is thinking…");
+ $("sendChat").disabled=true;setStatus("chatStatus","Maximu Agent is thinking…");
  try{
   const result=await api("/chat",{method:"POST",body:JSON.stringify({
    message: imageForRequest ? message+"\n[Image attached]" : message,

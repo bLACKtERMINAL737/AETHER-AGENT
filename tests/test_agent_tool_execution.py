@@ -28,7 +28,7 @@ class ReadOnlyTools:
             raise ToolError("File does not exist")
         return {
             "path": arguments["path"],
-            "content": "Verified workspace evidence: AETHER-CLAW-TOOL-OK",
+            "content": "Verified workspace evidence: MAXIMU-AGENT-TOOL-OK",
         }
 
 
@@ -86,7 +86,7 @@ async def test_specialist_task_uses_tools_and_journals_success(
     assert result["status"] == "succeeded"
     assert result["tool_calls"] == 1
     assert result["tool_attempts"] == 1
-    assert "AETHER-CLAW-TOOL-OK" in result["result"]
+    assert "MAXIMU-AGENT-TOOL-OK" in result["result"]
     assert result["workspace_modified"] is False
 
     call = router.calls[0]
@@ -108,7 +108,7 @@ async def test_specialist_task_uses_tools_and_journals_success(
     assert len(executions) == 1
     assert executions[0]["tool_name"] == "workspace.read_file"
     assert executions[0]["status"] == "succeeded"
-    assert "AETHER-CLAW-TOOL-OK" in executions[0]["result_json"]
+    assert "MAXIMU-AGENT-TOOL-OK" in executions[0]["result_json"]
 
 
 @pytest.mark.asyncio
@@ -150,4 +150,4 @@ async def test_provider_failure_after_tool_keeps_tool_record_and_fails_task(
     # The child tool completed successfully; a later provider failure must not
     # rewrite the actual tool result to failed or unknown.
     assert executions[0]["status"] == "succeeded"
-    assert "AETHER-CLAW-TOOL-OK" in executions[0]["result_json"]
+    assert "MAXIMU-AGENT-TOOL-OK" in executions[0]["result_json"]

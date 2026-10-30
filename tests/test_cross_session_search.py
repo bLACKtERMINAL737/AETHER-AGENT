@@ -22,7 +22,7 @@ def test_cross_session_search_finds_messages_with_session_metadata(tmp_path):
 def test_cross_session_search_is_case_insensitive_and_limited(tmp_path):
     store = TaskStore(tmp_path / "cross-session-search.sqlite3")
     session = store.create_session("Search")
-    store.add_session_message(session["id"], "user", "AETHER CLAW browser automation")
+    store.add_session_message(session["id"], "user", "Maximu Agent browser automation")
     store.add_session_message(session["id"], "assistant", "Browser automation is useful")
     store.add_session_message(session["id"], "user", "Unrelated note")
 
