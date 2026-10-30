@@ -311,6 +311,20 @@ function localDateTimeToIso(value){
  if(!value || Number.isNaN(date.getTime())) throw new Error("Choose a valid run time.");
  return date.toISOString();
 }
+async function loadAuditHistory(scheduleId, host){
+ try{
+  const data=await api("/scheduler/schedules/"+encodeURIComponent(scheduleId)+"/audit");
+  host.replaceChildren();
+  if(!(data.entries||[]).length){host.textContent="No audit entries yet.";return;}
+  for(const entry of data.entries){
+   const row=document.createElement("div");row.style.marginTop="8px";
+   const note=document.createElement("div");note.textContent=entry.note;
+   const evidence=document.createElement("div");evidence.className="muted small";evidence.textContent=entry.evidence;
+   const time=document.createElement("div");time.className="muted small";time.textContent=new Date(entry.created_at).toLocaleString();
+   row.append(note,evidence,time);host.append(row);
+  }
+ }catch(e){host.textContent=e.message;}
+}
 function renderScheduleList(items){
  const host=$("scheduleList");host.replaceChildren();
  if(!items.length){host.textContent="No schedules yet.";return;}
@@ -323,6 +337,27 @@ function renderScheduleList(items){
   const meta=document.createElement("div");meta.className="muted small";meta.textContent="Run at "+new Date(item.run_at).toLocaleString();card.append(meta);
   if(item.task_id){const task=document.createElement("div");task.className="muted small";task.textContent="Task record: "+item.task_id;card.append(task);}
   if(item.error_text){const error=document.createElement("div");error.className="muted small";error.textContent=item.error_text;card.append(error);}
+  if(item.status==="unknown"){
+   const audit=document.createElement("div");audit.className="task-detail";audit.style.marginTop="10px";
+   const heading=document.createElement("strong");heading.textContent="Manual reconciliation review";audit.append(heading);
+   const note=document.createElement("textarea");note.maxLength=2000;note.placeholder="What did you inspect? (required)";note.setAttribute("aria-label","Reconciliation review note");
+   const evidence=document.createElement("textarea");evidence.maxLength=4000;evidence.placeholder="Evidence supporting your assessment (required)";evidence.setAttribute("aria-label","Reconciliation evidence");
+   const actions=document.createElement("div");actions.className="actions";
+   const save=document.createElement("button");save.type="button";save.textContent="Add audit note";
+   const history=document.createElement("button");history.type="button";history.textContent="View audit history";
+   const entries=document.createElement("div");entries.className="muted small";
+   save.addEventListener("click",async()=>{
+    save.disabled=true;
+    try{
+     await api("/scheduler/schedules/"+encodeURIComponent(item.id)+"/reconcile",{method:"POST",body:JSON.stringify({note:note.value,evidence:evidence.value})});
+     note.value="";evidence.value="";entries.textContent="Audit note saved. Schedule remains unknown and will not be retried.";
+     await loadAuditHistory(item.id,entries);
+    }catch(e){entries.textContent=e.message;}
+    finally{save.disabled=false;}
+   });
+   history.addEventListener("click",()=>loadAuditHistory(item.id,entries));
+   actions.append(save,history);audit.append(note,evidence,actions,entries);card.append(audit);
+  }
   if(item.status==="scheduled"){
    const cancel=document.createElement("button");cancel.type="button";cancel.textContent="Cancel schedule";cancel.style.marginTop="8px";
    cancel.addEventListener("click",async()=>{
