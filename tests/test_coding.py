@@ -572,3 +572,33 @@ def test_interrupted_apply_is_flagged_for_manual_review_after_restart(tmp_path: 
     # Recovery must never silently re-approve uncertain filesystem changes.
     with pytest.raises(ValueError, match="Invalid proposal status transition"):
         restarted_store.set_proposal_status(proposal["id"], "approved")
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        ".env",
+        ".env.local",
+        ".ENV.production",
+        ".ssh/id_ed25519",
+        ".aws/credentials",
+        ".azure/accessTokens.json",
+        ".gnupg/private-keys-v1.d/key",
+        ".netrc",
+        ".npmrc",
+        "credentials.json",
+        "service-secret.txt",
+        "private.pem",
+        "signing.key",
+    ],
+)
+def test_coding_source_reader_rejects_sensitive_files_before_reading(
+    tmp_path: Path, relative: str
+):
+    engine, _, workspace, _ = make_engine(tmp_path, "{}")
+    secret = workspace / relative
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text("DO_NOT_SEND_THIS_SECRET", encoding="utf-8")
+
+    with pytest.raises(CodingError, match="Sensitive file cannot be sent"):
+        engine.read_sources([relative])
