@@ -1,4 +1,4 @@
-"""Tiny, harmless sample module for the AETHER CLAW demo."""
+"""Tiny, harmless sample module for the Maximu Agent demo."""
 
 
 def add(left: int, right: int) -> int:
