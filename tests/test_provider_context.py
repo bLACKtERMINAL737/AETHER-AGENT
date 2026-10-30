@@ -35,6 +35,8 @@ async def test_provider_sends_history_and_only_passed_memories(monkeypatch):
     request = FakeAsyncClient.last_request['json']
     messages = request['messages']
     assert answer == 'Context-aware answer'
+    assert 'You are Crows' in messages[0]['content']
+    assert 'Maximu Agent' not in messages[0]['content']
     assert messages[1]['role'] == 'system'
     assert 'untrusted reference data' in messages[1]['content']
     assert '\\n- [preference]' not in messages[1]['content']

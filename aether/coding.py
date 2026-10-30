@@ -25,7 +25,7 @@ class CodingEngine:
 
     def __init__(self, workspace: Path, store: TaskStore, router: ModelRouter,
                  enable_test_runner: bool = False, test_timeout_seconds: int = 60,
-                 sandbox_image: str = "aether-sandbox:latest",
+                 sandbox_image: str = "crows-sandbox:latest",
                  test_project: Path | None = None):
         self.workspace = workspace.resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -483,7 +483,7 @@ class CodingEngine:
 
     def run_tests(self) -> dict[str, Any]:
         if not self.enable_test_runner:
-            raise CodingError("Sandbox test runner is disabled. Set AETHER_ENABLE_TEST_RUNNER=true to enable it.")
+            raise CodingError("Sandbox test runner is disabled. Set CROWS_ENABLE_TEST_RUNNER=true to enable it.")
         test_workspace = self.test_project or self.workspace
         if not test_workspace.is_dir():
             raise CodingError("Configured test project directory does not exist")

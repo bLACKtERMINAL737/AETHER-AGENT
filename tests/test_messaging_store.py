@@ -298,3 +298,18 @@ def test_queue_metrics_count_only_retries_ready_for_future_claim(tmp_path: Path,
     assert metrics["queue"]["leased"] == 1
     assert store.finish_outbound_lease(message_id, worker_id="worker-2", status="sent")
     assert store.delivery_metrics()["queue"]["scheduled_retries"] == 0
+
+
+
+def test_delivery_target_uses_crows_environment_key(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", key)
+    monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
+    store = MessagingStore(tmp_path / "crows-key.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="chat-crows", text="hello",
+        idempotency_key="crows-key", delivery_target="987654321",
+    )
+    assert store.get_delivery_target(queued["message"]["id"]) == "987654321"

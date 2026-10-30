@@ -344,7 +344,7 @@ class ToolRegistry:
                 "GET", target,
                 headers={
                     "Host": parsed.netloc,
-                    "User-Agent": "MAXIMU-AGENT-WebReader/1.0",
+                    "User-Agent": "Crows-WebReader/1.0",
                     "Connection": "close",
                 },
             )

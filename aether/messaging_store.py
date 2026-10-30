@@ -5,7 +5,6 @@ External adapters must verify webhook signatures before calling inbound APIs.
 """
 from __future__ import annotations
 
-import os
 import re
 import sqlite3
 
@@ -14,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from .config import get_env
 from .messaging import MAX_ID_CHARS, MAX_TEXT_CHARS, MessagingContractError, conversation_scope
 
 _CHANNEL_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
@@ -102,13 +102,13 @@ class MessagingStore:
                     created_at TEXT NOT NULL
                 );
             """)
-        raw_key = os.getenv("AETHER_MESSAGING_TARGET_KEY", "").strip()
+        raw_key = (get_env("CROWS_MESSAGING_TARGET_KEY", "") or "").strip()
         self._target_cipher = None
         if raw_key:
             try:
                 self._target_cipher = Fernet(raw_key.encode("ascii"))
             except (ValueError, UnicodeEncodeError) as exc:
-                raise ValueError("AETHER_MESSAGING_TARGET_KEY must be a valid Fernet key") from exc
+                raise ValueError("CROWS_MESSAGING_TARGET_KEY must be a valid Fernet key") from exc
 
     def connect(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.db_path, timeout=10)
@@ -121,6 +121,7 @@ class MessagingStore:
     def _scope(channel: str, provider_user_id: str) -> str:
         if not isinstance(provider_user_id, str) or not provider_user_id.strip() or len(provider_user_id) > MAX_ID_CHARS:
             raise MessagingContractError("provider_user_id is invalid")
+        # Keep the established scope namespace so existing conversation IDs remain stable.
         namespace = "aether-claw"
         return conversation_scope(channel, provider_user_id, namespace=namespace)
 
