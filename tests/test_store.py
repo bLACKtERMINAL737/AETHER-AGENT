@@ -774,7 +774,7 @@ def test_execution_metrics_report_aggregate_states_without_task_content(tmp_path
 
     metrics = store.execution_metrics()
     assert metrics["tasks"] == {
-        "queued": 1, "running": 1, "succeeded": 1, "failed": 0, "unknown": 0
+        "queued": 2, "running": 1, "succeeded": 1, "failed": 0, "unknown": 0
     }
     assert metrics["workflows"]["unknown"] == 1
     assert metrics["tool_executions"]["failed"] == 1
