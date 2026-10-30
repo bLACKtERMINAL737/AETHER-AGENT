@@ -267,6 +267,11 @@ class TaskRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     input: str = Field(min_length=1, max_length=20_000)
 
+class ScheduleReconciliationRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=2000)
+    evidence: str = Field(min_length=1, max_length=4000)
+
+
 class ScheduleCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     input: str = Field(min_length=1, max_length=20_000)
@@ -2067,6 +2072,24 @@ def create_schedule(request: ScheduleCreateRequest):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _public_schedule(saved)
+
+
+@app.post("/scheduler/schedules/{schedule_id}/reconcile")
+def reconcile_schedule(schedule_id: str, request: ScheduleReconciliationRequest):
+    try:
+        return scheduler_store.record_reconciliation(schedule_id, request.note, request.evidence)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Schedule not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409 if "only unknown" in str(exc) else 422, detail=str(exc)) from exc
+
+
+@app.get("/scheduler/schedules/{schedule_id}/audit")
+def schedule_reconciliation_audit(schedule_id: str):
+    try:
+        return {"entries": scheduler_store.list_reconciliation_audit(schedule_id)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Schedule not found") from exc
 
 
 @app.get("/scheduler/metrics")
