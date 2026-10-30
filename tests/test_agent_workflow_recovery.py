@@ -737,3 +737,31 @@ def test_concurrent_workflow_recovery_claim_has_exactly_one_winner(tmp_path):
     assert outcomes.count(True) == 1
     assert outcomes.count(False) == len(stores) - 1
     assert store.get_workflow(workflow["id"])["status"] == "running"
+
+
+
+@pytest.mark.asyncio
+async def test_recovery_cancellation_after_task_success_keeps_checkpoint_recoverable(
+    tmp_path, monkeypatch
+):
+    store, workflow_id, task_id, _qa_id = make_workflow(
+        tmp_path, monkeypatch, qa=False
+    )
+
+    async def complete_then_cancel(task_id_arg):
+        assert task_id_arg == task_id
+        assert store.claim_task(task_id_arg)
+        store.set_task_status(
+            task_id_arg, "succeeded", result={"answer": "completed before cancellation"}
+        )
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(app_module, "run_agent_task", complete_then_cancel)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module.recover_agent_workflow(workflow_id)
+
+    saved = store.get_workflow(workflow_id)
+    assert saved["status"] == "unknown"
+    assert saved["results"]["tasks"][0]["status"] == "succeeded"
+    assert store.get_task(task_id)["status"] == "succeeded"
