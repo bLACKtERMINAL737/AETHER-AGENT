@@ -266,3 +266,35 @@ def test_delivery_metrics_include_queue_depth_and_retry_schedule(tmp_path: Path,
     assert metrics["queue"]["scheduled_retries"] == 0
     assert "text" not in metrics["queue"]
     assert "message_id" not in metrics["queue"]
+
+
+def test_queue_metrics_count_only_retries_ready_for_future_claim(tmp_path: Path, monkeypatch):
+    from cryptography.fernet import Fernet
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "retry-metrics.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u", text="retry",
+        idempotency_key="retry-metrics", delivery_target="123",
+    )
+    message_id = queued["message"]["id"]
+    assert store.claim_outbound(worker_id="worker-1")
+    assert store.retry_outbound_lease(
+        message_id, worker_id="worker-1", delay_seconds=30, max_retries=2
+    ) == "scheduled"
+    metrics = store.delivery_metrics()
+    assert metrics["queue"]["scheduled_retries"] == 1
+    assert metrics["queue"]["pending"] == 1
+
+    with store.connect() as con:
+        con.execute(
+            "UPDATE messaging_delivery_retries SET next_attempt_at=? WHERE message_id=?",
+            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), message_id),
+        )
+    assert store.claim_outbound(worker_id="worker-2")
+    metrics = store.delivery_metrics()
+    assert metrics["queue"]["scheduled_retries"] == 0
+    assert metrics["queue"]["leased"] == 1
+    assert store.finish_outbound_lease(message_id, worker_id="worker-2", status="sent")
+    assert store.delivery_metrics()["queue"]["scheduled_retries"] == 0
