@@ -502,7 +502,10 @@ class MessagingStore:
                      SUM(CASE WHEN l.message_id IS NOT NULL THEN 1 ELSE 0 END) AS leased,
                      SUM(CASE WHEN m.status='unknown' THEN 1 ELSE 0 END) AS unknown,
                      MIN(CASE WHEN m.status='accepted' AND l.message_id IS NULL THEN m.created_at END) AS oldest_pending_at,
-                     SUM(CASE WHEN r.message_id IS NOT NULL THEN 1 ELSE 0 END) AS scheduled_retries
+                     SUM(CASE WHEN r.message_id IS NOT NULL
+                               AND m.status='accepted' AND l.message_id IS NULL
+                               AND r.retry_count <= r.max_retries
+                              THEN 1 ELSE 0 END) AS scheduled_retries
                    FROM messaging_messages m
                    LEFT JOIN messaging_delivery_leases l ON l.message_id=m.id
                    LEFT JOIN messaging_delivery_retries r ON r.message_id=m.id
@@ -512,7 +515,9 @@ class MessagingStore:
                 """SELECT COUNT(*) AS count, MIN(next_attempt_at) AS next_attempt_at
                    FROM messaging_delivery_retries r
                    JOIN messaging_messages m ON m.id=r.message_id
-                   WHERE m.status='accepted'"""
+                   LEFT JOIN messaging_delivery_leases l ON l.message_id=m.id
+                   WHERE m.status='accepted' AND l.message_id IS NULL
+                     AND r.retry_count <= r.max_retries"""
             ).fetchone()
         return {
             "total_outbound": sum(by_status.values()),
