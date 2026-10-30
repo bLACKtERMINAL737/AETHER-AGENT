@@ -66,7 +66,7 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
 <body>
 <div class="app-shell">
 <aside class="app-sidebar" aria-label="Conversation navigation">
-  <div class="brand"><span class="brand-mark">A</span><span>Crows</span></div>
+  <div class="brand"><span class="brand-mark">C</span><span>Crows</span></div>
   <button type="button" class="sidebar-action" id="sidebarNewChat"><span aria-hidden="true">＋</span> New chat</button>
   <div class="sidebar-label">Recent chats</div>
   <div class="sidebar-history" id="sidebarHistory"></div>
@@ -403,7 +403,7 @@ async function api(url, options={}) {
   if(!response.ok) throw new Error(body.detail || ("HTTP "+response.status));
   return body;
 }
-$("apiToken").value=sessionStorage.getItem("crowsApiToken") || "";
+$("apiToken").value=sessionStorage.getItem("crowsApiToken") || sessionStorage.getItem("aetherApiToken") || "";
 $("saveToken").onclick=()=>{
  const token=$("apiToken").value.trim();
  if(token) sessionStorage.setItem("crowsApiToken",token); else sessionStorage.removeItem("crowsApiToken");

@@ -1,6 +1,8 @@
 import hmac
 import ipaddress
 import os
+
+from .config import get_env
 from urllib.parse import urlsplit
 
 from starlette.responses import JSONResponse
@@ -66,7 +68,7 @@ class LocalAPIProtection:
 
     def __init__(self, app):
         self.app = app
-        self.token = os.getenv("CROWS_API_TOKEN", "").strip()
+        self.token = (get_env("CROWS_API_TOKEN", "") or "").strip()
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
