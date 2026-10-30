@@ -244,6 +244,30 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
     </div>
   </section>
 
+  <section class="panel" style="margin-top:16px" aria-labelledby="schedulerHeading">
+    <div class="top">
+      <div><h2 id="schedulerHeading">Scheduler</h2><div class="muted small">Create and monitor durable schedules. Scheduled tasks must use a registered specialist title prefix, for example [research] Summarize release notes. The worker is disabled unless explicitly enabled on the backend.</div></div>
+      <button id="refreshSchedules" type="button">Refresh schedules</button>
+    </div>
+    <div class="task-grid">
+      <div>
+        <label for="scheduleTitle">Specialist task title</label>
+        <input id="scheduleTitle" maxlength="200" placeholder="[research] Summarize release notes">
+        <label for="scheduleInput">Task description</label>
+        <textarea id="scheduleInput" maxlength="20000" placeholder="Describe the read-only specialist task"></textarea>
+        <label for="scheduleRunAt">Run at (your local time)</label>
+        <input id="scheduleRunAt" type="datetime-local">
+        <div class="actions"><button class="primary" id="createSchedule" type="button">Create schedule</button></div>
+        <div id="schedulerStatus" class="status" role="status" aria-live="polite"></div>
+      </div>
+      <div>
+        <h3>Scheduler health</h3>
+        <div id="schedulerMetrics" class="task-detail" aria-live="polite">Loading scheduler metrics…</div>
+        <h3 style="margin-top:14px">Schedules</h3>
+        <div id="scheduleList" class="task-list" aria-live="polite">Loading schedules…</div>
+      </div>
+    </div>
+  </section>
   <section class="panel" style="margin-top:16px" aria-labelledby="tasksHeading">
     <div class="top"><div><h2 id="tasksHeading">Task Journal</h2><div class="muted">Review durable task records and tool execution outcomes.</div></div><button id="refreshTasks">Refresh tasks</button></div>
     <div class="task-grid">
