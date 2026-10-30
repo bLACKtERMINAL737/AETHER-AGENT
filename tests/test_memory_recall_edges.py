@@ -7,7 +7,7 @@ def test_recall_returns_none_when_no_saved_memories_match():
     memories = [
         {
             "source": "explicit_chat_request",
-            "content": "My project name is AETHER CLAW",
+            "content": "My project name is Maximu Agent",
         }
     ]
 
@@ -43,7 +43,7 @@ def test_recall_does_not_return_a_fact_for_unrelated_question():
     memories = [
         {
             "source": "explicit_chat_request",
-            "content": "My project name is AETHER CLAW",
+            "content": "My project name is Maximu Agent",
         }
     ]
 
@@ -120,7 +120,7 @@ def test_recall_does_not_return_an_unrelated_fact_for_missing_exact_code():
     assert answer is None
 
 def test_recall_allows_duplicate_rows_for_the_same_fact():
-    fact = "My project name is AETHER CLAW"
+    fact = "My project name is Maximu Agent"
     memories = [
         {"source": "explicit_chat_request", "content": fact},
         {"source": "explicit_chat_request", "content": fact},
@@ -139,7 +139,7 @@ def test_memory_search_returns_empty_for_stopword_only_recall_query(tmp_path):
     store = TaskStore(tmp_path / "memory.sqlite3")
     store.add_memory(
         category="project",
-        content="Project name is AETHER CLAW",
+        content="Project name is Maximu Agent",
         source="explicit_chat_request",
     )
 
@@ -152,11 +152,11 @@ def test_memory_search_still_finds_explicit_fact_when_query_has_terms(tmp_path):
     store = TaskStore(tmp_path / "memory.sqlite3")
     fact = store.add_memory(
         category="project",
-        content="Project name is AETHER CLAW",
+        content="Project name is Maximu Agent",
         source="explicit_chat_request",
     )
 
-    results = store.search_memories("AETHER CLAW")
+    results = store.search_memories("Maximu Agent")
 
     assert [item["id"] for item in results] == [fact["id"]]
 
@@ -194,7 +194,7 @@ def test_memory_search_matches_hyphenated_identifier_components(tmp_path):
     store = TaskStore(tmp_path / "memory.sqlite3")
     fact = store.add_memory(
         category="project",
-        content="AETHER-CLAW is the project identifier",
+        content="MAXIMU-AGENT is the project identifier",
         source="explicit_chat_request",
     )
 
