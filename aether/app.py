@@ -526,11 +526,9 @@ async def run_agent_task_with_lease_renewal(task_id: str, schedule_id: str, work
         for task in (heartbeat, execution):
             if not task.done():
                 task.cancel()
-        for task in (heartbeat, execution):
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        # Await both tasks even when the heartbeat itself failed. Otherwise
+        # awaiting the failed heartbeat first can skip execution cancellation.
+        await asyncio.gather(heartbeat, execution, return_exceptions=True)
 
 
 async def scheduler_worker_loop() -> None:
