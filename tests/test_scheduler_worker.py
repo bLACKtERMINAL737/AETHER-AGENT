@@ -129,11 +129,9 @@ async def test_lease_renewal_failure_cancels_in_flight_task(monkeypatch):
     started = asyncio.Event()
     cancelled = asyncio.Event()
 
-    real_sleep = asyncio.sleep
-
     async def fake_sleep(_seconds):
-        # Yield once so the execution task starts before the lease is lost.
-        await real_sleep(0)
+        # Do not report lease loss until the execution coroutine is active.
+        await started.wait()
 
     async def long_running_task(_task_id):
         started.set()
