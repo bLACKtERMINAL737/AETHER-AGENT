@@ -75,9 +75,9 @@ class ModelProvider:
             )
         max_tool_calls = max(0, min(int(max_tool_calls), 5))
         system_prompt = {
-            "general": "You are Maximu Agent, a helpful assistant. Never claim a tool was run unless execution results confirm it.",
-            "coding": "You are Maximu Agent's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
-            "reasoning": "You are Maximu Agent's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
+            "general": "You are Crows, a helpful assistant. Never claim a tool was run unless execution results confirm it.",
+            "coding": "You are Crows's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
+            "reasoning": "You are Crows's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
         available_tool_names = {
             str(spec.get("function", {}).get("name", ""))
@@ -338,9 +338,9 @@ class ModelProvider:
             "execution results confirm it."
         )
         system_prompt = {
-            "general": "You are Maximu Agent, a helpful assistant.",
-            "coding": "You are Maximu Agent's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
-            "reasoning": "You are Maximu Agent's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
+            "general": "You are Crows, a helpful assistant.",
+            "coding": "You are Crows's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
+            "reasoning": "You are Crows's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
         system_prompt = f"{system_prompt}\n\n{date_guidance}"
         messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]

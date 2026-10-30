@@ -33,7 +33,7 @@ class DockerTestSandbox:
         "credentials", "credentials.json",
     }
 
-    def __init__(self, workspace: Path, image: str = "aether-sandbox:latest",
+    def __init__(self, workspace: Path, image: str = "crows-sandbox:latest",
                  timeout_seconds: int = 60, memory_limit: str = "512m",
                  cpu_limit: str = "1", pids_limit: int = 128):
         self.workspace = workspace.resolve()
@@ -113,7 +113,7 @@ class DockerTestSandbox:
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]{0,254}", self.image)
         ):
             raise SandboxError("Invalid sandbox image reference")
-        with tempfile.TemporaryDirectory(prefix="aether-sandbox-") as temp:
+        with tempfile.TemporaryDirectory(prefix="crows-sandbox-") as temp:
             snapshot = Path(temp) / "workspace"
             snapshot.mkdir(mode=0o777)
             self._snapshot(snapshot)

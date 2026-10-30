@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run a privacy-conscious, repeatable evaluation set against a local Maximu Agent API.
+"""Run a privacy-conscious, repeatable evaluation set against a local Crows API.
 
 Example:
-  AETHER_API_TOKEN=... python scripts/agent_eval.py \
+  CROWS_API_TOKEN=... python scripts/agent_eval.py \
     --cases examples/agent_eval_cases.json \
     --base-url http://127.0.0.1:8000 --output agent-eval-report.json
 
@@ -187,13 +187,13 @@ def run_case(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, required=True, help="JSON evaluation case file")
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Maximu Agent API URL")
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="Crows API URL")
     parser.add_argument("--output", type=Path, default=Path("agent-eval-report.json"))
     parser.add_argument("--timeout", type=float, default=90.0)
     args = parser.parse_args()
     if not 0.1 <= args.timeout <= 600:
         parser.error("--timeout must be between 0.1 and 600 seconds")
-    token = os.getenv("AETHER_API_TOKEN", "")
+    token = os.getenv("CROWS_API_TOKEN", "") or os.getenv("AETHER_API_TOKEN", "")
     try:
         cases = load_cases(args.cases)
     except ValueError as exc:
