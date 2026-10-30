@@ -917,6 +917,12 @@ def delegate_agent_work(request: AgentDelegateRequest):
     return {"goal": request.goal, "tasks": created, "executed": False}
 
 
+@app.get("/agents/execution/metrics")
+def agent_execution_metrics():
+    """Aggregate health for durable tasks, workflows, and tool executions."""
+    return store.execution_metrics()
+
+
 @app.get("/agents/workflows")
 def list_agent_workflows(limit: int = 50):
     """List durable workflow runs and their current status."""
