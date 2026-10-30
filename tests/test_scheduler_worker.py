@@ -1,0 +1,118 @@
+import asyncio
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+import aether.app as app_module
+from aether.scheduler_store import SchedulerStore
+from aether.store import TaskStore
+
+
+@pytest.mark.asyncio
+async def test_scheduler_worker_dispatches_due_registered_specialist_once(monkeypatch, tmp_path):
+    scheduler = SchedulerStore(tmp_path / "scheduler.sqlite3")
+    tasks = TaskStore(tmp_path / "tasks.sqlite3")
+    due = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    schedule = scheduler.create_schedule(
+        "[research] Summarize release notes", "Review the release notes", due, "dispatch-1"
+    )
+    monkeypatch.setattr(app_module, "scheduler_store", scheduler)
+    monkeypatch.setattr(app_module, "store", tasks)
+    monkeypatch.setattr(app_module, "list_agent_roles", lambda: [{"id": "research"}])
+
+    async def fake_run(task_id):
+        tasks.claim_task(task_id)
+        tasks.set_task_status(task_id, "succeeded", result={"summary": "Reviewed"})
+        return {"status": "succeeded"}
+
+    async def stop_after_one_iteration(_delay):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_one_iteration)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module.scheduler_worker_loop()
+
+    saved = scheduler.get_schedule(schedule["id"])
+    assert saved["status"] == "completed"
+    assert saved["task_id"]
+    assert tasks.get_task(saved["task_id"])["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_worker_rejects_unregistered_specialist_without_execution(monkeypatch, tmp_path):
+    scheduler = SchedulerStore(tmp_path / "scheduler.sqlite3")
+    tasks = TaskStore(tmp_path / "tasks.sqlite3")
+    due = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    schedule = scheduler.create_schedule(
+        "[unknown] Do something", "Must not run", due, "dispatch-invalid"
+    )
+    monkeypatch.setattr(app_module, "scheduler_store", scheduler)
+    monkeypatch.setattr(app_module, "store", tasks)
+    monkeypatch.setattr(app_module, "list_agent_roles", lambda: [{"id": "research"}])
+
+    async def unexpected_run(_task_id):
+        raise AssertionError("unregistered role must never execute")
+
+    async def stop_after_one_iteration(_delay):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(app_module, "run_agent_task", unexpected_run)
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_one_iteration)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app_module.scheduler_worker_loop()
+
+    saved = scheduler.get_schedule(schedule["id"])
+    assert saved["status"] == "failed"
+    assert saved["task_id"] is None
+    assert tasks.list_tasks() == []
+
+
+@pytest.mark.asyncio
+async def test_lifespan_starts_and_stops_opt_in_scheduler_worker(monkeypatch):
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def worker():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    monkeypatch.setenv("AETHER_SCHEDULER_WORKER_ENABLED", "true")
+    monkeypatch.delenv("AETHER_MESSAGING_WORKER_ENABLED", raising=False)
+    monkeypatch.setattr(app_module, "scheduler_worker_loop", worker)
+    monkeypatch.setattr(app_module.store, "mark_interrupted_as_unknown", lambda: 0)
+
+    from contextlib import nullcontext
+    monkeypatch.setattr(app_module.store, "coding_apply_lock", lambda blocking=False: nullcontext(True))
+
+    async with app_module.lifespan(app_module.app):
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+    assert stopped.is_set()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_does_not_start_scheduler_worker_by_default(monkeypatch):
+    started = False
+
+    async def worker():
+        nonlocal started
+        started = True
+
+    monkeypatch.delenv("AETHER_SCHEDULER_WORKER_ENABLED", raising=False)
+    monkeypatch.delenv("AETHER_MESSAGING_WORKER_ENABLED", raising=False)
+    monkeypatch.setattr(app_module, "scheduler_worker_loop", worker)
+    monkeypatch.setattr(app_module.store, "mark_interrupted_as_unknown", lambda: 0)
+
+    from contextlib import nullcontext
+    monkeypatch.setattr(app_module.store, "coding_apply_lock", lambda blocking=False: nullcontext(True))
+
+    async with app_module.lifespan(app_module.app):
+        pass
+
+    assert started is False

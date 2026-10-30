@@ -90,6 +90,10 @@ async def lifespan(app: FastAPI):
     if os.getenv("AETHER_MESSAGING_WORKER_ENABLED", "").lower() == "true":
         worker_task = asyncio.create_task(messaging_worker_loop())
         logger.info("Messaging outbox worker started")
+    scheduler_task = None
+    if os.getenv("AETHER_SCHEDULER_WORKER_ENABLED", "").lower() == "true":
+        scheduler_task = asyncio.create_task(scheduler_worker_loop())
+        logger.info("Scheduler worker started")
     try:
         yield
     finally:
@@ -100,6 +104,13 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
             logger.info("Messaging outbox worker stopped")
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            try:
+                await scheduler_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Scheduler worker stopped")
 
 
 app = FastAPI(title="Maximu Agent API", version="0.4.0",
@@ -480,6 +491,85 @@ async def telegram_send(request: TelegramSendRequest):
 
 
 
+
+
+async def scheduler_worker_loop() -> None:
+    """Dispatch due schedules through the existing read-only specialist runner."""
+    try:
+        interval = float(os.getenv("AETHER_SCHEDULER_WORKER_INTERVAL_SECONDS", "2"))
+    except (TypeError, ValueError):
+        interval = 2.0
+    if not math.isfinite(interval):
+        interval = 2.0
+    interval = min(max(interval, 1.0), 60.0)
+    worker_id = f"maximu-scheduler-{os.getpid()}"
+    while True:
+        try:
+            expired = scheduler_store.mark_expired_claims_unknown()
+            if expired:
+                logger.warning("Marked %s expired scheduler leases as unknown", expired)
+            claimed = scheduler_store.claim_due(worker_id, lease_seconds=300, limit=5)
+            for item in claimed:
+                schedule_id = item["id"]
+                task_id = None
+                try:
+                    title = str(item["title"]).strip()
+                    match = re.match(r"^\[([a-z_]+)\]\s+.+$", title)
+                    known_roles = {role["id"] for role in list_agent_roles()}
+                    if not match or match.group(1) not in known_roles:
+                        scheduler_store.finish_claim(
+                            schedule_id, worker_id, "failed",
+                            error_text="Scheduled task must use a registered [specialist] title prefix.",
+                        )
+                        continue
+                    task = store.create_task(title, str(item["input_text"]))
+                    task_id = task["id"]
+                    try:
+                        await asyncio.wait_for(run_agent_task(task_id), timeout=agent_task_timeout_seconds())
+                    except asyncio.CancelledError:
+                        saved = store.get_task(task_id)
+                        if saved and saved["status"] in {"queued", "running"}:
+                            store.set_task_status(
+                                task_id, "unknown",
+                                error="Scheduler worker stopped during execution; inspect task journal before recovery.",
+                            )
+                        scheduler_store.finish_claim(
+                            schedule_id, worker_id, "unknown", task_id=task_id,
+                            error_text="Worker stopped during scheduled execution; inspect task journal.",
+                        )
+                        raise
+                    except Exception as exc:
+                        saved = store.get_task(task_id)
+                        task_status = saved["status"] if saved else "unknown"
+                        terminal = task_status if task_status in {"failed", "unknown"} else "failed"
+                        scheduler_store.finish_claim(
+                            schedule_id, worker_id, terminal, task_id=task_id,
+                            error_text="Scheduled specialist execution did not succeed; inspect task journal.",
+                        )
+                    else:
+                        saved = store.get_task(task_id)
+                        terminal = "completed" if saved and saved["status"] == "succeeded" else "failed"
+                        scheduler_store.finish_claim(
+                            schedule_id, worker_id, terminal, task_id=task_id,
+                            result_json=saved.get("result_json") if saved else None,
+                            error_text=None if terminal == "completed" else "Scheduled specialist task did not succeed; inspect task journal.",
+                        )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Scheduler dispatch failed for schedule %s", schedule_id)
+                    try:
+                        scheduler_store.finish_claim(
+                            schedule_id, worker_id, "unknown", task_id=task_id,
+                            error_text="Scheduler dispatch outcome is uncertain; inspect the task journal before retrying.",
+                        )
+                    except Exception:
+                        logger.exception("Could not persist uncertain scheduler dispatch")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Scheduler worker iteration failed")
+        await asyncio.sleep(interval)
 
 
 async def messaging_worker_loop() -> None:
