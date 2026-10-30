@@ -20,4 +20,4 @@ A successful webhook response with a Discord message ID is recorded as `sent`; t
 
 - One configured webhook destination only.
 - No inbound Discord messages, Gateway bot, per-user routing, attachments, embeds, or multi-server destination management.
-- Keep the endpoint protected by the existing AETHER CLAW API authentication and only send content to destinations you are authorized to use.
+- Keep the endpoint protected by the existing Maximu Agent API authentication and only send content to destinations you are authorized to use.
