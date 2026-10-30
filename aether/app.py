@@ -26,6 +26,7 @@ from .config import Settings
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .messaging_store import MessagingStore
+from .scheduler_store import SchedulerStore
 from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
@@ -37,6 +38,7 @@ settings = Settings.from_env()
 settings.workspace.mkdir(parents=True, exist_ok=True)
 store = TaskStore(settings.db_path)
 messaging_store = MessagingStore(settings.db_path)
+scheduler_store = SchedulerStore(settings.db_path)
 tools = ToolRegistry(settings.workspace)
 primary_provider = ModelProvider(
     settings.model_base_url, settings.model_api_key, settings.model_name,
@@ -253,6 +255,14 @@ class ModelConfigurationRequest(BaseModel):
 class TaskRequest(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     input: str = Field(min_length=1, max_length=20_000)
+
+class ScheduleCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    input: str = Field(min_length=1, max_length=20_000)
+    run_at: str = Field(min_length=1, max_length=80)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+
 
 
 class AgentPlanRequest(BaseModel):
@@ -1925,6 +1935,55 @@ def execute_tool(tool_name: str, request: ToolRequest):
 @app.post("/tasks")
 def create_task(request: TaskRequest):
     return store.create_task(request.title, request.input)
+
+def _public_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
+    """Return schedule state without internal idempotency or worker lease data."""
+    return {
+        key: schedule.get(key)
+        for key in (
+            "id", "title", "input_text", "run_at", "status",
+            "created_at", "updated_at", "task_id", "result_json", "error_text",
+        )
+    }
+
+
+@app.post("/scheduler/schedules", status_code=201)
+def create_schedule(request: ScheduleCreateRequest):
+    try:
+        saved = scheduler_store.create_schedule(
+            request.title, request.input, request.run_at, request.idempotency_key
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _public_schedule(saved)
+
+
+@app.get("/scheduler/schedules")
+def list_schedules(limit: int = 50):
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    return {"schedules": [_public_schedule(item) for item in scheduler_store.list_schedules(limit)]}
+
+
+@app.get("/scheduler/schedules/{schedule_id}")
+def get_schedule(schedule_id: str):
+    saved = scheduler_store.get_schedule(schedule_id)
+    if saved is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return _public_schedule(saved)
+
+
+@app.delete("/scheduler/schedules/{schedule_id}")
+def cancel_schedule(schedule_id: str):
+    try:
+        cancelled = scheduler_store.cancel_schedule(schedule_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Schedule not found") from exc
+    if not cancelled:
+        raise HTTPException(status_code=409, detail="Only pending schedules can be cancelled")
+    return {"id": schedule_id, "status": "cancelled"}
+
+
 
 
 @app.get("/tasks")
