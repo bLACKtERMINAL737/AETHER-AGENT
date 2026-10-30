@@ -194,7 +194,7 @@ def test_memory_search_matches_hyphenated_identifier_components(tmp_path):
     store = TaskStore(tmp_path / "memory.sqlite3")
     fact = store.add_memory(
         category="project",
-        content="MAXIMU-AGENT is the project identifier",
+        content="AETHER-CLAW is the project identifier",
         source="explicit_chat_request",
     )
 
