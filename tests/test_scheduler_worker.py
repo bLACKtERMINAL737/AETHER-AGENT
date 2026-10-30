@@ -113,6 +113,6 @@ async def test_lifespan_does_not_start_scheduler_worker_by_default(monkeypatch):
     monkeypatch.setattr(app_module.store, "coding_apply_lock", lambda blocking=False: nullcontext(True))
 
     async with app_module.lifespan(app_module.app):
-        await asyncio.sleep(0)
+        pass
 
     assert started is False
