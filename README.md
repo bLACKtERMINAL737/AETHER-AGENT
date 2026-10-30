@@ -275,3 +275,8 @@ The worker sends only target-backed messages that it can atomically lease. Teleg
 The opt-in outbox worker retries only explicit HTTP 429 rate-limit responses, honoring a bounded `Retry-After` delay (1–300 seconds) and at most three scheduled retries. Other HTTP failures and transport errors are not automatically retried; ambiguous outcomes remain `unknown`. Exhausted rate-limited deliveries become `failed`.
 
 After checking the provider directly, an operator can resolve an `unknown` outbound record through the authenticated `POST /messaging/outbox/{message_id}/reconcile` endpoint with a final status (`sent`, `delivered`, or `failed`), a short evidence note, and optionally the provider message ID. Reconciliation is one-way and recorded in an audit table; it does not resend a message.
+
+
+### Durable execution health metrics
+
+The authenticated `GET /agents/execution/metrics` endpoint reports aggregate counts for queued, running, succeeded, failed, and uncertain tasks; workflow states; and tool execution states. It also reports the oldest queued-task and unknown-workflow timestamps. It deliberately omits task IDs, goals, inputs, results, tool arguments, and error text.

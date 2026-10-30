@@ -755,3 +755,30 @@ def test_terminal_workflow_same_state_update_cannot_replace_checkpoint(tmp_path:
         "qa_review": {"status": "succeeded"},
     }
     assert saved["error_text"] == "original diagnostic"
+
+
+
+def test_execution_metrics_report_aggregate_states_without_task_content(tmp_path):
+    store = TaskStore(tmp_path / "execution-metrics.sqlite3")
+    queued = store.create_task("queued secret title", "private input")
+    running = store.create_task("running task", "private input")
+    assert store.claim_task(running["id"])
+    succeeded = store.create_task("done", "private input")
+    assert store.claim_task(succeeded["id"])
+    store.set_task_status(succeeded["id"], "succeeded", result={"private": "result"})
+    workflow = store.create_workflow("private workflow goal", [])
+    store.update_workflow(workflow["id"], "unknown", results={"private": "checkpoint"})
+    tool_task = store.create_task("tool parent", "private")
+    execution_id = store.begin_tool(tool_task["id"], "private_tool", {"secret": "input"})
+    store.finish_tool(execution_id, "failed", error="private error")
+
+    metrics = store.execution_metrics()
+    assert metrics["tasks"] == {
+        "queued": 2, "running": 1, "succeeded": 1, "failed": 0, "unknown": 0
+    }
+    assert metrics["workflows"]["unknown"] == 1
+    assert metrics["tool_executions"]["failed"] == 1
+    assert metrics["oldest_queued_task_at"] == queued["created_at"]
+    serialized = str(metrics)
+    for secret in ("private input", "private workflow goal", "private error", "private_tool"):
+        assert secret not in serialized
