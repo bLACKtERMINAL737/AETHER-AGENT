@@ -157,12 +157,12 @@ def test_apply_rolls_back_replaced_files_on_replace_failure(tmp_path: Path, monk
     real_replace = os.replace
     calls = 0
 
-    def fail_second_replace(src, dst):
+    def fail_second_replace(src, dst, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 2:
             raise OSError("simulated replace failure")
-        return real_replace(src, dst)
+        return real_replace(src, dst, **kwargs)
 
     monkeypatch.setattr("aether.coding.os.replace", fail_second_replace)
 
@@ -734,3 +734,31 @@ def test_coding_source_reader_rejects_sensitive_files_before_reading(
 
     with pytest.raises(CodingError, match="Sensitive file cannot be sent"):
         engine.read_sources([relative])
+
+
+def test_replace_in_workspace_uses_directory_relative_rename(tmp_path: Path):
+    engine, _store, workspace, _source = make_engine(tmp_path, "{}")
+    target_dir = workspace / "nested"
+    target_dir.mkdir()
+    target = target_dir / "sample.py"
+    target.write_text("old", encoding="utf-8")
+    staged = target_dir / ".stage"
+    staged.write_text("new", encoding="utf-8")
+
+    engine._replace_in_workspace("nested/sample.py", staged)
+
+    assert target.read_text(encoding="utf-8") == "new"
+    assert not staged.exists()
+
+
+def test_replace_in_workspace_rejects_symlink_parent(tmp_path: Path):
+    engine, _store, workspace, _source = make_engine(tmp_path, "{}")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sample.py").write_text("outside", encoding="utf-8")
+    (workspace / "linked").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(OSError):
+        engine._replace_in_workspace("linked/sample.py", outside / "sample.py")
+
+    assert (outside / "sample.py").read_text(encoding="utf-8") == "outside"
