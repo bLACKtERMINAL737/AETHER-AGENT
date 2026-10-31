@@ -71,6 +71,16 @@ class CodingEngine:
             raise CodingError(f"File does not exist: {relative}")
         return target
 
+    @staticmethod
+    def _fsync_directory(directory: Path) -> None:
+        """Persist directory-entry changes after atomic file replacement."""
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        fd = os.open(directory, flags)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
     def _reject_sensitive_source(self, relative: str) -> None:
         path = Path(relative)
         parts = [part.casefold() for part in path.parts]
@@ -287,7 +297,10 @@ class CodingEngine:
                             "No stale content was intentionally applied; inspect the workspace."
                         )
                     os.replace(temp_path, target)
+                    # Record the replacement before syncing: if directory fsync
+                    # fails, rollback must still include this already-renamed file.
                     replaced.append((target, old_content))
+                    self._fsync_directory(target.parent)
             except Exception as apply_exc:
                 rollback_errors: list[str] = []
 
@@ -309,6 +322,7 @@ class CodingEngine:
 
                         os.replace(rollback_temp, target)
                         rollback_temp = None
+                        self._fsync_directory(target.parent)
 
                     except Exception as rollback_exc:
                         rollback_errors.append(
