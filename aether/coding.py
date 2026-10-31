@@ -2,6 +2,7 @@ import difflib
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -257,7 +258,7 @@ class CodingEngine:
             raise CodingError("Proposal is already being applied or is no longer approved")
 
         changes = proposal["changes"]
-        staged: list[tuple[Path, Path, str | None]] = []
+        staged: list[tuple[Path, Path, str, int]] = []
         rollback_incomplete = False
         try:
             # Validate every target and detect edits made since the proposal was generated.
@@ -271,18 +272,20 @@ class CodingEngine:
                 digest = hashlib.sha256(current.encode("utf-8")).hexdigest()
                 if digest != change["original_sha256"]:
                     raise CodingError(f"File changed since proposal creation: {change['path']}. Generate a fresh proposal.")
+                original_mode = stat.S_IMODE(target.stat().st_mode)
                 fd, temp_name = tempfile.mkstemp(prefix=".aether-stage-", dir=str(target.parent))
+                os.fchmod(fd, original_mode)
                 with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                     handle.write(change["content"])
                     handle.flush()
                     os.fsync(handle.fileno())
-                staged.append((target, Path(temp_name), current))
-            replaced: list[tuple[Path, str]] = []
+                staged.append((target, Path(temp_name), current, original_mode))
+            replaced: list[tuple[Path, str, str, int]] = []
             try:
                 # Recheck each target immediately before replacement. A workspace
                 # file may be edited by another process after the initial validation
                 # and while the proposal's other files are being staged.
-                for (target, temp_path, old_content), change in zip(staged, changes):
+                for (target, temp_path, old_content, original_mode), change in zip(staged, changes):
                     try:
                         latest_content = target.read_text(encoding="utf-8")
                     except (OSError, UnicodeDecodeError) as exc:
@@ -298,12 +301,12 @@ class CodingEngine:
                         )
                     os.replace(temp_path, target)
                     # Track the rename before syncing so a sync failure is rolled back.
-                    replaced.append((target, old_content, change["content"]))
+                    replaced.append((target, old_content, change["content"], original_mode))
                     self._fsync_directory(target.parent)
             except Exception as apply_exc:
                 rollback_errors: list[str] = []
 
-                for target, old_content, applied_content in reversed(replaced):
+                for target, old_content, applied_content, original_mode in reversed(replaced):
                     rollback_temp: Path | None = None
                     try:
                         try:
@@ -324,6 +327,7 @@ class CodingEngine:
                         )
                         rollback_temp = Path(temp_name)
 
+                        os.fchmod(fd, original_mode)
                         with os.fdopen(
                             fd, "w", encoding="utf-8", newline=""
                         ) as handle:
@@ -358,7 +362,7 @@ class CodingEngine:
 
                 raise
         except Exception as exc:
-            for _, temp_path, _ in staged:
+            for _, temp_path, _, _ in staged:
                 try:
                     temp_path.unlink(missing_ok=True)
                 except OSError:
