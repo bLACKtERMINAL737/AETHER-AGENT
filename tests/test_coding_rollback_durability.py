@@ -20,8 +20,8 @@ def test_rollback_directory_sync_failure_keeps_proposal_in_applying_state(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     source = workspace / "sample.py"
-    original = "VALUE = 1\\n"
-    proposed = "VALUE = 2\\n"
+    original = "VALUE = 1" + chr(10)
+    proposed = "VALUE = 2" + chr(10)
     source.write_text(original, encoding="utf-8")
 
     store = TaskStore(tmp_path / "tasks.sqlite3")
@@ -51,8 +51,6 @@ def test_rollback_directory_sync_failure_keeps_proposal_in_applying_state(
     with pytest.raises(CodingError, match="rollback failure"):
         engine.apply(proposal["id"])
 
-    # The rename rollback may have restored the bytes, but its durability was
-    # not confirmed. The proposal must remain non-retryable pending inspection.
     assert source.read_text(encoding="utf-8") == original
     saved = store.get_proposal(proposal["id"])
     assert saved is not None
