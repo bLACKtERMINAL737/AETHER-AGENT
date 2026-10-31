@@ -299,6 +299,12 @@ class CodingEngine:
                             f"File changed while proposal was being applied: {change['path']}. "
                             "No stale content was intentionally applied; inspect the workspace."
                         )
+                    latest_mode = stat.S_IMODE(target.stat().st_mode)
+                    if latest_mode != original_mode:
+                        raise CodingError(
+                            f"File permissions changed while proposal was being applied: {change['path']}. "
+                            "No stale permissions were intentionally applied; inspect the workspace."
+                        )
                     os.replace(temp_path, target)
                     # Track the rename before syncing so a sync failure is rolled back.
                     replaced.append((target, old_content, change["content"], original_mode))
