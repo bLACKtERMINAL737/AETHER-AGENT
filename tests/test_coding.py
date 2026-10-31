@@ -24,7 +24,7 @@ def make_engine(tmp_path: Path, answer: str):
 
 @pytest.mark.asyncio
 async def test_proposal_is_pending_and_does_not_change_files(tmp_path: Path):
-    answer = '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
+    answer = '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\n    return 2\n"}]}'
     engine, store, workspace, source = make_engine(tmp_path, answer)
     before = source.read_text(encoding="utf-8")
     proposal = await engine.propose("Change value to 2", ["sample.py"])
@@ -39,7 +39,7 @@ async def test_proposal_is_pending_and_does_not_change_files(tmp_path: Path):
 async def test_proposal_rejects_comment_only_changes(tmp_path: Path):
     answer = (
         '{"summary":"comment cleanup","changes":['
-        '{"path":"sample.py","content":"# explanation\\ndef value():\\n    return 1\\n"}]}'
+        '{"path":"sample.py","content":"# explanation\ndef value():\n    return 1\n"}]}'
     )
     engine, store, workspace, source = make_engine(tmp_path, answer)
     before = source.read_text(encoding="utf-8")
@@ -54,7 +54,7 @@ async def test_proposal_rejects_comment_only_changes(tmp_path: Path):
 async def test_proposal_rejects_unchanged_content(tmp_path: Path):
     answer = (
         '{"summary":"pretend change","changes":['
-        '{"path":"sample.py","content":"def value():\\n    return 1\\n"}]}'
+        '{"path":"sample.py","content":"def value():\n    return 1\n"}]}'
     )
     engine, store, workspace, source = make_engine(tmp_path, answer)
     before = source.read_text(encoding="utf-8")
@@ -181,15 +181,15 @@ def test_apply_syncs_parent_directory_after_each_replacement(tmp_path: Path, mon
 
     engine, store, workspace, source = make_engine(tmp_path, "{}")
     second = workspace / "second.py"
-    second.write_text("VALUE = 1\\n", encoding="utf-8")
+    second.write_text("VALUE = 1\n", encoding="utf-8")
     originals = [source.read_text(encoding="utf-8"), second.read_text(encoding="utf-8")]
     proposal = store.create_proposal("durable two-file change", [
         {"path": "sample.py", "original_content": originals[0],
          "original_sha256": hashlib.sha256(originals[0].encode()).hexdigest(),
-         "content": "def value():\\n    return 2\\n", "diff": ""},
+         "content": "def value():\n    return 2\n", "diff": ""},
         {"path": "second.py", "original_content": originals[1],
          "original_sha256": hashlib.sha256(originals[1].encode()).hexdigest(),
-         "content": "VALUE = 2\\n", "diff": ""},
+         "content": "VALUE = 2\n", "diff": ""},
     ])
     engine.approve(proposal["id"])
     synced = []
@@ -210,7 +210,7 @@ def test_directory_sync_failure_rolls_back_replaced_file(tmp_path: Path, monkeyp
         "path": "sample.py",
         "original_content": original,
         "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
-        "content": "def value():\\n    return 2\\n",
+        "content": "def value():\n    return 2\n",
         "diff": "",
     }])
     engine.approve(proposal["id"])
@@ -337,8 +337,8 @@ async def test_proposal_cannot_modify_unselected_file(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_iterative_loop_returns_pending_proposal_after_sandbox_pass(tmp_path: Path, monkeypatch):
-    first = '{"summary":"first attempt","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
-    second = '{"summary":"fixed attempt","changes":[{"path":"sample.py","content":"def value():\\n    return 3\\n"}]}'
+    first = '{"summary":"first attempt","changes":[{"path":"sample.py","content":"def value():\n    return 2\n"}]}'
+    second = '{"summary":"fixed attempt","changes":[{"path":"sample.py","content":"def value():\n    return 3\n"}]}'
 
     class SequenceRouter:
         def __init__(self):
@@ -378,7 +378,7 @@ async def test_iterative_loop_returns_pending_proposal_after_sandbox_pass(tmp_pa
 
 @pytest.mark.asyncio
 async def test_iterative_loop_never_proposes_failed_candidate(tmp_path: Path, monkeypatch):
-    answer = '{"summary":"bad attempt","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}'
+    answer = '{"summary":"bad attempt","changes":[{"path":"sample.py","content":"def value():\n    return 2\n"}]}'
     engine, store, workspace, source = make_engine(tmp_path, answer)
     engine.enable_test_runner = True
     monkeypatch.setattr(CodingEngine, "run_tests", lambda self: {
@@ -405,8 +405,8 @@ def test_proposal_store_round_trip(tmp_path: Path):
 async def test_proposal_rejects_duplicate_paths(tmp_path: Path):
     answer = (
         '{"summary":"duplicate change","changes":['
-        '{"path":"sample.py","content":"def value():\\n    return 2\\n"},'
-        '{"path":"sample.py","content":"def value():\\n    return 3\\n"}]}'
+        '{"path":"sample.py","content":"def value():\n    return 2\n"},'
+        '{"path":"sample.py","content":"def value():\n    return 3\n"}]}'
     )
     engine, store, workspace, source = make_engine(tmp_path, answer)
     before = source.read_text(encoding="utf-8")
@@ -576,7 +576,7 @@ async def test_apply_reports_error_if_final_applied_status_update_fails(
 ):
     engine, store, workspace, source = make_engine(
         tmp_path,
-        '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\\n    return 2\\n"}]}',
+        '{"summary":"change value","changes":[{"path":"sample.py","content":"def value():\n    return 2\n"}]}',
     )
     proposal = await engine.propose("change value", ["sample.py"])
     engine.approve(proposal["id"])
@@ -611,7 +611,7 @@ def test_concurrent_apply_requests_only_apply_proposal_once(tmp_path: Path):
         "path": "sample.py",
         "original_content": original,
         "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
-        "content": "def value():\\n    return 2\\n",
+        "content": "def value():\n    return 2\n",
         "diff": "",
     }])
     engine.approve(proposal["id"])
@@ -637,7 +637,7 @@ def test_concurrent_apply_requests_only_apply_proposal_once(tmp_path: Path):
     assert len(successes) == 1
     assert len(failures) == 1
     assert successes[0]["status"] == "applied"
-    assert source.read_text(encoding="utf-8") == "def value():\\n    return 2\\n"
+    assert source.read_text(encoding="utf-8") == "def value():\n    return 2\n"
     assert store.get_proposal(proposal["id"])["status"] == "applied"
 
 
