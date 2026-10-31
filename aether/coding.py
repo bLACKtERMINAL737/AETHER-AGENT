@@ -12,6 +12,10 @@ from .improvement import evaluate_improvement, parse_pytest_evidence
 from .sandbox import DockerTestSandbox, SandboxError
 from .store import TaskStore
 
+# Keep capability probes stable when tests or integrations monkeypatch os.rename.
+_OS_OPEN = os.open
+_OS_RENAME = os.rename
+
 
 class CodingError(RuntimeError):
     pass
@@ -71,6 +75,40 @@ class CodingEngine:
         if must_exist and (not target.exists() or not target.is_file()):
             raise CodingError(f"File does not exist: {relative}")
         return target
+
+
+    def _replace_in_workspace(self, relative: str, source: Path) -> None:
+        """Atomically replace a workspace file through an anchored directory fd."""
+        relative_path = Path(relative)
+        if relative_path.is_absolute() or not relative_path.parts or any(
+            part in {"", ".", ".."} for part in relative_path.parts
+        ):
+            raise CodingError("Invalid relative workspace path")
+        supported = getattr(os, "supports_dir_fd", set())
+        if _OS_OPEN not in supported or _OS_RENAME not in supported:
+            raise CodingError("Secure directory-relative replacement is unavailable on this platform")
+        directory_flag = getattr(os, "O_DIRECTORY", 0)
+        nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
+        if not directory_flag or not nofollow_flag:
+            raise CodingError("Secure no-follow directory access is unavailable on this platform")
+        flags = os.O_RDONLY | directory_flag | nofollow_flag
+        directory_fd = os.open(self.workspace, flags)
+        try:
+            for component in relative_path.parts[:-1]:
+                next_fd = os.open(component, flags, dir_fd=directory_fd)
+                os.close(directory_fd)
+                directory_fd = next_fd
+            parent_path = self.workspace.joinpath(*relative_path.parts[:-1])
+            held = os.fstat(directory_fd)
+            current = os.stat(parent_path, follow_symlinks=False)
+            if not stat.S_ISDIR(current.st_mode) or (held.st_dev, held.st_ino) != (
+                current.st_dev, current.st_ino
+            ):
+                raise CodingError("Workspace parent directory changed during apply")
+            os.rename(source.name, relative_path.name,
+                       src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
+        finally:
+            os.close(directory_fd)
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:
@@ -313,7 +351,7 @@ class CodingEngine:
                             f"File permissions changed while proposal was being applied: {change['path']}. "
                             "No stale permissions were intentionally applied; inspect the workspace."
                         )
-                    os.replace(temp_path, target)
+                    self._replace_in_workspace(change['path'], temp_path)
                     # Track the rename before syncing so a sync failure is rolled back.
                     replaced.append(
                         (target, old_content, change["content"], original_mode, change["path"])
@@ -390,7 +428,7 @@ class CodingEngine:
                                 f"Rollback path changed: {relative_path}. "
                                 "Manual reconciliation is required."
                             )
-                        os.replace(rollback_temp, target)
+                        self._replace_in_workspace(relative_path, rollback_temp)
                         rollback_temp = None
                         self._fsync_directory(target.parent)
 
