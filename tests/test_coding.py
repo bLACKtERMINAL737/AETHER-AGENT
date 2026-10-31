@@ -174,6 +174,65 @@ def test_apply_rolls_back_replaced_files_on_replace_failure(tmp_path: Path, monk
     assert store.get_proposal(proposal["id"])["status"] == "approved"
 
 
+
+
+def test_apply_syncs_parent_directory_after_each_replacement(tmp_path: Path, monkeypatch):
+    import hashlib
+
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    second = workspace / "second.py"
+    second.write_text("VALUE = 1\\n", encoding="utf-8")
+    originals = [source.read_text(encoding="utf-8"), second.read_text(encoding="utf-8")]
+    proposal = store.create_proposal("durable two-file change", [
+        {"path": "sample.py", "original_content": originals[0],
+         "original_sha256": hashlib.sha256(originals[0].encode()).hexdigest(),
+         "content": "def value():\\n    return 2\\n", "diff": ""},
+        {"path": "second.py", "original_content": originals[1],
+         "original_sha256": hashlib.sha256(originals[1].encode()).hexdigest(),
+         "content": "VALUE = 2\\n", "diff": ""},
+    ])
+    engine.approve(proposal["id"])
+    synced = []
+    monkeypatch.setattr(engine, "_fsync_directory", lambda directory: synced.append(directory))
+
+    result = engine.apply(proposal["id"])
+
+    assert result["status"] == "applied"
+    assert synced == [workspace, workspace]
+
+
+def test_directory_sync_failure_rolls_back_replaced_file(tmp_path: Path, monkeypatch):
+    import hashlib
+
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    original = source.read_text(encoding="utf-8")
+    proposal = store.create_proposal("directory sync failure", [{
+        "path": "sample.py",
+        "original_content": original,
+        "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
+        "content": "def value():\\n    return 2\\n",
+        "diff": "",
+    }])
+    engine.approve(proposal["id"])
+    calls = 0
+
+    def fail_first_sync(directory):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("simulated directory fsync failure")
+
+    monkeypatch.setattr(engine, "_fsync_directory", fail_first_sync)
+
+    with pytest.raises(CodingError, match="Apply failed"):
+        engine.apply(proposal["id"])
+
+    assert source.read_text(encoding="utf-8") == original
+    assert store.get_proposal(proposal["id"])["status"] == "approved"
+    assert calls == 2
+
+
+
 def test_apply_reports_rollback_failure_without_hiding_original_error(
     tmp_path: Path, monkeypatch
 ):
