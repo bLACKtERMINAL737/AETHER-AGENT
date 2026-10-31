@@ -297,8 +297,7 @@ class CodingEngine:
                             "No stale content was intentionally applied; inspect the workspace."
                         )
                     os.replace(temp_path, target)
-                    # Record the replacement before syncing: if directory fsync
-                    # fails, rollback must still include this already-renamed file.
+                    # Track the rename before syncing so a sync failure is rolled back.
                     replaced.append((target, old_content))
                     self._fsync_directory(target.parent)
             except Exception as apply_exc:
