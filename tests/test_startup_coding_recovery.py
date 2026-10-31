@@ -50,3 +50,62 @@ def test_startup_recovery_only_runs_when_apply_lock_is_acquired(
     assert fake_store.unknown_recovery_calls == 1
     assert fake_store.lock_blocking_arguments == [False]
     assert fake_store.proposal_recovery_calls == expected_proposal_recovery_calls
+
+
+from aether.store import TaskStore
+
+
+def make_applying_proposal(store: TaskStore) -> str:
+    proposal = store.create_proposal(
+        "startup recovery integration",
+        [{"path": "sample.py", "content": "VALUE = 2\\n"}],
+    )
+    store.set_proposal_status(proposal["id"], "approved")
+    assert store.claim_proposal_for_apply(proposal["id"]) is True
+    return proposal["id"]
+
+
+def run_application_startup(monkeypatch, store: TaskStore) -> None:
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setenv("CROWS_MESSAGING_WORKER_ENABLED", "false")
+    monkeypatch.setenv("CROWS_SCHEDULER_WORKER_ENABLED", "false")
+
+    async def start_and_stop_application():
+        async with app_module.lifespan(app_module.app):
+            pass
+
+    asyncio.run(start_and_stop_application())
+
+
+def test_startup_marks_real_interrupted_proposal_for_manual_review(
+    tmp_path, monkeypatch
+):
+    store = TaskStore(tmp_path / "startup.sqlite3")
+    proposal_id = make_applying_proposal(store)
+
+    run_application_startup(monkeypatch, store)
+
+    recovered = store.get_proposal(proposal_id)
+    assert recovered["status"] == "applying"
+    assert "Process restarted while applying" in recovered["error_text"]
+
+
+def test_startup_does_not_recover_proposal_while_real_apply_lock_is_held(
+    tmp_path, monkeypatch
+):
+    store = TaskStore(tmp_path / "startup-lock.sqlite3")
+    proposal_id = make_applying_proposal(store)
+
+    with store.coding_apply_lock() as acquired:
+        assert acquired is True
+        run_application_startup(monkeypatch, store)
+
+    unchanged = store.get_proposal(proposal_id)
+    assert unchanged["status"] == "applying"
+    assert unchanged["error_text"] is None
+
+    # Once the live owner releases the lock, a subsequent startup can recover it.
+    run_application_startup(monkeypatch, store)
+    recovered = store.get_proposal(proposal_id)
+    assert recovered["status"] == "applying"
+    assert "Process restarted while applying" in recovered["error_text"]
