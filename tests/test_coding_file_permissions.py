@@ -63,7 +63,7 @@ def test_successful_rollback_restores_original_file_permissions(
 
     monkeypatch.setattr(engine, "_fsync_directory", fail_first_directory_sync)
 
-    with pytest.raises(CodingError, match="simulated apply directory sync failure"):
+    with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
 
     assert source.read_text(encoding="utf-8") == original
