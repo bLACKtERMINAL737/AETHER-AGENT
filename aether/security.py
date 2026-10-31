@@ -12,7 +12,7 @@ EXEMPT_PATHS = {"/health", "/ui", "/ui/"}
 WEBHOOK_PATHS = {"/messaging/webhooks/telegram"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
-AMBIGUOUS_HEADERS = {"host", "origin", "authorization", "x-crows-token", "x-aether-token", "content-length", "transfer-encoding"}
+AMBIGUOUS_HEADERS = {"host", "origin", "authorization", "x-crows-token", "x-aether-token", "x-telegram-bot-api-secret-token", "content-length", "transfer-encoding"}
 
 
 def _is_loopback(host: str | None) -> bool:
