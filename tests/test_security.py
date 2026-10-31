@@ -270,6 +270,7 @@ async def test_invalid_content_length_is_rejected(monkeypatch):
         ([("Origin", "http://127.0.0.1:8000"), ("Origin", "http://evil.example")], "POST", "/mutate"),
         ([("Content-Length", "2"), ("Content-Length", "2")], "POST", "/mutate"),
         ([("Host", "127.0.0.1:8000"), ("Host", "evil.example")], "GET", "/private"),
+        ([("X-Telegram-Bot-Api-Secret-Token", "expected"), ("X-Telegram-Bot-Api-Secret-Token", "attacker")], "POST", "/messaging/webhooks/telegram"),
     ],
 )
 async def test_ambiguous_duplicate_security_headers_are_rejected(
