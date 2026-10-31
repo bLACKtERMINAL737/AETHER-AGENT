@@ -177,6 +177,19 @@ async def test_telegram_json_reader_rejects_invalid_json():
     assert error.value.status_code == 400
 
 
+def test_telegram_provider_message_id_prefers_update_id_for_deduplication():
+    from aether.app import _telegram_provider_message_id
+
+    assert _telegram_provider_message_id(42, 7, 9001) == "update:9001"
+    assert _telegram_provider_message_id(99, 7, 9001) == "update:9001"
+
+
+def test_telegram_provider_message_id_falls_back_for_legacy_updates():
+    from aether.app import _telegram_provider_message_id
+
+    assert _telegram_provider_message_id(42, 7, None) == "42:7"
+
+
 def test_telegram_timestamp_accepts_valid_unix_seconds():
     from aether.app import _telegram_received_at
 

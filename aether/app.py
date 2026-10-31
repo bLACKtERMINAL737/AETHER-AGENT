@@ -354,6 +354,13 @@ async def _read_telegram_json(request: Request, *, max_bytes: int = 1_048_576) -
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
 
+def _telegram_provider_message_id(chat_id: int, message_id: int, update_id: int | None) -> str:
+    """Prefer Telegram's globally unique update ID for durable webhook deduplication."""
+    if update_id is not None:
+        return f"update:{update_id}"
+    return f"{chat_id}:{message_id}"
+
+
 def _telegram_received_at(raw_date: Any) -> str:
     """Convert Telegram's Unix timestamp without allowing malformed values to 500."""
     if raw_date is None:
@@ -482,7 +489,7 @@ async def telegram_webhook(request: Request):
     try:
         result = messaging_store.ingest(
             channel="telegram",
-            provider_message_id=f"{chat_id}:{provider_message_id}",
+            provider_message_id=_telegram_provider_message_id(chat_id, provider_message_id, update_id),
             provider_user_id=str(chat_id),
             text=text_value,
             received_at=received_at,
