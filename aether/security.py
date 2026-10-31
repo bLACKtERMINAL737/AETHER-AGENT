@@ -12,6 +12,7 @@ EXEMPT_PATHS = {"/health", "/ui", "/ui/"}
 WEBHOOK_PATHS = {"/messaging/webhooks/telegram"}
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
+AMBIGUOUS_HEADERS = {"host", "origin", "authorization", "x-crows-token", "x-aether-token", "content-length", "transfer-encoding"}
 
 
 def _is_loopback(host: str | None) -> bool:
@@ -77,7 +78,13 @@ class LocalAPIProtection:
 
         path = scope.get("path", "")
         method = scope.get("method", "GET")
-        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        raw_headers = scope.get("headers", [])
+        header_names = [key.decode("latin-1").lower() for key, _ in raw_headers]
+        if any(header_names.count(name) > 1 for name in AMBIGUOUS_HEADERS):
+            response = JSONResponse({"detail": "Ambiguous duplicate request header"}, status_code=400)
+            await response(scope, receive, send)
+            return
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in raw_headers}
         webhook = path in WEBHOOK_PATHS
         exempt = path in EXEMPT_PATHS or path.startswith("/ui/")
         if not exempt and not webhook:
