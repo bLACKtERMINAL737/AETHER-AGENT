@@ -329,6 +329,31 @@ def _telegram_config():
     return bot_token, webhook_secret
 
 
+async def _read_telegram_json(request: Request, *, max_bytes: int = 1_048_576) -> Any:
+    """Read a Telegram webhook body with a hard byte limit before JSON parsing."""
+    raw_length = request.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            declared_length = int(raw_length)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length") from exc
+        if declared_length < 0:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if declared_length > max_bytes:
+            raise HTTPException(status_code=413, detail="Telegram webhook payload is too large")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail="Telegram webhook payload is too large")
+        chunks.append(chunk)
+    try:
+        return json.loads(b"".join(chunks))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+
 def _telegram_received_at(raw_date: Any) -> str:
     """Convert Telegram's Unix timestamp without allowing malformed values to 500."""
     if raw_date is None:
@@ -423,10 +448,7 @@ async def telegram_webhook(request: Request):
     supplied_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     if not expected_secret or not hmac.compare_digest(supplied_secret, expected_secret):
         raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret")
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+    payload = await _read_telegram_json(request)
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Invalid Telegram update")
     message = payload.get("message") or payload.get("edited_message")
