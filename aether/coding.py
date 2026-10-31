@@ -12,6 +12,10 @@ from .improvement import evaluate_improvement, parse_pytest_evidence
 from .sandbox import DockerTestSandbox, SandboxError
 from .store import TaskStore
 
+# Keep capability probes stable when tests or integrations monkeypatch os.rename.
+_OS_OPEN = os.open
+_OS_RENAME = os.rename
+
 
 class CodingError(RuntimeError):
     pass
@@ -81,7 +85,7 @@ class CodingEngine:
         ):
             raise CodingError("Invalid relative workspace path")
         supported = getattr(os, "supports_dir_fd", set())
-        if os.open not in supported or os.rename not in supported:
+        if _OS_OPEN not in supported or _OS_RENAME not in supported:
             raise CodingError("Secure directory-relative replacement is unavailable on this platform")
         directory_flag = getattr(os, "O_DIRECTORY", 0)
         nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
