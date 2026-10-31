@@ -259,3 +259,29 @@ async def test_invalid_content_length_is_rejected(monkeypatch):
         )
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid Content-Length"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("duplicate_headers", "method", "path"),
+    [
+        ([("X-Crows-Token", "test-token"), ("X-Crows-Token", "wrong")], "GET", "/private"),
+        ([("Authorization", "Bearer test-token"), ("Authorization", "Bearer wrong")], "GET", "/private"),
+        ([("Origin", "http://127.0.0.1:8000"), ("Origin", "http://evil.example")], "POST", "/mutate"),
+        ([("Content-Length", "2"), ("Content-Length", "2")], "POST", "/mutate"),
+        ([("Host", "127.0.0.1:8000"), ("Host", "evil.example")], "GET", "/private"),
+    ],
+)
+async def test_ambiguous_duplicate_security_headers_are_rejected(
+    monkeypatch, duplicate_headers, method, path
+):
+    app = make_app(monkeypatch)
+    headers = [("X-Aether-Token", "test-token"), *duplicate_headers]
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://127.0.0.1:8000",
+    ) as client:
+        response = await client.request(method, path, headers=headers, content=b"{}" if method == "POST" else None)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Ambiguous duplicate request header"
