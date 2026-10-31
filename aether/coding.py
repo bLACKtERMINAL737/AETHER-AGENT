@@ -286,6 +286,14 @@ class CodingEngine:
                 # file may be edited by another process after the initial validation
                 # and while the proposal's other files are being staged.
                 for (target, temp_path, old_content, original_mode), change in zip(staged, changes):
+                    # Validate before reading: a swapped symlink must not redirect
+                    # even the optimistic-concurrency check outside the workspace.
+                    latest_target = self._safe_path(change["path"])
+                    if latest_target != target:
+                        raise CodingError(
+                            f"File path changed while proposal was being applied: {change['path']}. "
+                            "Symlink paths are not supported; inspect the workspace."
+                        )
                     try:
                         latest_content = target.read_text(encoding="utf-8")
                     except (OSError, UnicodeDecodeError) as exc:
@@ -298,15 +306,6 @@ class CodingEngine:
                         raise CodingError(
                             f"File changed while proposal was being applied: {change['path']}. "
                             "No stale content was intentionally applied; inspect the workspace."
-                        )
-                    # Revalidate the path immediately before replacement. A path
-                    # component may have been swapped for a symlink while other
-                    # proposal files were being staged.
-                    latest_target = self._safe_path(change["path"])
-                    if latest_target != target:
-                        raise CodingError(
-                            f"File path changed while proposal was being applied: {change['path']}. "
-                            "Symlink paths are not supported; inspect the workspace."
                         )
                     latest_mode = stat.S_IMODE(target.stat().st_mode)
                     if latest_mode != original_mode:
