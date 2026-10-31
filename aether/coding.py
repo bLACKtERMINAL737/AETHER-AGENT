@@ -334,7 +334,15 @@ class CodingEngine:
                         # A target can be swapped after replacement but before
                         # rollback. Validate before reading so a symlink cannot
                         # redirect rollback inspection outside the workspace.
-                        rollback_target = self._safe_path(relative_path)
+                        try:
+                            rollback_target = self._safe_path(relative_path)
+                        except CodingError as path_exc:
+                            if not target.exists() and not target.is_symlink():
+                                raise CodingError(
+                                    f"Rollback target became unavailable: {target}. "
+                                    "Manual reconciliation is required."
+                                ) from path_exc
+                            raise
                         if rollback_target != target:
                             raise CodingError(
                                 f"Rollback path changed: {relative_path}. "
@@ -368,7 +376,15 @@ class CodingEngine:
 
                         # Revalidate again immediately before the rollback
                         # rename; if the path changed, leave it for manual review.
-                        rollback_target = self._safe_path(relative_path)
+                        try:
+                            rollback_target = self._safe_path(relative_path)
+                        except CodingError as path_exc:
+                            if not target.exists() and not target.is_symlink():
+                                raise CodingError(
+                                    f"Rollback target became unavailable: {target}. "
+                                    "Manual reconciliation is required."
+                                ) from path_exc
+                            raise
                         if rollback_target != target:
                             raise CodingError(
                                 f"Rollback path changed: {relative_path}. "
