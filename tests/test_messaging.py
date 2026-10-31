@@ -90,6 +90,93 @@ def test_conversation_scope_is_stable_and_channel_isolated():
     assert "user-42" not in first
 
 
+@pytest.mark.asyncio
+async def test_telegram_json_reader_accepts_valid_payload():
+    from starlette.requests import Request
+
+    from aether.app import _read_telegram_json
+
+    body = b'{"update_id": 12}'
+    messages = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        return messages.pop(0)
+
+    request = Request({
+        "type": "http", "method": "POST", "path": "/",
+        "headers": [(b"content-length", str(len(body)).encode())],
+        "query_string": b"", "server": ("test", 80), "client": ("test", 1),
+        "scheme": "http", "http_version": "1.1",
+    }, receive)
+    assert await _read_telegram_json(request) == {"update_id": 12}
+
+
+@pytest.mark.asyncio
+async def test_telegram_json_reader_rejects_declared_oversize_body():
+    from starlette.requests import Request
+    from fastapi import HTTPException
+
+    from aether.app import _read_telegram_json
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    request = Request({
+        "type": "http", "method": "POST", "path": "/",
+        "headers": [(b"content-length", b"11")],
+        "query_string": b"", "server": ("test", 80), "client": ("test", 1),
+        "scheme": "http", "http_version": "1.1",
+    }, receive)
+    with pytest.raises(HTTPException) as error:
+        await _read_telegram_json(request, max_bytes=10)
+    assert error.value.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_telegram_json_reader_rejects_chunked_oversize_body():
+    from starlette.requests import Request
+    from fastapi import HTTPException
+
+    from aether.app import _read_telegram_json
+
+    chunks = [
+        {"type": "http.request", "body": b"123456", "more_body": True},
+        {"type": "http.request", "body": b"78901", "more_body": False},
+    ]
+
+    async def receive():
+        return chunks.pop(0)
+
+    request = Request({
+        "type": "http", "method": "POST", "path": "/",
+        "headers": [], "query_string": b"", "server": ("test", 80),
+        "client": ("test", 1), "scheme": "http", "http_version": "1.1",
+    }, receive)
+    with pytest.raises(HTTPException) as error:
+        await _read_telegram_json(request, max_bytes=10)
+    assert error.value.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_telegram_json_reader_rejects_invalid_json():
+    from starlette.requests import Request
+    from fastapi import HTTPException
+
+    from aether.app import _read_telegram_json
+
+    async def receive():
+        return {"type": "http.request", "body": b"{bad json", "more_body": False}
+
+    request = Request({
+        "type": "http", "method": "POST", "path": "/",
+        "headers": [], "query_string": b"", "server": ("test", 80),
+        "client": ("test", 1), "scheme": "http", "http_version": "1.1",
+    }, receive)
+    with pytest.raises(HTTPException) as error:
+        await _read_telegram_json(request)
+    assert error.value.status_code == 400
+
+
 def test_telegram_timestamp_accepts_valid_unix_seconds():
     from aether.app import _telegram_received_at
 
