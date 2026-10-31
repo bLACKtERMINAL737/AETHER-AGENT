@@ -88,3 +88,27 @@ def test_conversation_scope_is_stable_and_channel_isolated():
     assert first != conversation_scope("telegram", "user-42", namespace="workspace-b")
     assert first.startswith("msg_")
     assert "user-42" not in first
+
+
+def test_telegram_timestamp_accepts_valid_unix_seconds():
+    from aether.app import _telegram_received_at
+
+    assert _telegram_received_at(1793318400) == "2026-10-30T00:00:00+00:00"
+
+
+@pytest.mark.parametrize("raw_date", ["1793318400", 1.5, True, False, [], {}, -10**30, 10**30])
+def test_telegram_timestamp_rejects_malformed_or_out_of_range_values(raw_date):
+    from aether.app import _telegram_received_at
+
+    with pytest.raises(ValueError):
+        _telegram_received_at(raw_date)
+
+
+def test_telegram_timestamp_uses_utc_now_when_missing():
+    from datetime import datetime
+
+    from aether.app import _telegram_received_at
+
+    parsed = datetime.fromisoformat(_telegram_received_at(None))
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset().total_seconds() == 0

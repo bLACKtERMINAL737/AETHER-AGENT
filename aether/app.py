@@ -329,6 +329,18 @@ def _telegram_config():
     return bot_token, webhook_secret
 
 
+def _telegram_received_at(raw_date: Any) -> str:
+    """Convert Telegram's Unix timestamp without allowing malformed values to 500."""
+    if raw_date is None:
+        return datetime.now(timezone.utc).isoformat()
+    if isinstance(raw_date, bool) or not isinstance(raw_date, int):
+        raise ValueError("Telegram message date must be an integer Unix timestamp")
+    try:
+        return datetime.fromtimestamp(raw_date, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError("Telegram message date is outside the supported range") from exc
+
+
 def _discord_webhook_url() -> str:
     url = get_env("CROWS_DISCORD_WEBHOOK_URL", "").strip()
     if not url:
@@ -425,11 +437,23 @@ async def telegram_webhook(request: Request):
     sender = message.get("from") or {}
     provider_message_id = message.get("message_id")
     chat_id = chat.get("id")
-    if not isinstance(text_value, str) or not text_value.strip() or chat_id is None or provider_message_id is None:
+    if not isinstance(text_value, str) or not text_value.strip():
         return {"ok": True, "ignored": True}
-    received_at = datetime.fromtimestamp(
-        int(message.get("date", int(time.time()))), tz=timezone.utc
-    ).isoformat()
+    if isinstance(chat_id, bool) or not isinstance(chat_id, int):
+        raise HTTPException(status_code=400, detail="Invalid Telegram chat identifier")
+    if isinstance(provider_message_id, bool) or not isinstance(provider_message_id, int) or provider_message_id < 1:
+        raise HTTPException(status_code=400, detail="Invalid Telegram message identifier")
+    update_id = payload.get("update_id")
+    if update_id is not None and (
+        isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0
+    ):
+        raise HTTPException(status_code=400, detail="Invalid Telegram update identifier")
+    try:
+        received_at = _telegram_received_at(message.get("date"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Telegram message date") from exc
+    if not isinstance(sender, dict):
+        sender = {}
     display_name = " ".join(
         part for part in (str(sender.get("first_name", "")).strip(), str(sender.get("last_name", "")).strip()) if part
     ) or None
