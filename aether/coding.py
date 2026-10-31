@@ -299,6 +299,15 @@ class CodingEngine:
                             f"File changed while proposal was being applied: {change['path']}. "
                             "No stale content was intentionally applied; inspect the workspace."
                         )
+                    # Revalidate the path immediately before replacement. A path
+                    # component may have been swapped for a symlink while other
+                    # proposal files were being staged.
+                    latest_target = self._safe_path(change["path"])
+                    if latest_target != target:
+                        raise CodingError(
+                            f"File path changed while proposal was being applied: {change['path']}. "
+                            "Symlink paths are not supported; inspect the workspace."
+                        )
                     latest_mode = stat.S_IMODE(target.stat().st_mode)
                     if latest_mode != original_mode:
                         raise CodingError(
