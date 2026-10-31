@@ -298,14 +298,26 @@ class CodingEngine:
                         )
                     os.replace(temp_path, target)
                     # Track the rename before syncing so a sync failure is rolled back.
-                    replaced.append((target, old_content))
+                    replaced.append((target, old_content, change["content"]))
                     self._fsync_directory(target.parent)
             except Exception as apply_exc:
                 rollback_errors: list[str] = []
 
-                for target, old_content in reversed(replaced):
+                for target, old_content, applied_content in reversed(replaced):
                     rollback_temp: Path | None = None
                     try:
+                        try:
+                            current_content = target.read_text(encoding="utf-8")
+                        except (OSError, UnicodeDecodeError) as exc:
+                            raise CodingError(
+                                f"Rollback target became unavailable: {target}. "
+                                "Manual reconciliation is required."
+                            ) from exc
+                        if current_content != applied_content:
+                            raise CodingError(
+                                f"Rollback refused to overwrite an external edit: {target}. "
+                                "Manual reconciliation is required."
+                            )
                         fd, temp_name = tempfile.mkstemp(
                             prefix=".aether-rollback-",
                             dir=str(target.parent),
