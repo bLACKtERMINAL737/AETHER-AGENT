@@ -154,7 +154,7 @@ def test_apply_rolls_back_replaced_files_on_replace_failure(tmp_path: Path, monk
     ])
     engine.approve(proposal["id"])
 
-    real_replace = os.replace
+    real_replace = os.rename
     calls = 0
 
     def fail_second_replace(src, dst, **kwargs):
@@ -164,7 +164,7 @@ def test_apply_rolls_back_replaced_files_on_replace_failure(tmp_path: Path, monk
             raise OSError("simulated replace failure")
         return real_replace(src, dst, **kwargs)
 
-    monkeypatch.setattr("aether.coding.os.replace", fail_second_replace)
+    monkeypatch.setattr("aether.coding.os.rename", fail_second_replace)
 
     with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
@@ -264,19 +264,19 @@ def test_apply_reports_rollback_failure_without_hiding_original_error(
     ])
     engine.approve(proposal["id"])
 
-    real_replace = os.replace
+    real_replace = os.rename
     calls = 0
 
-    def fail_second_replace(src, dst):
+    def fail_second_replace(src, dst, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 2:
             raise OSError("simulated replacement failure")
         if calls == 3:
             raise OSError("simulated rollback failure")
-        return real_replace(src, dst)
+        return real_replace(src, dst, **kwargs)
 
-    monkeypatch.setattr("aether.coding.os.replace", fail_second_replace)
+    monkeypatch.setattr("aether.coding.os.rename", fail_second_replace)
 
     with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
