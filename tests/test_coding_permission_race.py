@@ -2,6 +2,7 @@
 
 import hashlib
 import stat
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -41,17 +42,18 @@ def test_apply_refuses_to_overwrite_permissions_changed_after_staging(
     )
     engine.approve(proposal["id"])
 
-    real_replace = coding_module.os.replace
+    real_mkstemp = tempfile.mkstemp
     changed = False
 
-    def chmod_before_replace(src, dst):
+    def chmod_after_staging_file_created(*args, **kwargs):
         nonlocal changed
+        result = real_mkstemp(*args, **kwargs)
         if not changed:
             source.chmod(0o600)
             changed = True
-        return real_replace(src, dst)
+        return result
 
-    monkeypatch.setattr(coding_module.os, "replace", chmod_before_replace)
+    monkeypatch.setattr(coding_module.tempfile, "mkstemp", chmod_after_staging_file_created)
 
     with pytest.raises(CodingError, match="permissions changed while proposal was being applied"):
         engine.apply(proposal["id"])
