@@ -280,7 +280,7 @@ class CodingEngine:
                     handle.flush()
                     os.fsync(handle.fileno())
                 staged.append((target, Path(temp_name), current, original_mode))
-            replaced: list[tuple[Path, str, str, int]] = []
+            replaced: list[tuple[Path, str, str, int, str]] = []
             try:
                 # Recheck each target immediately before replacement. A workspace
                 # file may be edited by another process after the initial validation
@@ -315,14 +315,23 @@ class CodingEngine:
                         )
                     os.replace(temp_path, target)
                     # Track the rename before syncing so a sync failure is rolled back.
-                    replaced.append((target, old_content, change["content"], original_mode))
+                    replaced.append((target, old_content, change["content"], original_mode, change["path"]))
                     self._fsync_directory(target.parent)
             except Exception as apply_exc:
                 rollback_errors: list[str] = []
 
-                for target, old_content, applied_content, original_mode in reversed(replaced):
+                for target, old_content, applied_content, original_mode, relative_path in reversed(replaced):
                     rollback_temp: Path | None = None
                     try:
+                        # A target can be swapped after replacement but before
+                        # rollback. Validate before reading so a symlink cannot
+                        # redirect rollback inspection outside the workspace.
+                        rollback_target = self._safe_path(relative_path)
+                        if rollback_target != target:
+                            raise CodingError(
+                                f"Rollback path changed: {relative_path}. "
+                                "Manual reconciliation is required."
+                            )
                         try:
                             current_content = target.read_text(encoding="utf-8")
                         except (OSError, UnicodeDecodeError) as exc:
@@ -349,6 +358,14 @@ class CodingEngine:
                             handle.flush()
                             os.fsync(handle.fileno())
 
+                        # Revalidate again immediately before the rollback
+                        # rename; if the path changed, leave it for manual review.
+                        rollback_target = self._safe_path(relative_path)
+                        if rollback_target != target:
+                            raise CodingError(
+                                f"Rollback path changed: {relative_path}. "
+                                "Manual reconciliation is required."
+                            )
                         os.replace(rollback_temp, target)
                         rollback_temp = None
                         self._fsync_directory(target.parent)
