@@ -179,6 +179,32 @@ def test_expired_lease_becomes_unknown_not_automatically_requeued(tmp_path: Path
 
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"delay_seconds": True}, "delay_seconds"),
+        ({"delay_seconds": 1.5}, "delay_seconds"),
+        ({"max_retries": True}, "max_retries"),
+        ({"max_retries": 2.5}, "max_retries"),
+    ],
+)
+def test_retry_rejects_boolean_and_non_integer_limits(tmp_path: Path, monkeypatch, kwargs, message):
+    from cryptography.fernet import Fernet
+    from aether.messaging import MessagingContractError
+
+    monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "retry-validation.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u", text="hello",
+        idempotency_key="retry-validation", delivery_target="123",
+    )
+    store.claim_outbound(worker_id="worker")
+    params = {"delay_seconds": 10, "max_retries": 2}
+    params.update(kwargs)
+    with pytest.raises(ValueError, match=message):
+        store.retry_outbound_lease(queued["message"]["id"], worker_id="worker", **params)
+
+
 def test_rate_limit_retry_is_delayed_and_bounded(tmp_path: Path, monkeypatch):
     from cryptography.fernet import Fernet
     from datetime import datetime, timedelta, timezone
