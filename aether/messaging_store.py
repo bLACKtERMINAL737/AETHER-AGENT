@@ -238,10 +238,10 @@ class MessagingStore:
         """Atomically lease eligible, target-backed outbound messages for one worker."""
         if not isinstance(worker_id, str) or not worker_id.strip() or len(worker_id) > 128:
             raise MessagingContractError("worker_id is invalid")
-        if not 1 <= limit <= 100:
-            raise ValueError("limit must be between 1 and 100")
-        if not 5 <= lease_seconds <= 900:
-            raise ValueError("lease_seconds must be between 5 and 900")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 5 <= lease_seconds <= 900:
+            raise ValueError("lease_seconds must be an integer between 5 and 900")
         if self._target_cipher is None:
             return []
         now_dt = datetime.now(timezone.utc)
@@ -334,10 +334,10 @@ class MessagingStore:
         max_retries: int = 3,
     ) -> str:
         """Schedule a bounded retry only after a provider's explicit rate-limit response."""
-        if not 1 <= delay_seconds <= 300:
-            raise ValueError("delay_seconds must be between 1 and 300")
-        if not 0 <= max_retries <= 5:
-            raise ValueError("max_retries must be between 0 and 5")
+        if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, int) or not 1 <= delay_seconds <= 300:
+            raise ValueError("delay_seconds must be an integer between 1 and 300")
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or not 0 <= max_retries <= 5:
+            raise ValueError("max_retries must be an integer between 0 and 5")
         now_dt = datetime.now(timezone.utc)
         now = now_dt.isoformat()
         next_attempt = (now_dt + timedelta(seconds=delay_seconds)).isoformat()
