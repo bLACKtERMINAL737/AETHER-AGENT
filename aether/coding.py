@@ -81,7 +81,7 @@ class CodingEngine:
         ):
             raise CodingError("Invalid relative workspace path")
         supported = getattr(os, "supports_dir_fd", set())
-        if os.open not in supported or os.replace not in supported:
+        if os.open not in supported or os.rename not in supported:
             raise CodingError("Secure directory-relative replacement is unavailable on this platform")
         directory_flag = getattr(os, "O_DIRECTORY", 0)
         nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
@@ -101,7 +101,7 @@ class CodingEngine:
                 current.st_dev, current.st_ino
             ):
                 raise CodingError("Workspace parent directory changed during apply")
-            os.replace(source.name, relative_path.name,
+            os.rename(source.name, relative_path.name,
                        src_dir_fd=directory_fd, dst_dir_fd=directory_fd)
         finally:
             os.close(directory_fd)
