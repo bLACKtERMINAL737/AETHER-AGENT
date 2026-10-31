@@ -641,6 +641,42 @@ def test_concurrent_apply_requests_only_apply_proposal_once(tmp_path: Path):
     assert store.get_proposal(proposal["id"])["status"] == "applied"
 
 
+def test_process_interruption_during_apply_requires_manual_reconciliation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    original = source.read_text(encoding="utf-8")
+    proposal = store.create_proposal("interrupted filesystem apply", [{
+        "path": "sample.py",
+        "original_content": original,
+        "original_sha256": __import__("hashlib").sha256(original.encode("utf-8")).hexdigest(),
+        "content": "def value():\\n    return 2\\n",
+        "diff": "",
+    }])
+    engine.approve(proposal["id"])
+
+    def interrupt_after_first_replace(_directory: Path) -> None:
+        raise KeyboardInterrupt("simulated process interruption")
+
+    monkeypatch.setattr(engine, "_fsync_directory", interrupt_after_first_replace)
+
+    with pytest.raises(KeyboardInterrupt, match="simulated process interruption"):
+        engine.apply(proposal["id"])
+
+    # The process stopped after the rename: do not pretend the proposal completed
+    # or make it eligible for an automatic retry.
+    assert source.read_text(encoding="utf-8") == "def value():\\n    return 2\\n"
+    assert store.get_proposal(proposal["id"])["status"] == "applying"
+
+    restarted_store = TaskStore(store.db_path)
+    assert restarted_store.mark_interrupted_proposals_for_review() == 1
+    recovered = restarted_store.get_proposal(proposal["id"])
+    assert recovered["status"] == "applying"
+    assert "Process restarted while applying" in recovered["error_text"]
+    with pytest.raises(ValueError, match="Invalid proposal status transition"):
+        restarted_store.set_proposal_status(proposal["id"], "approved")
+
+
 def test_interrupted_apply_is_flagged_for_manual_review_after_restart(tmp_path: Path):
     store = TaskStore(tmp_path / "aether.sqlite3")
     proposal = store.create_proposal("interrupted apply", [])
