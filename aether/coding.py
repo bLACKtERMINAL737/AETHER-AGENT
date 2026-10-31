@@ -315,12 +315,20 @@ class CodingEngine:
                         )
                     os.replace(temp_path, target)
                     # Track the rename before syncing so a sync failure is rolled back.
-                    replaced.append((target, old_content, change["content"], original_mode, change["path"]))
+                    replaced.append(
+                        (target, old_content, change["content"], original_mode, change["path"])
+                    )
                     self._fsync_directory(target.parent)
             except Exception as apply_exc:
                 rollback_errors: list[str] = []
 
-                for target, old_content, applied_content, original_mode, relative_path in reversed(replaced):
+                for (
+                    target,
+                    old_content,
+                    applied_content,
+                    original_mode,
+                    relative_path,
+                ) in reversed(replaced):
                     rollback_temp: Path | None = None
                     try:
                         # A target can be swapped after replacement but before
