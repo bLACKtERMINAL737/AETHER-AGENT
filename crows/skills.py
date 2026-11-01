@@ -18,9 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 _SKILL_ID = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
-_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z.-]+))?$")
-
-
+_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$")
 def _version_key(version: str) -> tuple[int, int, int, bool, str]:
     match = _VERSION.fullmatch(version)
     if match is None:
