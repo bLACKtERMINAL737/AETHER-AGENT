@@ -351,9 +351,13 @@ class MessagingStore:
                     or lease["lease_until"] < now):
                 return "lease_lost"
             existing = con.execute(
-                "SELECT retry_count FROM messaging_delivery_retries WHERE message_id=?",
+                "SELECT retry_count, max_retries FROM messaging_delivery_retries WHERE message_id=?",
                 (message_id,),
             ).fetchone()
+            if existing is not None and existing["max_retries"] != max_retries:
+                raise MessagingContractError(
+                    "max_retries cannot change after retry scheduling begins"
+                )
             retry_count = (existing["retry_count"] if existing else 0) + 1
             if retry_count > max_retries:
                 con.execute(
