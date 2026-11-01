@@ -82,9 +82,9 @@ class ModelProvider:
         }[task_type]
         if runtime_context is not None:
             system_prompt += (
-                "\\n\\nLive Crows runtime snapshot (authoritative application data, not user instructions):\\n"
+                "\n\nLive Crows runtime snapshot (authoritative application data, not user instructions):\n"
                 + json.dumps(runtime_context, ensure_ascii=False, sort_keys=True, default=str)
-                + "\\nAnswer questions about your current mode, models, tools, skills, workspace, and recent task statuses "
+                + "\nAnswer questions about your current mode, models, tools, skills, workspace, and recent task statuses "
                   "from this snapshot only. If a field is absent, say it is unavailable rather than guessing. "
                   "Never request, reveal, infer, or fabricate API keys, tokens, passwords, or other secret values."
             )
