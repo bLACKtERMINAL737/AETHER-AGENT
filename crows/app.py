@@ -2480,7 +2480,8 @@ async def chat(request: ChatRequest):
                     execution_counter=lambda: tool_task["attempts"] > 0,
                     max_tool_calls=5,
                     runtime_context=build_agent_runtime_context(
-                        mode=request.mode, task_type=effective_task
+                        mode=request.mode, task_type=effective_task,
+                        model_route=request.model_route if request.mode == "manual" else None,
                     ),
                     **({"image_data_url": request.image_data_url} if request.image_data_url else {}),
                 )
@@ -2909,7 +2910,9 @@ skill_registry = SkillRegistry(
 )
 
 
-def build_agent_runtime_context(*, mode: str = "auto", task_type: str = "general") -> dict[str, Any]:
+def build_agent_runtime_context(
+    *, mode: str = "auto", task_type: str = "general", model_route: str | None = None
+) -> dict[str, Any]:
     """Build a secret-free, live snapshot for the assistant's self-description."""
     try:
         skills = [
@@ -2940,13 +2943,32 @@ def build_agent_runtime_context(*, mode: str = "auto", task_type: str = "general
         logger.warning("Could not read task journal for runtime context: %s", type(exc).__name__)
         recent_tasks = []
 
+    routes = router.available_routes()
+    route_by_id = {item["id"]: item for item in routes}
+    selected_route = model_route or (
+        task_type if task_type in {"coding", "reasoning"} and route_by_id.get(task_type, {}).get("configured")
+        else "primary"
+    )
+    active_model = route_by_id.get(selected_route, {
+        "id": selected_route, "model": "", "configured": False,
+    })
+    tool_catalog = [
+        {
+            "name": item["name"],
+            "description": item["description"],
+            "input_schema": item["input_schema"],
+        }
+        for item in tools.describe()
+    ]
+
     return {
         "project": "Crows",
         "mode": mode,
         "task_type": task_type,
+        "active_model_route": active_model,
+        "model_routes": routes,
         "workspace": str(settings.workspace.resolve()),
-        "model_routes": router.available_routes(),
-        "available_tools": [item["name"] for item in tools.describe()],
+        "available_tools": tool_catalog,
         "skills": skills,
         "recent_tasks": recent_tasks,
         "coding_test_runner_enabled": bool(coding.enable_test_runner),
@@ -2959,6 +2981,11 @@ def build_agent_runtime_context(*, mode: str = "auto", task_type: str = "general
         },
     }
 
+
+@app.get("/agent/status")
+def agent_runtime_status():
+    """Return a secret-free snapshot of the running agent's configuration and capabilities."""
+    return build_agent_runtime_context()
 
 class SkillActivationRequest(BaseModel):
     version: str = Field(min_length=5, max_length=64)
