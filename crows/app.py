@@ -178,6 +178,7 @@ class ChatRequest(BaseModel):
     allow_fallback: bool = True
     session_id: str | None = Field(default=None, min_length=1, max_length=200)
     use_saved_memories: bool = False
+    skill_ids: list[str] = Field(default_factory=list, max_length=5)
     image_data_url: str | None = Field(default=None, max_length=900_000)
 
     @field_validator("message")
@@ -2337,10 +2338,23 @@ async def chat(request: ChatRequest):
                 status_code=422,
                 detail="Manual mode requires an explicit model_route selection.",
             )
+        skill_profile = None
+        if request.skill_ids:
+            try:
+                skill_profile = skill_registry.resolve_runtime_profile(request.skill_ids)
+            except SkillError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        permitted_tool_names = (
+            set(skill_profile["tools"]) if skill_profile is not None
+            else {item["name"] for item in tools.describe()}
+        )
+        available_tool_descriptions = [
+            item for item in tools.describe() if item["name"] in permitted_tool_names
+        ]
         tool_task = {"id": None, "count": 0, "attempts": 0, "failed": False, "uncertain": False}
         tool_name_map = {
             provider_tool_name(item["name"]): item["name"]
-            for item in tools.describe()
+            for item in available_tool_descriptions
         }
 
         async def execute_chat_tool(name, arguments):
@@ -2350,7 +2364,19 @@ async def chat(request: ChatRequest):
                 store.set_task_status(task["id"], "running")
             task_id = tool_task["id"]
             tool_task["attempts"] += 1
-            internal_name = tool_name_map.get(str(name), str(name))
+            internal_name = tool_name_map.get(str(name))
+            if internal_name is None:
+                tool_task["failed"] = True
+                raise ToolError("Tool is not enabled by the selected skill profile.")
+            if request.skill_ids:
+                try:
+                    current_profile = skill_registry.resolve_runtime_profile(request.skill_ids)
+                except SkillError as exc:
+                    tool_task["failed"] = True
+                    raise ToolError("Selected skill was disabled or is no longer available.") from exc
+                if internal_name not in set(current_profile["tools"]):
+                    tool_task["failed"] = True
+                    raise ToolError("Tool is no longer authorized by the selected skill profile.")
             execution_id = None
             try:
                 # If journal creation fails, do not run the tool: there would be no
@@ -2438,7 +2464,7 @@ async def chat(request: ChatRequest):
                         "parameters": item["input_schema"],
                     },
                 }
-                for item in tools.describe()
+                for item in available_tool_descriptions
             ]
             try:
                 result = await router.chat_with_tools(
