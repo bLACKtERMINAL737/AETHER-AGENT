@@ -248,6 +248,36 @@ class SkillRegistry:
             self._write_json_atomic(self.state_path, state)
         return self.get(skill_id, version)
 
+    def resolve_runtime_profile(self, skill_ids: list[str]) -> dict:
+        """Resolve explicitly selected, active skills into a bounded tool capability profile."""
+        if not isinstance(skill_ids, list) or not 1 <= len(skill_ids) <= 5:
+            raise SkillError("Select between one and five skills")
+        if len(skill_ids) != len(set(skill_ids)):
+            raise SkillError("Skill selection must not contain duplicates")
+
+        active = self._read_state()
+        manifests = []
+        allowed_tools: set[str] = set()
+        permissions: set[str] = set()
+        for skill_id in skill_ids:
+            if not isinstance(skill_id, str) or not _SKILL_ID.fullmatch(skill_id):
+                raise SkillError("Invalid skill ID")
+            version = active.get(skill_id)
+            if version is None:
+                raise SkillError(f"Skill '{skill_id}' is not active")
+            manifest = self.get(skill_id, version)
+            if manifest.get("enabled") is not True:
+                raise SkillError(f"Skill '{skill_id}' is not active")
+            manifests.append(manifest)
+            allowed_tools.update(manifest["tools"])
+            permissions.update(manifest["permissions"])
+
+        return {
+            "skills": manifests,
+            "tools": sorted(allowed_tools),
+            "permissions": sorted(permissions),
+        }
+
     def disable(self, skill_id: str) -> dict:
         with self._state_lock():
             state = self._read_state()
