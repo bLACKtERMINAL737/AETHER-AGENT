@@ -89,7 +89,7 @@ If a step is not verified on the final commit, omit it rather than simulate succ
 - [ ] Submit one entry before 30 October 2026; target 29 October to leave time for upload/validation.
 
 ## Final metadata to fill before submission
-- Repository URL: https://github.com/bLACKtERMINAL737/AETHER-AGENT
+- Repository URL: https://github.com/bLACKtERMINAL737/CROWS-AGENT
 - Exact submission commit: _fill after final code freeze_
 - Test command and result: _fill after running on the exact submission commit_
 - Demo video URL: _fill after recording and uploading_
