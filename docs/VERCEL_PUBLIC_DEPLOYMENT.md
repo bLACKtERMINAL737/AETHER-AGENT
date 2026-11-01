@@ -8,7 +8,7 @@ Crows's existing FastAPI application is designed for local-first use. Deploying 
 
 To deploy only the static UI for visual review:
 
-1. Import `bLACKtERMINAL737/AETHER-AGENT` into Vercel.
+1. Import `bLACKtERMINAL737/CROWS-AGENT` into Vercel.
 2. Set the project Root Directory to `crows/static`.
 3. Leave framework preset as Other and use no build command.
 4. Deploy a preview URL for UI inspection only.
