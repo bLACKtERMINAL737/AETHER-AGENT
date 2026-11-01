@@ -377,3 +377,75 @@ def test_retry_budget_cannot_be_increased_after_scheduling(tmp_path: Path, monke
         store.retry_outbound_lease(
             message_id, worker_id="worker-2", delay_seconds=1, max_retries=5
         )
+
+
+
+def test_outbound_idempotency_rejects_different_delivery_target(
+    tmp_path: Path, monkeypatch
+):
+    from cryptography.fernet import Fernet
+    from aether.messaging import MessagingContractError
+
+    monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
+    store = MessagingStore(tmp_path / "target-idempotency.sqlite3")
+    kwargs = dict(
+        channel="telegram", provider_user_id="u1", text="reply",
+        idempotency_key="target-conflict",
+    )
+
+    first = store.queue_outbound(**kwargs, delivery_target="target-A")
+    duplicate = store.queue_outbound(**kwargs, delivery_target="target-A")
+
+    assert first["duplicate"] is False
+    assert duplicate["duplicate"] is True
+    with pytest.raises(MessagingContractError, match="different message"):
+        store.queue_outbound(**kwargs, delivery_target="target-B")
+
+
+@pytest.mark.parametrize(
+    ("first_target", "second_target"),
+    [(None, "target-A"), ("target-A", None)],
+)
+def test_outbound_idempotency_rejects_target_presence_change(
+    tmp_path: Path, monkeypatch, first_target, second_target
+):
+    from cryptography.fernet import Fernet
+    from aether.messaging import MessagingContractError
+
+    monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
+    store = MessagingStore(tmp_path / "target-presence.sqlite3")
+    kwargs = dict(
+        channel="telegram", provider_user_id="u1", text="reply",
+        idempotency_key="target-presence",
+    )
+
+    store.queue_outbound(**kwargs, delivery_target=first_target)
+    with pytest.raises(MessagingContractError, match="different message"):
+        store.queue_outbound(**kwargs, delivery_target=second_target)
+
+
+def test_outbound_idempotency_fails_closed_for_corrupt_target(
+    tmp_path: Path, monkeypatch
+):
+    from cryptography.fernet import Fernet
+    from aether.messaging import MessagingContractError
+
+    monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
+    store = MessagingStore(tmp_path / "corrupt-target.sqlite3")
+    kwargs = dict(
+        channel="telegram", provider_user_id="u1", text="reply",
+        idempotency_key="corrupt-target",
+    )
+
+    queued = store.queue_outbound(**kwargs, delivery_target="target-A")
+    with store.connect() as con:
+        con.execute(
+            "UPDATE messaging_delivery_targets SET ciphertext=? WHERE message_id=?",
+            (b"invalid-ciphertext", queued["message"]["id"]),
+        )
+
+    with pytest.raises(MessagingContractError, match="cannot be verified"):
+        store.queue_outbound(**kwargs, delivery_target="target-A")
