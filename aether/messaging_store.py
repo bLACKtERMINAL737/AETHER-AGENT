@@ -182,9 +182,13 @@ class MessagingStore:
             if not isinstance(delivery_target, str) or not delivery_target.strip() or len(delivery_target) > MAX_ID_CHARS:
                 raise MessagingContractError("delivery_target is invalid")
             delivery_target = delivery_target.strip()
+        if delivery_target is not None and self._target_cipher is None:
+            raise MessagingContractError(
+                "CROWS_MESSAGING_TARGET_KEY is required when a delivery_target is supplied"
+            )
         encrypted_target = (
             self._target_cipher.encrypt(delivery_target.encode("utf-8"))
-            if delivery_target is not None and self._target_cipher is not None else None
+            if delivery_target is not None else None
         )
         conversation_id = self._scope(channel, provider_user_id)
         now = _now()
