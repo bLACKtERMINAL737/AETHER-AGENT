@@ -85,6 +85,50 @@ def test_outbound_delivery_status_rejects_invalid_value(tmp_path: Path):
 
 
 
+def test_outbound_delivery_status_cannot_rewrite_terminal_state(tmp_path: Path):
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    store.queue_outbound(
+        channel="telegram", provider_user_id="chat-1", text="hello", idempotency_key="terminal-1"
+    )
+    store.update_outbound_status("telegram", "terminal-1", "sent")
+    with pytest.raises(ValueError, match="only transition from accepted"):
+        store.update_outbound_status("telegram", "terminal-1", "failed")
+    saved = store.get_outbound("telegram", "terminal-1")
+    assert saved["status"] == "sent"
+
+
+def test_outbound_delivery_status_rejects_missing_message(tmp_path: Path):
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    with pytest.raises(ValueError, match="outbound message not found"):
+        store.update_outbound_status("telegram", "missing", "sent")
+
+
+@pytest.mark.parametrize("provider_message_id", ["", "   ", 123, "x" * 257])
+def test_outbound_delivery_status_rejects_invalid_provider_message_id(
+    tmp_path: Path, provider_message_id
+):
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    store.queue_outbound(
+        channel="telegram", provider_user_id="chat-1", text="hello", idempotency_key="provider-id-1"
+    )
+    with pytest.raises(ValueError, match="provider_message_id is invalid"):
+        store.update_outbound_status(
+            "telegram", "provider-id-1", "sent", provider_message_id=provider_message_id
+        )
+
+
+def test_outbound_delivery_status_normalizes_provider_message_id(tmp_path: Path):
+    store = MessagingStore(tmp_path / "inbox.sqlite3")
+    store.queue_outbound(
+        channel="telegram", provider_user_id="chat-1", text="hello", idempotency_key="provider-id-2"
+    )
+    store.update_outbound_status(
+        "telegram", "provider-id-2", "sent", provider_message_id="  telegram-9  "
+    )
+    assert store.get_outbound("telegram", "provider-id-2")["provider_message_id"] == "telegram-9"
+
+
+
 def test_delivery_target_is_encrypted_and_decryptable(tmp_path: Path, monkeypatch):
     from cryptography.fernet import Fernet
 
