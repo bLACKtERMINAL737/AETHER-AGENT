@@ -280,3 +280,10 @@ After checking the provider directly, an operator can resolve an `unknown` outbo
 ### Durable execution health metrics
 
 The authenticated `GET /agents/execution/metrics` endpoint reports aggregate counts for queued, running, succeeded, failed, and uncertain tasks; workflow states; and tool execution states. It also reports the oldest queued-task and unknown-workflow timestamps. It deliberately omits task IDs, goals, inputs, results, tool arguments, and error text.
+
+
+### Declarative skills registry (review-gated foundation)
+
+Crows includes a local registry for versioned skill manifests. A manifest declares a short description, an allowlist of already-registered tools, and the read permissions required by those tools. Skill versions are immutable; reusing a version with different content is rejected. New versions remain disabled until an authenticated user explicitly approves activation. An active version can be disabled or rolled back by selecting an earlier immutable version.
+
+The registry stores metadata under the configured database directory's `skills/` folder with restrictive local permissions and atomic activation-state writes. It does **not** execute Python, shell commands, downloaded code, or arbitrary prompt files from a skill package. Registered skills are currently a reviewed metadata and capability-boundary foundation; automatic model-driven skill discovery, invocation, authoring, and self-improvement are not implemented.
