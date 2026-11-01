@@ -87,3 +87,38 @@ def test_rejects_symlinked_manifest_and_state(tmp_path: Path):
     registry.state_path.symlink_to(skill_dir / "1.0.0.json")
     with pytest.raises(SkillError, match="symlink"):
         registry.disable("repo-review")
+
+
+def test_runtime_profile_contains_only_explicitly_selected_active_skill_tools(tmp_path: Path):
+    registry = SkillRegistry(tmp_path / "skills", TOOLS)
+    registry.register(manifest())
+    registry.register(manifest(
+        id="web-research",
+        name="Web research",
+        version="1.0.0",
+        tools=["web.search"],
+        permissions=["web.read"],
+    ))
+    with pytest.raises(SkillError, match="not active"):
+        registry.resolve_runtime_profile(["repo-review"])
+
+    registry.activate("repo-review", "1.0.0", approved=True)
+    profile = registry.resolve_runtime_profile(["repo-review"])
+    assert profile["tools"] == ["workspace.list_files", "workspace.read_file"]
+    assert profile["permissions"] == ["workspace.read"]
+    assert profile["skills"][0]["enabled"] is True
+
+    with pytest.raises(SkillError, match="not active"):
+        registry.resolve_runtime_profile(["repo-review", "web-research"])
+
+
+def test_runtime_profile_rejects_duplicate_or_excessive_skill_selection(tmp_path: Path):
+    registry = SkillRegistry(tmp_path / "skills", TOOLS)
+    registry.register(manifest())
+    registry.activate("repo-review", "1.0.0", approved=True)
+    with pytest.raises(SkillError, match="duplicates"):
+        registry.resolve_runtime_profile(["repo-review", "repo-review"])
+    with pytest.raises(SkillError, match="one and five"):
+        registry.resolve_runtime_profile([])
+    with pytest.raises(SkillError, match="one and five"):
+        registry.resolve_runtime_profile(["repo-review"] * 6)
