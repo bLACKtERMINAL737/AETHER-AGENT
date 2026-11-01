@@ -38,10 +38,12 @@ def test_versions_are_immutable_and_rollback_is_explicit(tmp_path: Path):
     registry = SkillRegistry(tmp_path / "skills", TOOLS)
     registry.register(manifest())
     registry.register(manifest(version="1.1.0", description="Improved read-only review."))
+    registry.register(manifest(version="1.10.0", description="Latest read-only review."))
     registry.activate("repo-review", "1.0.0", approved=True)
     registry.activate("repo-review", "1.1.0", approved=True)
     assert registry.get("repo-review", "1.0.0")["enabled"] is False
-    assert registry.get("repo-review", "1.1.0")["enabled"] is True
+    assert registry.get("repo-review", "1.1.0")["enabled"] is False
+    assert registry.get("repo-review", "1.10.0")["enabled"] is True
 
     with pytest.raises(SkillError, match="different content"):
         registry.register(manifest(description="Changed without a version bump."))
