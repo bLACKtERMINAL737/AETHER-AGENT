@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def _proposal_in_status(store: TaskStore, status: str) -> str:

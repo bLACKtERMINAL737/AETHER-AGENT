@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class UnusedRouter:
@@ -20,7 +20,7 @@ def make_proposal(tmp_path: Path, status: str = "pending"):
     source = workspace / "sample.py"
     original = "VALUE = 1\n"
     source.write_text(original, encoding="utf-8")
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     engine = CodingEngine(workspace, store, UnusedRouter())
     proposal = store.create_proposal(
         "change value",
@@ -70,7 +70,7 @@ def test_applied_proposal_cannot_be_applied_a_second_time(tmp_path: Path):
 
 def test_rejecting_non_pending_proposal_is_a_conflict(monkeypatch):
     from fastapi import HTTPException
-    import aether.app as app_module
+    import crows.app as app_module
 
     class AlreadyApprovedCoding:
         def reject(self, proposal_id):
@@ -149,7 +149,7 @@ def test_concurrent_approve_and_reject_only_allow_one_transition(
 def test_apply_rechecks_each_file_before_replacement_and_rolls_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    import aether.coding as coding_module
+    import crows.coding as coding_module
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -157,7 +157,7 @@ def test_apply_rechecks_each_file_before_replacement_and_rolls_back(
     second = workspace / "second.py"
     first.write_text("FIRST = 1\\n", encoding="utf-8")
     second.write_text("SECOND = 1\\n", encoding="utf-8")
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     engine = CodingEngine(workspace, store, UnusedRouter())
     proposal = store.create_proposal(
         "update two values",
@@ -207,7 +207,7 @@ async def test_coding_proposal_api_returns_pending_proposal_without_applying(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from httpx import ASGITransport, AsyncClient
-    import aether.app as app_module
+    import crows.app as app_module
 
     class FakeCoding:
         async def propose(self, instruction, paths):
@@ -236,7 +236,7 @@ async def test_coding_proposal_api_maps_validation_error_to_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from httpx import ASGITransport, AsyncClient
-    import aether.app as app_module
+    import crows.app as app_module
 
     class InvalidCoding:
         async def propose(self, instruction, paths):
@@ -263,7 +263,7 @@ async def test_coding_apply_api_maps_missing_proposal_to_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from httpx import ASGITransport, AsyncClient
-    import aether.app as app_module
+    import crows.app as app_module
 
     class MissingProposalCoding:
         def apply(self, proposal_id):
@@ -286,7 +286,7 @@ async def test_coding_apply_api_maps_approval_conflict_to_conflict_status(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from httpx import ASGITransport, AsyncClient
-    import aether.app as app_module
+    import crows.app as app_module
 
     class UnapprovedCoding:
         def apply(self, proposal_id):
@@ -310,7 +310,7 @@ async def test_coding_apply_api_does_not_leak_unexpected_exception_details(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from httpx import ASGITransport, AsyncClient
-    import aether.app as app_module
+    import crows.app as app_module
 
     class BrokenCoding:
         def apply(self, proposal_id):

@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from aether.provider import ModelRouter, ProviderNotConfigured
+from crows.provider import ModelRouter, ProviderNotConfigured
 
 
 class FakeProvider:

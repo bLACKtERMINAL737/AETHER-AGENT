@@ -1,6 +1,6 @@
 """Regression coverage for saved-memory recall edge cases."""
 
-from aether import app as app_module
+from crows import app as app_module
 
 
 def test_recall_returns_none_when_no_saved_memories_match():
@@ -134,7 +134,7 @@ def test_recall_allows_duplicate_rows_for_the_same_fact():
     assert answer == fact
 
 def test_memory_search_returns_empty_for_stopword_only_recall_query(tmp_path):
-    from aether.store import TaskStore
+    from crows.store import TaskStore
 
     store = TaskStore(tmp_path / "memory.sqlite3")
     store.add_memory(
@@ -147,7 +147,7 @@ def test_memory_search_returns_empty_for_stopword_only_recall_query(tmp_path):
 
 
 def test_memory_search_still_finds_explicit_fact_when_query_has_terms(tmp_path):
-    from aether.store import TaskStore
+    from crows.store import TaskStore
 
     store = TaskStore(tmp_path / "memory.sqlite3")
     fact = store.add_memory(
@@ -162,7 +162,7 @@ def test_memory_search_still_finds_explicit_fact_when_query_has_terms(tmp_path):
 
 
 def test_memory_search_empty_and_whitespace_queries_return_no_results(tmp_path):
-    from aether.store import TaskStore
+    from crows.store import TaskStore
 
     store = TaskStore(tmp_path / "memory.sqlite3")
     store.add_memory(
@@ -176,7 +176,7 @@ def test_memory_search_empty_and_whitespace_queries_return_no_results(tmp_path):
     assert store.search_memories("what did i ask") == []
 
 def test_memory_search_matches_complete_words_not_substrings(tmp_path):
-    from aether.store import TaskStore
+    from crows.store import TaskStore
 
     store = TaskStore(tmp_path / "memory.sqlite3")
     store.add_memory(category="note", content="The party starts at noon")
@@ -189,7 +189,7 @@ def test_memory_search_matches_complete_words_not_substrings(tmp_path):
 
 
 def test_memory_search_matches_hyphenated_identifier_components(tmp_path):
-    from aether.store import TaskStore
+    from crows.store import TaskStore
 
     store = TaskStore(tmp_path / "memory.sqlite3")
     fact = store.add_memory(
@@ -203,7 +203,7 @@ def test_memory_search_matches_hyphenated_identifier_components(tmp_path):
     assert [item["id"] for item in results] == [fact["id"]]
 
 def test_memory_search_handles_unicode_casefolding_with_dotted_i(tmp_path):
-    from aether.store import TaskStore
+    from crows.store import TaskStore
 
     store = TaskStore(tmp_path / "unicode-memory.sqlite3")
     fact = store.add_memory(

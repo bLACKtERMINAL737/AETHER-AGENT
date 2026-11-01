@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-import aether.app as app_module
+import crows.app as app_module
 
 
 def test_approve_coding_proposal_hides_unexpected_exception_details(monkeypatch):
@@ -59,7 +59,7 @@ def test_approve_coding_proposal_preserves_expected_http_errors(monkeypatch):
 
 
 def test_reject_coding_proposal_preserves_expected_conflicts(monkeypatch):
-    from aether.coding import CodingError
+    from crows.coding import CodingError
 
     class ConflictCoding:
         def reject(self, proposal_id):

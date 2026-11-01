@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from aether.tools import ToolRegistry, ToolError, provider_tool_name
+from crows.tools import ToolRegistry, ToolError, provider_tool_name
 
 
 def test_list_and_search_workspace(tmp_path: Path):

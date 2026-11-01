@@ -10,7 +10,7 @@ import httpx
 
 from .tools import ToolError
 
-logger = logging.getLogger("aether.provider")
+logger = logging.getLogger("crows.provider")
 MAX_TOOL_ARGUMENT_BYTES = 64 * 1024
 MAX_TOOL_CALL_ID_CHARS = 256
 MAX_TOOL_CALLS_PER_RESPONSE = 5

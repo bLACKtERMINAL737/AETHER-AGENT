@@ -1,9 +1,9 @@
 import pytest
 from fastapi import HTTPException
 
-from aether import app as app_module
-from aether.provider import ModelProvider
-from aether.app import ModelConfigurationRequest, configure_model
+from crows import app as app_module
+from crows.provider import ModelProvider
+from crows.app import ModelConfigurationRequest, configure_model
 
 
 @pytest.mark.parametrize(

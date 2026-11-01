@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from aether.messaging import (
+from crows.messaging import (
     ChannelRegistry,
     DeliveryReceipt,
     DeliveryStatus,
@@ -94,7 +94,7 @@ def test_conversation_scope_is_stable_and_channel_isolated():
 async def test_telegram_json_reader_accepts_valid_payload():
     from starlette.requests import Request
 
-    from aether.app import _read_telegram_json
+    from crows.app import _read_telegram_json
 
     body = b'{"update_id": 12}'
     messages = [{"type": "http.request", "body": body, "more_body": False}]
@@ -116,7 +116,7 @@ async def test_telegram_json_reader_rejects_declared_oversize_body():
     from starlette.requests import Request
     from fastapi import HTTPException
 
-    from aether.app import _read_telegram_json
+    from crows.app import _read_telegram_json
 
     async def receive():
         return {"type": "http.request", "body": b"", "more_body": False}
@@ -137,7 +137,7 @@ async def test_telegram_json_reader_rejects_chunked_oversize_body():
     from starlette.requests import Request
     from fastapi import HTTPException
 
-    from aether.app import _read_telegram_json
+    from crows.app import _read_telegram_json
 
     chunks = [
         {"type": "http.request", "body": b"123456", "more_body": True},
@@ -162,7 +162,7 @@ async def test_telegram_json_reader_rejects_invalid_json():
     from starlette.requests import Request
     from fastapi import HTTPException
 
-    from aether.app import _read_telegram_json
+    from crows.app import _read_telegram_json
 
     async def receive():
         return {"type": "http.request", "body": b"{bad json", "more_body": False}
@@ -178,27 +178,27 @@ async def test_telegram_json_reader_rejects_invalid_json():
 
 
 def test_telegram_provider_message_id_prefers_update_id_for_deduplication():
-    from aether.app import _telegram_provider_message_id
+    from crows.app import _telegram_provider_message_id
 
     assert _telegram_provider_message_id(42, 7, 9001) == "update:9001"
     assert _telegram_provider_message_id(99, 7, 9001) == "update:9001"
 
 
 def test_telegram_provider_message_id_falls_back_for_legacy_updates():
-    from aether.app import _telegram_provider_message_id
+    from crows.app import _telegram_provider_message_id
 
     assert _telegram_provider_message_id(42, 7, None) == "42:7"
 
 
 def test_telegram_timestamp_accepts_valid_unix_seconds():
-    from aether.app import _telegram_received_at
+    from crows.app import _telegram_received_at
 
     assert _telegram_received_at(1793318400) == "2026-10-30T00:00:00+00:00"
 
 
 @pytest.mark.parametrize("raw_date", ["1793318400", 1.5, True, False, [], {}, -10**30, 10**30])
 def test_telegram_timestamp_rejects_malformed_or_out_of_range_values(raw_date):
-    from aether.app import _telegram_received_at
+    from crows.app import _telegram_received_at
 
     with pytest.raises(ValueError):
         _telegram_received_at(raw_date)
@@ -207,7 +207,7 @@ def test_telegram_timestamp_rejects_malformed_or_out_of_range_values(raw_date):
 def test_telegram_timestamp_uses_utc_now_when_missing():
     from datetime import datetime
 
-    from aether.app import _telegram_received_at
+    from crows.app import _telegram_received_at
 
     parsed = datetime.fromisoformat(_telegram_received_at(None))
     assert parsed.tzinfo is not None

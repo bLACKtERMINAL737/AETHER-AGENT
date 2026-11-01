@@ -1,7 +1,7 @@
 import os
 from fastapi.testclient import TestClient
 
-from aether import app as app_module
+from crows import app as app_module
 
 
 def test_database_health_returns_ok_when_database_query_succeeds(monkeypatch):

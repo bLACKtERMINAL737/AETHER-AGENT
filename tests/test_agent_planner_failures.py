@@ -2,8 +2,8 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from aether import app as app_module
-from aether.store import TaskStore
+from crows import app as app_module
+from crows.store import TaskStore
 
 
 class PlannerRouter:

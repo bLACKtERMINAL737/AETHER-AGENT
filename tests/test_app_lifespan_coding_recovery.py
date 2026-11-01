@@ -3,8 +3,8 @@
 import asyncio
 from pathlib import Path
 
-import aether.app as app_module
-from aether.store import TaskStore
+import crows.app as app_module
+from crows.store import TaskStore
 
 
 def _make_interrupted_proposal(store: TaskStore) -> str:

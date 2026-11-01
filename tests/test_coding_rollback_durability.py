@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class _UnusedRouter:
@@ -57,5 +57,5 @@ def test_rollback_directory_sync_failure_keeps_proposal_in_applying_state(
     assert saved["status"] == "applying"
     assert "rollback failure" in saved["error_text"]
     assert "simulated directory fsync failure 2" in saved["error_text"]
-    assert not list(workspace.glob(".aether-stage-*"))
-    assert not list(workspace.glob(".aether-rollback-*"))
+    assert not list(workspace.glob(".crows-stage-*"))
+    assert not list(workspace.glob(".crows-rollback-*"))

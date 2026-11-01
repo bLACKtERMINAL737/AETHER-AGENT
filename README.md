@@ -141,7 +141,7 @@ The test runner works on a temporary copy. Its Docker configuration disables net
 ## Run the API and UI
 
 ```bash
-uvicorn aether.app:app --host 127.0.0.1 --port 8000
+uvicorn crows.app:app --host 127.0.0.1 --port 8000
 ```
 
 Open these local URLs:

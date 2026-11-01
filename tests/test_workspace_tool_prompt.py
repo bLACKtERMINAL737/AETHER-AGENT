@@ -1,7 +1,7 @@
 import pytest
 
-import aether.provider as provider_module
-from aether.provider import ModelProvider
+import crows.provider as provider_module
+from crows.provider import ModelProvider
 
 
 class FakeResponse:
@@ -100,7 +100,7 @@ async def test_workspace_guidance_is_not_added_when_no_tools_are_supplied(monkey
     assert "Workspace tool selection rules" not in system_prompt
 
 
-from aether.tools import ToolError, ToolRegistry
+from crows.tools import ToolError, ToolRegistry
 
 
 def test_workspace_tool_descriptions_distinguish_read_list_and_search(tmp_path):

@@ -1,4 +1,4 @@
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def test_cross_session_search_finds_messages_with_session_metadata(tmp_path):

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class _UnusedRouter:

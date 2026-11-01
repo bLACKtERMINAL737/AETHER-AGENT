@@ -1,6 +1,6 @@
 import pytest
-import aether.provider as provider_module
-from aether.provider import ModelProvider
+import crows.provider as provider_module
+from crows.provider import ModelProvider
 
 
 class FakeResponse:

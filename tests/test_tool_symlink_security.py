@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aether.tools import ToolRegistry
+from crows.tools import ToolRegistry
 
 
 def test_search_skips_symlinked_file_outside_workspace(tmp_path: Path):
@@ -82,7 +82,7 @@ def test_read_rejects_symlink_to_file_inside_workspace(tmp_path: Path):
     (workspace / "alias.txt").symlink_to(target)
 
     registry = ToolRegistry(workspace)
-    from aether.tools import ToolError
+    from crows.tools import ToolError
     import pytest
 
     with pytest.raises(ToolError, match="Symlink paths are not supported"):
@@ -98,7 +98,7 @@ def test_read_rejects_symlinked_parent_directory_inside_workspace(tmp_path: Path
     (workspace / "alias-dir").symlink_to(real_dir, target_is_directory=True)
 
     registry = ToolRegistry(workspace)
-    from aether.tools import ToolError
+    from crows.tools import ToolError
     import pytest
 
     with pytest.raises(ToolError, match="Symlink paths are not supported"):
@@ -123,7 +123,7 @@ def test_search_excludes_credential_directories_case_insensitively(tmp_path: Pat
 
 def test_search_rejects_explicit_credential_directory_path(tmp_path: Path):
     import pytest
-    from aether.tools import ToolError
+    from crows.tools import ToolError
 
     workspace = tmp_path / "workspace"
     secret_dir = workspace / ".AWS"
@@ -139,7 +139,7 @@ def test_search_rejects_explicit_credential_directory_path(tmp_path: Path):
 
 def test_read_rejects_direct_credential_directory_path(tmp_path: Path):
     import pytest
-    from aether.tools import ToolError
+    from crows.tools import ToolError
 
     workspace = tmp_path / "workspace"
     secret_dir = workspace / ".AWS"
@@ -154,7 +154,7 @@ def test_read_rejects_direct_credential_directory_path(tmp_path: Path):
 
 def test_list_rejects_direct_credential_directory_path(tmp_path: Path):
     import pytest
-    from aether.tools import ToolError
+    from crows.tools import ToolError
 
     workspace = tmp_path / "workspace"
     secret_dir = workspace / ".SSH"

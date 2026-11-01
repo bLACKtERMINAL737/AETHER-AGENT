@@ -3,7 +3,7 @@ from contextlib import nullcontext
 
 import pytest
 
-from aether import app as app_module
+from crows import app as app_module
 
 
 @pytest.mark.asyncio

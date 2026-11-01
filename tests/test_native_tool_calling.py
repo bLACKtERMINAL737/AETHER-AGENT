@@ -3,8 +3,8 @@ import json
 import httpx
 import pytest
 
-from aether.provider import ModelProvider, ModelRouter
-from aether.tools import ToolError
+from crows.provider import ModelProvider, ModelRouter
+from crows.tools import ToolError
 
 
 class FakeResponse:
@@ -59,7 +59,7 @@ async def test_native_tool_call_sends_result_back_to_model(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -99,7 +99,7 @@ async def test_native_tool_call_cap_is_hard_limited_to_five(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -151,7 +151,7 @@ async def test_explicitly_named_tool_is_forced_for_first_request(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -195,7 +195,7 @@ async def test_negated_tool_mention_does_not_override_requested_tool(monkeypatch
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -233,7 +233,7 @@ async def test_duplicate_tool_call_ids_are_rejected_before_execution(monkeypatch
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -269,7 +269,7 @@ async def test_live_search_guidance_recognizes_provider_tool_name_variants(
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     result = await provider.chat_with_tools(
         "What is the latest update?",
@@ -296,7 +296,7 @@ async def test_unregistered_tool_call_is_rejected_before_any_execution(monkeypat
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -331,7 +331,7 @@ async def test_tool_exception_details_are_not_sent_back_to_model(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     secret_detail = "private-token-at-/Users/example/private"
     
@@ -371,7 +371,7 @@ async def test_expected_tool_error_is_actionable_but_redacted_before_model(monke
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
 
     async def execute(_name, _args):
@@ -420,7 +420,7 @@ async def test_invalid_tool_arguments_are_returned_without_execution(monkeypatch
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -465,7 +465,7 @@ async def test_oversized_tool_result_is_replaced_with_valid_json(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
 
     async def execute(_name, _args):
@@ -498,7 +498,7 @@ async def test_oversized_tool_result_is_replaced_with_valid_json(monkeypatch):
 
 
 def test_tool_result_serialization_failure_returns_safe_json():
-    from aether.provider import _tool_result_message
+    from crows.provider import _tool_result_message
 
     cyclic = {}
     cyclic["self"] = cyclic
@@ -521,7 +521,7 @@ async def test_tool_failure_context_is_sent_back_to_model(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
 
     async def execute(_name, _args):
@@ -560,7 +560,7 @@ async def test_native_chat_sends_image_as_openai_compatible_multimodal_content(m
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
     image_data_url = "data:image/png;base64,aGVsbG8="
 
@@ -595,7 +595,7 @@ async def test_oversized_tool_arguments_are_rejected_before_execution(monkeypatc
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 
@@ -636,7 +636,7 @@ class InvalidJsonClient:
 
 @pytest.mark.asyncio
 async def test_native_tool_chat_normalizes_invalid_provider_json(monkeypatch):
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", lambda *_a, **_kw: InvalidJsonClient())
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", lambda *_a, **_kw: InvalidJsonClient())
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
 
     with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
@@ -645,7 +645,7 @@ async def test_native_tool_chat_normalizes_invalid_provider_json(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_regular_chat_normalizes_invalid_provider_json(monkeypatch):
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", lambda *_a, **_kw: InvalidJsonClient())
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", lambda *_a, **_kw: InvalidJsonClient())
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
 
     with pytest.raises(RuntimeError, match="Provider returned invalid JSON"):
@@ -654,7 +654,7 @@ async def test_regular_chat_normalizes_invalid_provider_json(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_invalid_provider_json_error_helper_contract():
-    from aether.provider import _decode_provider_json
+    from crows.provider import _decode_provider_json
 
     class BadJsonResponse:
         def json(self):
@@ -668,7 +668,7 @@ async def test_invalid_provider_json_error_helper_contract():
 async def test_regular_chat_rejects_unexpected_provider_response_shape(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient([{}], calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -681,7 +681,7 @@ async def test_regular_chat_rejects_unexpected_provider_response_shape(monkeypat
 async def test_tool_chat_rejects_unexpected_provider_response_shape(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient([{}], calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -702,7 +702,7 @@ async def test_tool_execution_exception_is_reported_without_reexecuting(monkeypa
         completion(content="The file tool failed."),
     ]
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient(responses, calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -737,7 +737,7 @@ async def test_tool_execution_exception_is_reported_without_reexecuting(monkeypa
 
 @pytest.mark.asyncio
 async def test_unserializable_tool_result_is_replaced_with_safe_json():
-    from aether.provider import _tool_result_message
+    from crows.provider import _tool_result_message
 
     recursive = {}
     recursive["self"] = recursive
@@ -775,7 +775,7 @@ async def test_regular_chat_rejects_malformed_completion_shapes(monkeypatch, pay
             return ShapeResponse()
 
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_args, **_kwargs: ShapeClient(),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -813,7 +813,7 @@ async def test_tool_chat_rejects_malformed_completion_envelopes(monkeypatch, pay
             return ShapeResponse()
 
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_args, **_kwargs: ShapeClient(),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -831,7 +831,7 @@ async def test_provider_tool_call_batch_over_five_is_rejected_before_execution(m
     ]
     responses = [completion(tool_calls=tool_calls), completion(content="Stopped safely.")]
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient(responses, calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -865,7 +865,7 @@ async def test_deeply_nested_tool_arguments_fail_safely(monkeypatch):
     }])
     responses = [response, completion(content="Invalid arguments.")]
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient(responses, calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -897,7 +897,7 @@ async def test_oversized_tool_call_id_is_rejected_before_execution(monkeypatch):
         tool_call("x" * 257, "workspace.list_files", {"path": "."}),
     ])
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient([response], calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -930,7 +930,7 @@ async def test_lone_surrogate_tool_arguments_are_normalized_before_execution(mon
     # Simulate a provider-decoded Python string containing a lone surrogate.
     response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = '{"path":"' + chr(0xD800) + '"}'
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_a, **_kw: FakeAsyncClient([response], calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
@@ -965,7 +965,7 @@ async def test_reused_tool_call_id_across_rounds_is_rejected_before_second_execu
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(responses, calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "test-model")
     executed = []
 

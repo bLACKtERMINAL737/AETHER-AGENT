@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 
-from aether.sandbox import DockerTestSandbox, SandboxError
+from crows.sandbox import DockerTestSandbox, SandboxError
 
 
 def test_snapshot_copies_workspace_and_skips_excluded_dirs(tmp_path: Path):
@@ -64,8 +64,8 @@ def test_test_runner_has_network_disabled_and_read_only_flags(tmp_path: Path, mo
         captured["kwargs"] = kwargs
         return Process()
 
-    monkeypatch.setattr("aether.sandbox.shutil.which", fake_which)
-    monkeypatch.setattr("aether.sandbox.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("crows.sandbox.shutil.which", fake_which)
+    monkeypatch.setattr("crows.sandbox.subprocess.Popen", fake_popen)
     result = sandbox.run_pytest()
 
     assert result["passed"] is True
@@ -114,7 +114,7 @@ def test_run_pytest_rejects_invalid_or_option_like_image_reference(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     sandbox = DockerTestSandbox(workspace, image=image)
-    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr("crows.sandbox.shutil.which", lambda _: "/usr/bin/docker")
 
     with pytest.raises(SandboxError, match="Invalid sandbox image reference"):
         sandbox.run_pytest()
@@ -129,7 +129,7 @@ def test_test_runner_bounds_captured_output_without_truncating_pipe_drain(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     sandbox = DockerTestSandbox(workspace, timeout_seconds=10)
-    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr("crows.sandbox.shutil.which", lambda _: "/usr/bin/docker")
 
     real_popen = subprocess.Popen
 
@@ -143,7 +143,7 @@ def test_test_runner_bounds_captured_output_without_truncating_pipe_drain(
             **kwargs,
         )
 
-    monkeypatch.setattr("aether.sandbox.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("crows.sandbox.subprocess.Popen", fake_popen)
     result = sandbox.run_pytest()
 
     assert result["stdout"].endswith("END")

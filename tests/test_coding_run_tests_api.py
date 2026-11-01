@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-import aether.app as app_module
+import crows.app as app_module
 
 
 def test_run_coding_tests_sanitizes_unexpected_errors(monkeypatch):
@@ -23,7 +23,7 @@ def test_run_coding_tests_sanitizes_unexpected_errors(monkeypatch):
 
 
 def test_run_coding_tests_preserves_expected_coding_errors(monkeypatch):
-    from aether.coding import CodingError
+    from crows.coding import CodingError
 
     class InvalidCoding:
         def run_tests(self):

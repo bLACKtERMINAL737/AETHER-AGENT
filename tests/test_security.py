@@ -1,7 +1,7 @@
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from aether.security import LocalAPIProtection, _origin_is_local
+from crows.security import LocalAPIProtection, _origin_is_local
 
 
 def make_app(monkeypatch):
@@ -164,7 +164,7 @@ async def test_api_documentation_routes_require_authentication(monkeypatch, path
 
 @pytest.mark.asyncio
 async def test_chunked_request_body_limit_applies_without_content_length(monkeypatch):
-    from aether.security import MAX_REQUEST_BODY_BYTES
+    from crows.security import MAX_REQUEST_BODY_BYTES
 
     monkeypatch.setenv("AETHER_API_TOKEN", "test-token")
     app_called = False

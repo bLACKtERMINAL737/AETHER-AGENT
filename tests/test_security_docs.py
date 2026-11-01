@@ -2,7 +2,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from aether.security import LocalAPIProtection
+from crows.security import LocalAPIProtection
 
 
 @pytest.mark.asyncio

@@ -5,8 +5,8 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from aether import app as app_module
-from aether.messaging_store import MessagingStore
+from crows import app as app_module
+from crows.messaging_store import MessagingStore
 
 
 class FakeResponse:

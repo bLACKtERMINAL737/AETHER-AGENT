@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aether.sandbox import DockerTestSandbox, SandboxError
+from crows.sandbox import DockerTestSandbox, SandboxError
 
 
 @pytest.mark.parametrize("memory_limit", ["512m", "1g", "1024", "64k", "1B"])

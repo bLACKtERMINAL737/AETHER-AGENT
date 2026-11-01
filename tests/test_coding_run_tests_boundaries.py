@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.sandbox import SandboxError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.sandbox import SandboxError
+from crows.store import TaskStore
 
 
 class FakeRouter:
@@ -24,7 +24,7 @@ def make_engine(tmp_path: Path, *, test_project: Path | None = None):
     (workspace / "sample.py").write_text("VALUE = 1\n", encoding="utf-8")
     engine = CodingEngine(
         workspace,
-        TaskStore(tmp_path / "aether.sqlite3"),
+        TaskStore(tmp_path / "crows.sqlite3"),
         FakeRouter(),
         enable_test_runner=True,
         test_project=test_project,
@@ -58,7 +58,7 @@ def test_run_tests_translates_sandbox_errors_to_coding_errors(
     def fail_sandbox(*args, **kwargs):
         raise SandboxError("Docker is unavailable")
 
-    monkeypatch.setattr("aether.coding.DockerTestSandbox", fail_sandbox)
+    monkeypatch.setattr("crows.coding.DockerTestSandbox", fail_sandbox)
 
     with pytest.raises(CodingError, match="Docker is unavailable") as exc_info:
         engine.run_tests()
