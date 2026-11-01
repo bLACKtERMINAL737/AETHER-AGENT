@@ -124,3 +124,33 @@ def test_agent_runtime_status_endpoint_returns_runtime_snapshot(monkeypatch):
     )
 
     assert app_module.agent_runtime_status() == expected
+
+
+
+def test_runtime_context_supports_legacy_router_without_route_introspection(monkeypatch, tmp_path):
+    class LegacyRouter:
+        pass
+
+    monkeypatch.setattr(app_module, "settings", SimpleNamespace(workspace=tmp_path))
+    monkeypatch.setattr(app_module, "store", SimpleNamespace(list_tasks=lambda limit: []))
+    monkeypatch.setattr(app_module, "skill_registry", SimpleNamespace(list=lambda: []))
+    monkeypatch.setattr(app_module, "router", LegacyRouter())
+    monkeypatch.setattr(
+        app_module, "tools",
+        SimpleNamespace(describe=lambda: [{"name": "workspace.list_files"}]),
+    )
+    monkeypatch.setattr(
+        app_module, "coding",
+        SimpleNamespace(enable_test_runner=False, sandbox_image="crows-sandbox:latest"),
+    )
+    monkeypatch.setattr(app_module, "get_env", lambda name, default="": default)
+
+    result = app_module.build_agent_runtime_context()
+
+    assert result["model_routes"] == []
+    assert result["active_model_route"]["configured"] is False
+    assert result["available_tools"] == [{
+        "name": "workspace.list_files",
+        "description": "",
+        "input_schema": {},
+    }]
