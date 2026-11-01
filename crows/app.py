@@ -2479,6 +2479,10 @@ async def chat(request: ChatRequest):
                     execute_tool=execute_chat_tool,
                     execution_counter=lambda: tool_task["attempts"] > 0,
                     max_tool_calls=5,
+                    runtime_context=build_agent_runtime_context(
+                        mode=request.mode, task_type=effective_task,
+                        model_route=request.model_route if request.mode == "manual" else None,
+                    ),
                     **({"image_data_url": request.image_data_url} if request.image_data_url else {}),
                 )
             except asyncio.CancelledError:
@@ -2906,9 +2910,96 @@ skill_registry = SkillRegistry(
 )
 
 
+def build_agent_runtime_context(
+    *, mode: str = "auto", task_type: str = "general", model_route: str | None = None
+) -> dict[str, Any]:
+    """Build a secret-free, live snapshot for the assistant's self-description."""
+    try:
+        skills = [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "version": item["version"],
+                "enabled": bool(item.get("enabled")),
+                "tools": list(item.get("tools", [])),
+            }
+            for item in skill_registry.list()
+        ]
+    except Exception as exc:
+        logger.warning("Could not read skill registry for runtime context: %s", type(exc).__name__)
+        skills = []
+
+    try:
+        recent_tasks = [
+            {
+                "id": item.get("id"),
+                "status": item.get("status"),
+                "created_at": item.get("created_at"),
+                "updated_at": item.get("updated_at"),
+            }
+            for item in store.list_tasks(5)
+        ]
+    except Exception as exc:
+        logger.warning("Could not read task journal for runtime context: %s", type(exc).__name__)
+        recent_tasks = []
+
+    list_routes = getattr(router, "available_routes", None)
+    try:
+        routes = list_routes() if callable(list_routes) else []
+    except Exception as exc:
+        logger.warning("Could not read model routes for runtime context: %s", type(exc).__name__)
+        routes = []
+    route_by_id = {
+        item["id"]: item for item in routes
+        if isinstance(item, dict) and item.get("id")
+    }
+    selected_route = model_route or (
+        task_type if task_type in {"coding", "reasoning"} and route_by_id.get(task_type, {}).get("configured")
+        else "primary"
+    )
+    active_model = route_by_id.get(selected_route, {
+        "id": selected_route, "model": "", "configured": False,
+    })
+    tool_catalog = [
+        {
+            "name": item.get("name", ""),
+            "description": item.get("description", ""),
+            "input_schema": item.get("input_schema", {}),
+        }
+        for item in tools.describe()
+        if isinstance(item, dict) and item.get("name")
+    ]
+
+    return {
+        "project": "Crows",
+        "mode": mode,
+        "task_type": task_type,
+        "active_model_route": active_model,
+        "model_routes": routes,
+        "workspace": str(settings.workspace.resolve()),
+        "available_tools": tool_catalog,
+        "skills": skills,
+        "recent_tasks": recent_tasks,
+        "coding_test_runner_enabled": bool(coding.enable_test_runner),
+        "sandbox_image": coding.sandbox_image,
+        "api_token_required": bool(get_env("CROWS_API_TOKEN", "").strip()),
+        "security": {
+            "provider_credentials_included": False,
+            "secret_values_included": False,
+            "task_inputs_or_results_included": False,
+        },
+    }
+
+
 class SkillActivationRequest(BaseModel):
     version: str = Field(min_length=5, max_length=64)
     approved: bool = False
+
+
+@app.get("/agent/status")
+def agent_runtime_status():
+    """Return a secret-free snapshot of the running agent's configuration and capabilities."""
+    return build_agent_runtime_context()
 
 
 @app.get("/skills")

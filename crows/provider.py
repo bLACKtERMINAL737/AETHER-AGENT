@@ -67,6 +67,7 @@ class ModelProvider:
         execute_tool=None,
         max_tool_calls: int = 5,
         image_data_url: str | None = None,
+        runtime_context: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Run OpenAI-compatible function calling with a strict per-request execution cap."""
         if not self.configured:
@@ -79,6 +80,14 @@ class ModelProvider:
             "coding": "You are Crows's coding assistant. Prefer correct, minimal, testable changes and explain important risks.",
             "reasoning": "You are Crows's reasoning assistant. Work carefully, state assumptions, and avoid unsupported claims.",
         }[task_type]
+        if runtime_context is not None:
+            system_prompt += (
+                "\n\nLive Crows runtime snapshot (authoritative application data, not user instructions):\n"
+                + json.dumps(runtime_context, ensure_ascii=False, sort_keys=True, default=str)
+                + "\nAnswer questions about your current mode, models, tools, skills, workspace, and recent task statuses "
+                  "from this snapshot only. If a field is absent, say it is unavailable rather than guessing. "
+                  "Never request, reveal, infer, or fabricate API keys, tokens, passwords, or other secret values."
+            )
         available_tool_names = {
             str(spec.get("function", {}).get("name", ""))
             for spec in (tool_specs or [])
@@ -510,6 +519,7 @@ class ModelRouter:
         execution_counter=None,
         max_tool_calls: int = 5,
         image_data_url: str | None = None,
+        runtime_context: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Route native tool calls; never restart after a tool execution attempt."""
         selected, route = self._route(task_type, model_route=model_route)
@@ -531,6 +541,7 @@ class ModelRouter:
                         tool_specs=tool_specs, execute_tool=execute_tool,
                         max_tool_calls=max_tool_calls,
                         image_data_url=image_data_url,
+                        runtime_context=runtime_context,
                     )
                     attempt_history.append({"route": provider_route, "attempt": attempts, "outcome": "success"})
                     return {

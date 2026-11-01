@@ -60,6 +60,20 @@ Open these local pages:
 
 Show `/health` and `/models` only as status information. `/models` reports route IDs/model IDs/configuration status, not API keys. If the token is enabled, enter it in the UI's token field.
 
+## Agent self-introspection
+
+The authenticated `GET /agent/status` endpoint and chat runtime context expose a live, secret-free snapshot of Crows' current mode, inferred task type, selected model route, configured routes, workspace path, registered tools and their schemas, skill activation state, recent task statuses, and coding test-runner status. Ask the assistant questions such as "Which model route is active?", "What tools can you use?", "Which skills are enabled?", or "What is your workspace?".
+
+The snapshot intentionally excludes provider API keys, API tokens, passwords, task inputs, and task results. Recent task identifiers and status timestamps are included for operational transparency. Runtime introspection is informational: it does not grant additional tool permissions or bypass skill allowlists. If a runtime source is unavailable, Crows should report that field as unavailable rather than inventing it.
+
+Verify locally with:
+
+```bash
+curl -sS http://127.0.0.1:8000/agent/status
+```
+
+When API-token protection is enabled, include the configured bearer token locally; never paste it into chat or include it in screenshots.
+
 ## Competition submission: maximum 3-minute demo
 
 The competition demo is limited to 3 minutes. Record a concise, reproducible take that prioritizes one verified end-to-end agent task. Do not attempt to squeeze every feature into the submission video.
