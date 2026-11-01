@@ -315,6 +315,14 @@ class MessagingStore:
         """Finish a lease only for its current owner; never auto-requeue uncertain outcomes."""
         if status not in {"sent", "delivered", "failed", "unknown"}:
             raise MessagingContractError("invalid outbound delivery status")
+        if provider_message_id is not None:
+            if (
+                not isinstance(provider_message_id, str)
+                or not provider_message_id.strip()
+                or len(provider_message_id) > MAX_ID_CHARS
+            ):
+                raise MessagingContractError("provider_message_id is invalid")
+            provider_message_id = provider_message_id.strip()
         now = _now()
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
@@ -453,14 +461,50 @@ class MessagingStore:
         self, channel: str, idempotency_key: str, status: str,
         *, provider_message_id: str | None = None,
     ) -> None:
+        channel = _validate_channel(channel)
+        if (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key.strip()
+            or len(idempotency_key) > MAX_ID_CHARS
+        ):
+            raise MessagingContractError("idempotency_key is invalid")
+        idempotency_key = idempotency_key.strip()
         if status not in {"sent", "delivered", "failed", "unknown"}:
             raise MessagingContractError("invalid outbound delivery status")
+        if provider_message_id is not None:
+            if (
+                not isinstance(provider_message_id, str)
+                or not provider_message_id.strip()
+                or len(provider_message_id) > MAX_ID_CHARS
+            ):
+                raise MessagingContractError("provider_message_id is invalid")
+            provider_message_id = provider_message_id.strip()
+
         with self.connect() as con:
-            con.execute(
-                "UPDATE messaging_messages SET status=?, provider_message_id=COALESCE(?, provider_message_id), updated_at=? "
-                "WHERE channel=? AND idempotency_key=? AND direction='outbound'",
-                (status, provider_message_id, _now(), channel, idempotency_key),
-            )
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                con.execute(
+                    """UPDATE messaging_messages
+                       SET status=?, provider_message_id=COALESCE(?, provider_message_id), updated_at=?
+                       WHERE channel=? AND idempotency_key=? AND direction='outbound'
+                         AND status='accepted'""",
+                    (status, provider_message_id, _now(), channel, idempotency_key),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise MessagingContractError(
+                    "provider_message_id is already recorded for this channel"
+                ) from exc
+            if con.execute("SELECT changes()").fetchone()[0] != 1:
+                row = con.execute(
+                    """SELECT status FROM messaging_messages
+                       WHERE channel=? AND idempotency_key=? AND direction='outbound'""",
+                    (channel, idempotency_key),
+                ).fetchone()
+                if row is None:
+                    raise MessagingContractError("outbound message not found")
+                raise MessagingContractError(
+                    "outbound delivery status can only transition from accepted"
+                )
 
     def get_outbound(self, channel: str, idempotency_key: str) -> dict | None:
         with self.connect() as con:
