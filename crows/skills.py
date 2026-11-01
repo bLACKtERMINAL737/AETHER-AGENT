@@ -5,10 +5,12 @@ load Python, shell, prompt, or other executable content from skill directories.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -17,6 +19,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _SKILL_ID = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
 _VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$")
+def _version_key(version: str) -> tuple[int, int, int, bool, str]:
+    match = _VERSION.fullmatch(version)
+    if match is None:
+        raise SkillError("Invalid skill version")
+    major, minor, patch, prerelease = match.groups()
+    # Stable releases sort after prereleases of the same numeric version.
+    return int(major), int(minor), int(patch), prerelease is None, prerelease or ""
+
+
 _PERMISSION_FOR_TOOL = {
     "workspace.list_files": "workspace.read",
     "workspace.read_file": "workspace.read",
@@ -84,6 +95,21 @@ class SkillRegistry:
             pass
         self.allowed_tools = set(allowed_tools)
         self.state_path = self.root / "active.json"
+
+    @contextmanager
+    def _state_lock(self):
+        lock_path = self.root / ".active.lock"
+        fd = os.open(
+            lock_path,
+            os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
 
     def _skill_dir(self, skill_id: str) -> Path:
         if not _SKILL_ID.fullmatch(skill_id):
@@ -177,7 +203,7 @@ class SkillRegistry:
             versions = self.versions(skill_id)
             if not versions:
                 raise SkillError("Skill not found")
-            selected = versions[-1]
+            selected = max(versions, key=_version_key)
         path = self._manifest_path(skill_id, selected)
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -196,9 +222,10 @@ class SkillRegistry:
         if not directory.is_dir():
             raise SkillError("Skill path is not a directory")
         return sorted(
-            path.stem for path in directory.iterdir()
-            if path.is_file() and not path.is_symlink()
-            and path.suffix == ".json" and _VERSION.fullmatch(path.stem)
+            (path.stem for path in directory.iterdir()
+             if path.is_file() and not path.is_symlink()
+             and path.suffix == ".json" and _VERSION.fullmatch(path.stem)),
+            key=_version_key,
         )
 
     def list(self) -> list[dict]:
@@ -214,15 +241,17 @@ class SkillRegistry:
         if approved is not True:
             raise SkillError("Explicit approval is required before activating a skill")
         skill = self.get(skill_id, version)
-        state = self._read_state()
-        state[skill_id] = version
-        self._write_json_atomic(self.state_path, state)
+        with self._state_lock():
+            state = self._read_state()
+            state[skill_id] = version
+            self._write_json_atomic(self.state_path, state)
         return self.get(skill_id, version)
 
     def disable(self, skill_id: str) -> dict:
-        state = self._read_state()
-        if skill_id not in state:
-            raise SkillError("Skill is already disabled or not registered")
-        del state[skill_id]
-        self._write_json_atomic(self.state_path, state)
+        with self._state_lock():
+            state = self._read_state()
+            if skill_id not in state:
+                raise SkillError("Skill is already disabled or not registered")
+            del state[skill_id]
+            self._write_json_atomic(self.state_path, state)
         return {"id": skill_id, "enabled": False}
