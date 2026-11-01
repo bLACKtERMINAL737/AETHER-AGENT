@@ -265,14 +265,21 @@ class MessagingStore:
 
     def claim_outbound(
         self, *, worker_id: str, limit: int = 10, lease_seconds: int = 60,
+        message_id: str | None = None,
     ) -> list[dict]:
-        """Atomically lease eligible, target-backed outbound messages for one worker."""
+        """Atomically lease eligible outbound messages, optionally targeting one message."""
         if not isinstance(worker_id, str) or not worker_id.strip() or len(worker_id) > 128:
             raise MessagingContractError("worker_id is invalid")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("limit must be an integer between 1 and 100")
         if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 5 <= lease_seconds <= 900:
             raise ValueError("lease_seconds must be an integer between 5 and 900")
+        if message_id is not None and (
+            not isinstance(message_id, str) or not message_id.strip() or len(message_id) > 128
+        ):
+            raise MessagingContractError("message_id is invalid")
+        if message_id is not None:
+            message_id = message_id.strip()
         if self._target_cipher is None:
             return []
         now_dt = datetime.now(timezone.utc)
@@ -290,8 +297,9 @@ class MessagingStore:
                      AND l.message_id IS NULL
                      AND (r.message_id IS NULL OR
                           (r.next_attempt_at <= ? AND r.retry_count <= r.max_retries))
+                     AND (? IS NULL OR m.id=?)
                    ORDER BY COALESCE(r.next_attempt_at, m.created_at), m.id LIMIT ?""",
-                (now, limit),
+                (now, message_id, message_id, limit),
             ).fetchall()
             for row in rows:
                 con.execute(
