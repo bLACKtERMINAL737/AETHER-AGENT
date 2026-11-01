@@ -43,6 +43,9 @@ class FakeAsyncClient:
 
 @pytest.fixture
 def isolated_store(monkeypatch, tmp_path: Path):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
     store = MessagingStore(tmp_path / "messaging.sqlite3")
     monkeypatch.setattr(app_module, "messaging_store", store)
     FakeAsyncClient.calls = []
