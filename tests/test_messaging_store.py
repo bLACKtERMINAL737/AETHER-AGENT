@@ -339,3 +339,35 @@ def test_delivery_target_uses_crows_environment_key(tmp_path: Path, monkeypatch)
         idempotency_key="crows-key", delivery_target="987654321",
     )
     assert store.get_delivery_target(queued["message"]["id"]) == "987654321"
+
+
+def test_retry_budget_cannot_be_increased_after_scheduling(tmp_path: Path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from cryptography.fernet import Fernet
+    from aether.messaging import MessagingContractError
+
+    monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "immutable-retry-budget.sqlite3")
+    queued = store.queue_outbound(
+        channel="telegram", provider_user_id="u", text="hello",
+        idempotency_key="immutable-budget", delivery_target="123",
+    )
+    message_id = queued["message"]["id"]
+
+    assert store.claim_outbound(worker_id="worker-1")
+    assert store.retry_outbound_lease(
+        message_id, worker_id="worker-1", delay_seconds=1, max_retries=1
+    ) == "scheduled"
+
+    with store.connect() as con:
+        con.execute(
+            "UPDATE messaging_delivery_retries SET next_attempt_at=? WHERE message_id=?",
+            ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), message_id),
+        )
+
+    assert store.claim_outbound(worker_id="worker-2")
+    with pytest.raises(MessagingContractError, match="max_retries cannot change"):
+        store.retry_outbound_lease(
+            message_id, worker_id="worker-2", delay_seconds=1, max_retries=5
+        )
