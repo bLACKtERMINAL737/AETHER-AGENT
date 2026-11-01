@@ -2353,8 +2353,9 @@ async def chat(request: ChatRequest):
         ]
         tool_task = {"id": None, "count": 0, "attempts": 0, "failed": False, "uncertain": False}
         tool_name_map = {
-            provider_tool_name(item["name"]): item["name"]
+            alias: item["name"]
             for item in available_tool_descriptions
+            for alias in {provider_tool_name(item["name"]), item["name"]}
         }
 
         async def execute_chat_tool(name, arguments):
