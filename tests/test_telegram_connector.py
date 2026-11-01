@@ -146,12 +146,14 @@ async def test_telegram_direct_send_does_not_race_background_outbox_worker(monke
     assert FakeAsyncClient.calls == []
     assert isolated_store.get_outbound("telegram", "telegram-worker-race")["status"] == "accepted"
 
-    result = await app_module.deliver_outbound_batch(
-        worker_id="background-worker", limit=1
-    )
-    assert result["sent"] == 1
-    assert len(FakeAsyncClient.calls) == 1
-    assert isolated_store.get_outbound("telegram", "telegram-worker-race")["status"] == "sent"
+    # The background worker already owns the active lease. A second claim
+    # must not send the same message, even when it uses the same worker ID;
+    # the original worker continues from its already-claimed batch.
+    assert isolated_store.claim_outbound(
+        worker_id="background-worker", limit=1, lease_seconds=60
+    ) == []
+    assert FakeAsyncClient.calls == []
+    assert isolated_store.get_outbound("telegram", "telegram-worker-race")["status"] == "accepted"
 
 
 @pytest.mark.asyncio
