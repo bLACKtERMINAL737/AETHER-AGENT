@@ -2869,3 +2869,53 @@ def delete_session(session_id: str):
     if not store.delete_session(session_id):
         raise HTTPException(status_code=404, detail="Conversation session not found")
     return {"deleted": True, "id": session_id}
+
+# Declarative skills are reviewed metadata, not dynamically loaded code.
+from .skills import SkillError, SkillManifest, SkillRegistry
+
+skill_registry = SkillRegistry(
+    settings.db_path.parent / "skills",
+    {item["name"] for item in tools.describe()},
+)
+
+
+class SkillActivationRequest(BaseModel):
+    version: str = Field(min_length=5, max_length=64)
+    approved: bool = False
+
+
+@app.get("/skills")
+def list_skills():
+    return {"skills": skill_registry.list()}
+
+
+@app.get("/skills/{skill_id}")
+def get_skill(skill_id: str, version: str | None = None):
+    try:
+        return skill_registry.get(skill_id, version)
+    except SkillError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/skills", status_code=201)
+def register_skill(manifest: SkillManifest):
+    try:
+        return skill_registry.register(manifest)
+    except SkillError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/skills/{skill_id}/activate")
+def activate_skill(skill_id: str, request: SkillActivationRequest):
+    try:
+        return skill_registry.activate(skill_id, request.version, approved=request.approved)
+    except SkillError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/skills/{skill_id}/disable")
+def disable_skill(skill_id: str):
+    try:
+        return skill_registry.disable(skill_id)
+    except SkillError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
