@@ -105,14 +105,20 @@ def test_delivery_target_is_encrypted_and_decryptable(tmp_path: Path, monkeypatc
     assert "ciphertext" not in queued["message"]
 
 
-def test_delivery_target_is_not_persisted_without_key(tmp_path: Path, monkeypatch):
+def test_delivery_target_requires_encryption_key_and_is_not_queued(tmp_path: Path, monkeypatch):
+    from aether.messaging import MessagingContractError
+
     monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
+    monkeypatch.delenv("CROWS_MESSAGING_TARGET_KEY", raising=False)
     store = MessagingStore(tmp_path / "inbox.sqlite3")
-    queued = store.queue_outbound(
-        channel="telegram", provider_user_id="chat-private", text="hello",
-        idempotency_key="target-2", delivery_target="123456789",
-    )
-    assert store.get_delivery_target(queued["message"]["id"]) is None
+    with pytest.raises(MessagingContractError, match="TARGET_KEY is required"):
+        store.queue_outbound(
+            channel="telegram", provider_user_id="chat-private", text="hello",
+            idempotency_key="target-2", delivery_target="123456789",
+        )
+    with store.connect() as con:
+        assert con.execute("SELECT COUNT(*) FROM messaging_messages").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM messaging_delivery_targets").fetchone()[0] == 0
 
 
 def test_invalid_delivery_target_key_fails_closed(tmp_path: Path, monkeypatch):
