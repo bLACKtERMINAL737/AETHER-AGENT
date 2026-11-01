@@ -346,12 +346,17 @@ class MessagingStore:
             ).fetchone()
             if lease_row is None or lease_row["lease_until"] < now:
                 return False
-            con.execute(
-                """UPDATE messaging_messages SET status=?,
-                   provider_message_id=COALESCE(?,provider_message_id), updated_at=?
-                   WHERE id=? AND direction='outbound' AND status='accepted'""",
-                (status, provider_message_id, now, message_id),
-            )
+            try:
+                con.execute(
+                    """UPDATE messaging_messages SET status=?,
+                       provider_message_id=COALESCE(?,provider_message_id), updated_at=?
+                       WHERE id=? AND direction='outbound' AND status='accepted'""",
+                    (status, provider_message_id, now, message_id),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise MessagingContractError(
+                    "provider_message_id is already recorded for this channel"
+                ) from exc
             changed = con.execute("SELECT changes()").fetchone()[0] == 1
             if changed:
                 con.execute("DELETE FROM messaging_delivery_leases WHERE message_id=?", (message_id,))
@@ -451,12 +456,17 @@ class MessagingStore:
                 raise MessagingContractError("outbound message not found")
             if row["status"] != "unknown":
                 raise MessagingContractError("only unknown messages can be reconciled")
-            con.execute(
-                """UPDATE messaging_messages SET status=?,
-                   provider_message_id=COALESCE(?,provider_message_id), updated_at=?
-                   WHERE id=? AND status='unknown'""",
-                (status, provider_message_id, now, message_id),
-            )
+            try:
+                con.execute(
+                    """UPDATE messaging_messages SET status=?,
+                       provider_message_id=COALESCE(?,provider_message_id), updated_at=?
+                       WHERE id=? AND status='unknown'""",
+                    (status, provider_message_id, now, message_id),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise MessagingContractError(
+                    "provider_message_id is already recorded for this channel"
+                ) from exc
             con.execute(
                 """INSERT INTO messaging_delivery_reconciliations
                    (id,message_id,previous_status,new_status,evidence,created_at)

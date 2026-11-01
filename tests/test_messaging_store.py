@@ -493,3 +493,68 @@ def test_outbound_idempotency_fails_closed_for_corrupt_target(
 
     with pytest.raises(MessagingContractError, match="cannot be verified"):
         store.queue_outbound(**kwargs, delivery_target="target-A")
+
+def test_finish_outbound_lease_rejects_duplicate_provider_message_id_atomically(
+    tmp_path: Path, monkeypatch
+):
+    from cryptography.fernet import Fernet
+    from crows.messaging import MessagingContractError
+
+    monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
+    store = MessagingStore(tmp_path / "duplicate-finish-provider-id.sqlite3")
+    store.queue_outbound(
+        channel="telegram", provider_user_id="u1", text="first",
+        idempotency_key="first", delivery_target="100",
+    )
+    second = store.queue_outbound(
+        channel="telegram", provider_user_id="u2", text="second",
+        idempotency_key="second", delivery_target="200",
+    )
+    store.update_outbound_status(
+        "telegram", "first", "sent", provider_message_id="provider-duplicate"
+    )
+    message_id = second["message"]["id"]
+    assert store.claim_outbound(worker_id="worker", message_id=message_id)
+
+    with pytest.raises(MessagingContractError, match="already recorded"):
+        store.finish_outbound_lease(
+            message_id, worker_id="worker", status="sent",
+            provider_message_id="provider-duplicate",
+        )
+
+    assert store.get_outbound("telegram", "second")["status"] == "accepted"
+    assert store.finish_outbound_lease(message_id, worker_id="worker", status="unknown")
+
+
+def test_reconcile_unknown_rejects_duplicate_provider_message_id_atomically(
+    tmp_path: Path
+):
+    from crows.messaging import MessagingContractError
+
+    store = MessagingStore(tmp_path / "duplicate-reconcile-provider-id.sqlite3")
+    store.queue_outbound(
+        channel="telegram", provider_user_id="u1", text="first",
+        idempotency_key="first",
+    )
+    second = store.queue_outbound(
+        channel="telegram", provider_user_id="u2", text="second",
+        idempotency_key="second",
+    )
+    store.update_outbound_status(
+        "telegram", "first", "sent", provider_message_id="provider-duplicate"
+    )
+    store.update_outbound_status("telegram", "second", "unknown")
+
+    with pytest.raises(MessagingContractError, match="already recorded"):
+        store.reconcile_unknown(
+            second["message"]["id"], status="sent",
+            evidence="Provider lookup returned a conflicting message ID",
+            provider_message_id="provider-duplicate",
+        )
+
+    assert store.get_outbound("telegram", "second")["status"] == "unknown"
+    with store.connect() as con:
+        assert con.execute(
+            "SELECT COUNT(*) FROM messaging_delivery_reconciliations WHERE message_id=?",
+            (second["message"]["id"],),
+        ).fetchone()[0] == 0
