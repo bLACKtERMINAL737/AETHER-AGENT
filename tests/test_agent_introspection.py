@@ -46,8 +46,8 @@ def test_runtime_context_reports_live_capabilities_without_secrets(monkeypatch, 
         app_module,
         "tools",
         SimpleNamespace(describe=lambda: [
-            {"name": "workspace.read_file"},
-            {"name": "web.search"},
+            {"name": "workspace.read_file", "description": "Read a workspace file", "input_schema": {"type": "object"}},
+            {"name": "web.search", "description": "Search the public web", "input_schema": {"type": "object"}},
         ]),
     )
     monkeypatch.setattr(
@@ -70,7 +70,12 @@ def test_runtime_context_reports_live_capabilities_without_secrets(monkeypatch, 
     assert result["model_routes"] == [
         {"id": "primary", "model": "example/model", "configured": True},
     ]
-    assert result["available_tools"] == ["workspace.read_file", "web.search"]
+    assert result["active_model_route"] == {
+        "id": "primary", "model": "example/model", "configured": True,
+    }
+    assert [item["name"] for item in result["available_tools"]] == [
+        "workspace.read_file", "web.search",
+    ]
     assert result["skills"][0]["enabled"] is True
     assert result["recent_tasks"][0]["status"] == "succeeded"
     assert result["coding_test_runner_enabled"] is True
@@ -108,6 +113,7 @@ def test_runtime_context_degrades_safely_when_journals_are_unavailable(monkeypat
     assert result["skills"] == []
     assert result["recent_tasks"] == []
     assert result["model_routes"] == []
+    assert result["active_model_route"]["configured"] is False
     assert result["available_tools"] == []
 
 
