@@ -10,6 +10,9 @@ TOOLS = {"workspace.list_files", "workspace.read_file", "workspace.search_text",
 def setup_client(monkeypatch, tmp_path):
     monkeypatch.setenv("CROWS_API_TOKEN", "skills-test-token")
     monkeypatch.setattr(app_module, "skill_registry", SkillRegistry(tmp_path / "skills", TOOLS))
+    # The shared FastAPI app may retain middleware initialized by another test.
+    # Rebuild it so LocalAPIProtection reads this test's patched token.
+    monkeypatch.setattr(app_module.app, "middleware_stack", None)
     return TestClient(app_module.app, raise_server_exceptions=False)
 
 
