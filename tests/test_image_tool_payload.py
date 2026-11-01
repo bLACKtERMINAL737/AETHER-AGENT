@@ -2,7 +2,7 @@ import base64
 
 import pytest
 
-from aether.provider import ModelProvider
+from crows.provider import ModelProvider
 
 
 class FakeResponse:
@@ -35,7 +35,7 @@ async def test_tool_enabled_chat_preserves_multimodal_user_content(monkeypatch):
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
     image_bytes = bytes.fromhex("89504e470d0a1a0a") + b"test-image"
     image_data_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
@@ -64,7 +64,7 @@ async def test_tool_enabled_chat_preserves_multimodal_user_content(monkeypatch):
 async def test_regular_chat_preserves_multimodal_user_content(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_args, **_kwargs: FakeAsyncClient(calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
@@ -88,7 +88,7 @@ async def test_regular_chat_preserves_multimodal_user_content(monkeypatch):
 async def test_regular_chat_keeps_plain_text_content_without_image(monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "aether.provider.httpx.AsyncClient",
+        "crows.provider.httpx.AsyncClient",
         lambda *_args, **_kwargs: FakeAsyncClient(calls),
     )
     provider = ModelProvider("https://example.test/v1", "secret", "text-model")

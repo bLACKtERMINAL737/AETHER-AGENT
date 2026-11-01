@@ -1,6 +1,6 @@
 import pytest
 
-from aether.config import Settings
+from crows.config import Settings
 
 
 def test_model_timeout_defaults_to_45_seconds(monkeypatch):

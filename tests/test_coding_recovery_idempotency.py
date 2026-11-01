@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def test_interrupted_proposal_recovery_is_idempotent_and_preserves_diagnostics(

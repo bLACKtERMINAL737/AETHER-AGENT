@@ -1,6 +1,6 @@
 import pytest
 
-from aether.provider import ModelProvider
+from crows.provider import ModelProvider
 
 
 class Response:
@@ -34,7 +34,7 @@ async def test_duplicate_tool_call_ids_rejected_before_execution(monkeypatch):
         {"id": "same", "function": {"name": "read_file", "arguments": "{}"}},
         {"id": "same", "function": {"name": "list_files", "arguments": "{}"}},
     ]}}]}
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", lambda *a, **k: Client(payload))
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", lambda *a, **k: Client(payload))
     provider = ModelProvider("https://example.test/v1", "secret", "model")
     executed = []
 
@@ -55,7 +55,7 @@ async def test_unregistered_tool_rejected_before_execution(monkeypatch):
         {"id": "known", "function": {"name": "read_file", "arguments": "{}"}},
         {"id": "unknown", "function": {"name": "unregistered", "arguments": "{}"}},
     ]}}]}
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", lambda *a, **k: Client(payload))
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", lambda *a, **k: Client(payload))
     provider = ModelProvider("https://example.test/v1", "secret", "model")
     executed = []
 

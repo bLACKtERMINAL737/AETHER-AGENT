@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def test_coding_apply_lock_excludes_an_independent_process(tmp_path: Path):
@@ -14,7 +14,7 @@ def test_coding_apply_lock_excludes_an_independent_process(tmp_path: Path):
 import sys
 import time
 from pathlib import Path
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 store = TaskStore(Path(sys.argv[1]))
 with store.coding_apply_lock() as acquired:

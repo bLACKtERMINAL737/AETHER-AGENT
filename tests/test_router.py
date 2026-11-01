@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from aether.provider import ModelProvider, ModelRouter
+from crows.provider import ModelProvider, ModelRouter
 
 
 class FakeProvider:
@@ -59,7 +59,7 @@ async def test_timeout_retries_primary_before_using_fallback(monkeypatch):
     async def fake_sleep(delay):
         sleeps.append(delay)
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider(
         "primary",
         errors=[httpx.ReadTimeout("timed out"), httpx.ConnectError("network down")],
@@ -81,7 +81,7 @@ async def test_server_error_retries_then_uses_fallback(monkeypatch):
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider("primary", errors=[status_error(503), status_error(502)])
     fallback = FakeProvider("fallback")
     router = ModelRouter(primary, fallback=fallback, max_attempts=2)
@@ -110,7 +110,7 @@ async def test_fallback_failure_raises_last_error_and_counts_attempts(monkeypatc
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider(
         "primary",
         errors=[httpx.ConnectError("primary down"), httpx.ConnectError("primary still down")],
@@ -161,7 +161,7 @@ async def test_coding_route_transient_failure_falls_back_without_calling_primary
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider("primary")
     coding = FakeProvider("coding", errors=[httpx.ConnectError("coding endpoint down")])
     fallback = FakeProvider("fallback")
@@ -195,7 +195,7 @@ async def test_remote_protocol_error_retries_before_fallback(monkeypatch):
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider(
         "primary",
         errors=[
@@ -251,7 +251,7 @@ async def test_total_attempt_budget_caps_retries_before_fallback(monkeypatch):
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider(
         "primary",
         errors=[
@@ -277,7 +277,7 @@ async def test_total_attempt_budget_allows_fallback_when_budget_remains(monkeypa
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     primary = FakeProvider("primary", errors=[httpx.ConnectError("primary down")])
     fallback = FakeProvider("fallback", errors=[httpx.ReadTimeout("fallback down")])
     # One attempt per route leaves the second total-budget slot for fallback.
@@ -297,7 +297,7 @@ async def test_router_reports_sanitized_attempt_history_for_fallback_success(mon
     async def fake_sleep(_delay):
         return None
 
-    monkeypatch.setattr("aether.provider.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("crows.provider.asyncio.sleep", fake_sleep)
     secret_detail = "private provider error detail"
     primary = FakeProvider("primary", errors=[httpx.ConnectError(secret_detail)])
     fallback = FakeProvider("fallback")

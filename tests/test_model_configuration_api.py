@@ -2,8 +2,8 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from aether import app as app_module
-from aether.provider import ModelProvider, ModelRouter
+from crows import app as app_module
+from crows.provider import ModelProvider, ModelRouter
 
 
 @pytest.fixture

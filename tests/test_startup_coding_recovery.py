@@ -5,7 +5,7 @@ from contextlib import contextmanager
 
 import pytest
 
-import aether.app as app_module
+import crows.app as app_module
 
 
 class StartupRecoveryStore:
@@ -52,7 +52,7 @@ def test_startup_recovery_only_runs_when_apply_lock_is_acquired(
     assert fake_store.proposal_recovery_calls == expected_proposal_recovery_calls
 
 
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def make_applying_proposal(store: TaskStore) -> str:

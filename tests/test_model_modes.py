@@ -1,8 +1,8 @@
 import pytest
 import httpx
 
-from aether.app import infer_task_type
-from aether.provider import ModelRouter
+from crows.app import infer_task_type
+from crows.provider import ModelRouter
 
 
 class FakeProvider:

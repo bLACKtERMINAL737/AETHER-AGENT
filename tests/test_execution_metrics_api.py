@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from aether import app as app_module
+from crows import app as app_module
 
 
 def test_agent_execution_metrics_api_returns_aggregate_contract(monkeypatch):

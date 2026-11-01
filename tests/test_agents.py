@@ -1,6 +1,6 @@
 import pytest
 
-from aether.agents import list_agent_roles, plan_subtasks
+from crows.agents import list_agent_roles, plan_subtasks
 
 
 def test_specialist_agent_registry_has_unique_roles():
@@ -38,7 +38,7 @@ def test_plan_validation_rejects_invalid_or_oversized_tasks(value):
 
 
 def test_plan_subtasks_validates_dependencies_and_topological_order():
-    from aether.agents import dependency_order
+    from crows.agents import dependency_order
 
     plan = plan_subtasks([
         {"title": "Final report", "input": "Summarize results", "role": "qa_security", "depends_on": [2]},

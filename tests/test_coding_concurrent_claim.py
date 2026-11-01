@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
 
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def test_only_one_concurrent_worker_can_claim_approved_proposal(tmp_path: Path):

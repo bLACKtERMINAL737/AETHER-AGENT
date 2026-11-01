@@ -1,8 +1,8 @@
 from pathlib import Path
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class FakeRouter:
@@ -17,7 +17,7 @@ def make_engine(tmp_path: Path, answer: str):
     workspace.mkdir()
     source = workspace / "sample.py"
     source.write_text("def value():\n    return 1\n", encoding="utf-8")
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     engine = CodingEngine(workspace, store, FakeRouter(answer))
     return engine, store, workspace, source
 
@@ -164,7 +164,7 @@ def test_apply_rolls_back_replaced_files_on_replace_failure(tmp_path: Path, monk
             raise OSError("simulated replace failure")
         return real_replace(src, dst, **kwargs)
 
-    monkeypatch.setattr("aether.coding.os.rename", fail_second_replace)
+    monkeypatch.setattr("crows.coding.os.rename", fail_second_replace)
 
     with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
@@ -276,7 +276,7 @@ def test_apply_reports_rollback_failure_without_hiding_original_error(
             raise OSError("simulated rollback failure")
         return real_replace(src, dst, **kwargs)
 
-    monkeypatch.setattr("aether.coding.os.rename", fail_second_replace)
+    monkeypatch.setattr("crows.coding.os.rename", fail_second_replace)
 
     with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
@@ -353,7 +353,7 @@ async def test_iterative_loop_returns_pending_proposal_after_sandbox_pass(tmp_pa
     source = workspace / "sample.py"
     original = "def value():\n    return 1\n"
     source.write_text(original, encoding="utf-8")
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     router = SequenceRouter()
     engine = CodingEngine(workspace, store, router, enable_test_runner=True)
 
@@ -394,7 +394,7 @@ async def test_iterative_loop_never_proposes_failed_candidate(tmp_path: Path, mo
 
 
 def test_proposal_store_round_trip(tmp_path: Path):
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     created = store.create_proposal("summary", [{"path": "sample.py", "content": "print(1)"}])
     assert created["status"] == "pending"
     assert created["changes"][0]["path"] == "sample.py"
@@ -511,7 +511,7 @@ def test_rejected_proposal_cannot_be_approved(tmp_path: Path):
 def test_store_rejects_invalid_proposal_transitions(
     tmp_path: Path, initial: str, target: str, error: str | None
 ):
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     proposal = store.create_proposal("transition test", [])
 
     if initial == "approved":
@@ -532,7 +532,7 @@ def test_store_rejects_invalid_proposal_transitions(
 
 
 def test_store_allows_recording_apply_failure_without_changing_status(tmp_path: Path):
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     proposal = store.create_proposal("apply failure", [])
     store.set_proposal_status(proposal["id"], "approved")
 
@@ -548,7 +548,7 @@ def test_store_allows_recording_apply_failure_without_changing_status(tmp_path: 
 
 
 def test_store_updates_apply_failure_error_text(tmp_path: Path):
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     proposal = store.create_proposal("apply failure", [])
     store.set_proposal_status(proposal["id"], "approved")
 
@@ -564,7 +564,7 @@ def test_store_updates_apply_failure_error_text(tmp_path: Path):
     assert saved["error_text"] == "second failure"
 
 def test_store_rejects_unknown_proposal_id(tmp_path: Path):
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
 
     with pytest.raises(KeyError, match="Proposal not found"):
         store.set_proposal_status("missing-proposal-id", "approved")
@@ -618,7 +618,7 @@ def test_concurrent_apply_requests_only_apply_proposal_once(tmp_path: Path):
 
     # Use separate engine/store instances to exercise the cross-instance file lock.
     second_engine = CodingEngine(
-        workspace, TaskStore(tmp_path / "aether.sqlite3"), FakeRouter("{}")
+        workspace, TaskStore(tmp_path / "crows.sqlite3"), FakeRouter("{}")
     )
     barrier = Barrier(2)
 
@@ -678,13 +678,13 @@ def test_process_interruption_during_apply_requires_manual_reconciliation(
 
 
 def test_interrupted_apply_is_flagged_for_manual_review_after_restart(tmp_path: Path):
-    store = TaskStore(tmp_path / "aether.sqlite3")
+    store = TaskStore(tmp_path / "crows.sqlite3")
     proposal = store.create_proposal("interrupted apply", [])
     store.set_proposal_status(proposal["id"], "approved")
     assert store.claim_proposal_for_apply(proposal["id"]) is True
 
     # A fresh store simulates process restart against the same database.
-    restarted_store = TaskStore(tmp_path / "aether.sqlite3")
+    restarted_store = TaskStore(tmp_path / "crows.sqlite3")
     count = restarted_store.mark_interrupted_proposals_for_review()
 
     saved = restarted_store.get_proposal(proposal["id"])

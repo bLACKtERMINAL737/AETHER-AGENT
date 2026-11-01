@@ -3,7 +3,7 @@ import types
 
 import pytest
 
-from aether.tools import ToolError, ToolRegistry
+from crows.tools import ToolError, ToolRegistry
 
 
 def test_web_search_is_registered_with_clear_live_search_guidance(tmp_path):
@@ -215,7 +215,7 @@ def test_pinned_http_connection_connects_to_validated_ip(tmp_path, monkeypatch):
     import socket
     from urllib.parse import urlsplit
 
-    from aether.tools import ToolRegistry
+    from crows.tools import ToolRegistry
 
     seen = {}
     fake_socket = object()
@@ -262,7 +262,7 @@ def test_pinned_https_connection_pins_ip_but_keeps_hostname_for_tls(tmp_path, mo
     import socket
     from urllib.parse import urlsplit
 
-    from aether.tools import ToolRegistry
+    from crows.tools import ToolRegistry
 
     seen = {}
     raw_socket = object()
@@ -317,7 +317,7 @@ def test_pinned_https_connection_pins_ip_but_keeps_hostname_for_tls(tmp_path, mo
 def test_pinned_page_rejects_redirect_responses(tmp_path, monkeypatch, status):
     from urllib.parse import urlsplit
 
-    from aether.tools import ToolRegistry
+    from crows.tools import ToolRegistry
 
     class FakeResponse:
         def __init__(self):
@@ -340,7 +340,7 @@ def test_pinned_page_rejects_redirect_responses(tmp_path, monkeypatch, status):
 def test_pinned_page_response_body_is_bounded_to_one_megabyte(tmp_path, monkeypatch):
     from urllib.parse import urlsplit
 
-    from aether.tools import ToolRegistry
+    from crows.tools import ToolRegistry
 
     class FakeResponse:
         status = 200

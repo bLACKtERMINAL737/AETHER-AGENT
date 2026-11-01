@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from aether.sandbox import DockerTestSandbox, SandboxError
+from crows.sandbox import DockerTestSandbox, SandboxError
 
 
 def test_snapshot_excludes_environment_and_secret_files(tmp_path: Path):
@@ -70,7 +70,7 @@ def test_run_pytest_timeout_is_reported_as_failure(tmp_path: Path, monkeypatch):
     workspace.mkdir()
     (workspace / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
     sandbox = DockerTestSandbox(workspace, timeout_seconds=5)
-    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr("crows.sandbox.shutil.which", lambda _: "/usr/bin/docker")
 
     import io
 
@@ -87,10 +87,10 @@ def test_run_pytest_timeout_is_reported_as_failure(tmp_path: Path, monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "aether.sandbox.subprocess.Popen",
+        "crows.sandbox.subprocess.Popen",
         lambda *args, **kwargs: TimedOutProcess(),
     )
-    monkeypatch.setattr("aether.sandbox.subprocess.run", lambda *args, **kwargs: None)
+    monkeypatch.setattr("crows.sandbox.subprocess.run", lambda *args, **kwargs: None)
     result = sandbox.run_pytest()
 
     assert result["passed"] is False
@@ -106,12 +106,12 @@ def test_run_pytest_wraps_docker_launch_oserror(tmp_path: Path, monkeypatch):
     workspace.mkdir()
     (workspace / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
     sandbox = DockerTestSandbox(workspace)
-    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: "/usr/bin/docker")
+    monkeypatch.setattr("crows.sandbox.shutil.which", lambda _: "/usr/bin/docker")
 
     def launch_error(*args, **kwargs):
         raise OSError("permission denied")
 
-    monkeypatch.setattr("aether.sandbox.subprocess.Popen", launch_error)
+    monkeypatch.setattr("crows.sandbox.subprocess.Popen", launch_error)
     with pytest.raises(SandboxError, match="Could not start Docker"):
         sandbox.run_pytest()
 
@@ -120,7 +120,7 @@ def test_run_pytest_requires_docker_cli(tmp_path: Path, monkeypatch):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     sandbox = DockerTestSandbox(workspace)
-    monkeypatch.setattr("aether.sandbox.shutil.which", lambda _: None)
+    monkeypatch.setattr("crows.sandbox.shutil.which", lambda _: None)
 
     with pytest.raises(SandboxError, match="Docker CLI not found"):
         sandbox.run_pytest()

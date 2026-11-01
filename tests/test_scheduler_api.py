@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-import aether.app as app_module
-from aether.scheduler_store import SchedulerStore
+import crows.app as app_module
+from crows.scheduler_store import SchedulerStore
 
 
 def make_client(monkeypatch, tmp_path):

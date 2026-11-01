@@ -1,4 +1,4 @@
-from aether.scheduler_store import SchedulerStore
+from crows.scheduler_store import SchedulerStore
 
 
 def test_scheduler_metrics_aggregate_statuses_without_identifiers(tmp_path):

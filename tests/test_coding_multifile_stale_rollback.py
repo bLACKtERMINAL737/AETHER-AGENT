@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class _UnusedRouter:
@@ -73,5 +73,5 @@ def test_later_stale_target_rolls_back_earlier_replacement_and_preserves_externa
     assert saved is not None
     assert saved["status"] == "approved"
     assert "changed while proposal was being applied" in saved["error_text"]
-    assert not list(workspace.glob(".aether-stage-*"))
-    assert not list(workspace.glob(".aether-rollback-*"))
+    assert not list(workspace.glob(".crows-stage-*"))
+    assert not list(workspace.glob(".crows-rollback-*"))

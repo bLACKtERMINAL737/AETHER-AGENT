@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from aether import app as app_module
-from aether.store import TaskStore
+from crows import app as app_module
+from crows.store import TaskStore
 
 
 def test_tool_execution_cannot_reuse_completed_task(tmp_path: Path, monkeypatch):

@@ -311,7 +311,7 @@ class CodingEngine:
                 if digest != change["original_sha256"]:
                     raise CodingError(f"File changed since proposal creation: {change['path']}. Generate a fresh proposal.")
                 original_mode = stat.S_IMODE(target.stat().st_mode)
-                fd, temp_name = tempfile.mkstemp(prefix=".aether-stage-", dir=str(target.parent))
+                fd, temp_name = tempfile.mkstemp(prefix=".crows-stage-", dir=str(target.parent))
                 os.fchmod(fd, original_mode)
                 with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                     handle.write(change["content"])
@@ -399,7 +399,7 @@ class CodingEngine:
                                 "Manual reconciliation is required."
                             )
                         fd, temp_name = tempfile.mkstemp(
-                            prefix=".aether-rollback-",
+                            prefix=".crows-rollback-",
                             dir=str(target.parent),
                         )
                         rollback_temp = Path(temp_name)
@@ -523,7 +523,7 @@ class CodingEngine:
         original_by_path = {item["path"]: item["content"] for item in original_sources}
         rounds: list[dict[str, Any]] = []
         latest_failure = ""
-        with tempfile.TemporaryDirectory(prefix="aether-iteration-") as temp:
+        with tempfile.TemporaryDirectory(prefix="crows-iteration-") as temp:
             candidate_workspace = Path(temp) / "workspace"
             candidate_workspace.mkdir()
             try:

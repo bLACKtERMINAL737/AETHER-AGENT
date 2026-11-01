@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import pytest
 
-from aether.scheduler_store import SchedulerStore
+from crows.scheduler_store import SchedulerStore
 
 
 def test_schedule_persists_across_reopen_and_normalizes_timezone(tmp_path: Path):
@@ -102,7 +102,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aether.scheduler_store import SchedulerStore
+from crows.scheduler_store import SchedulerStore
 
 
 def make_unknown_schedule(store):

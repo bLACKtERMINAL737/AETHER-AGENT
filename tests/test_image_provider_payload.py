@@ -2,7 +2,7 @@ import base64
 
 import pytest
 
-from aether.provider import ModelProvider
+from crows.provider import ModelProvider
 
 
 class FakeResponse:
@@ -35,7 +35,7 @@ async def test_basic_chat_sends_multimodal_openai_compatible_content(monkeypatch
     def client_factory(*_args, **_kwargs):
         return FakeAsyncClient(calls)
 
-    monkeypatch.setattr("aether.provider.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr("crows.provider.httpx.AsyncClient", client_factory)
     provider = ModelProvider("https://example.test/v1", "secret", "vision-model")
     png_bytes = bytes.fromhex("89504e470d0a1a0a") + b"example"
     image_data_url = "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")

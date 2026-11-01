@@ -3,7 +3,7 @@ import base64
 import pytest
 from pydantic import ValidationError
 
-from aether.app import ChatRequest
+from crows.app import ChatRequest
 
 
 def data_url(media_type: str, payload: bytes) -> str:

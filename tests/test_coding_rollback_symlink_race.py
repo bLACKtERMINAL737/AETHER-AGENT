@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class _UnusedRouter:
@@ -57,5 +57,5 @@ def test_rollback_refuses_symlink_swap_before_restoring_file(
     assert saved is not None
     assert saved["status"] == "applying"
     assert "Symlink paths are not supported" in saved["error_text"]
-    assert not list(workspace.glob(".aether-stage-*"))
-    assert not list(workspace.glob(".aether-rollback-*"))
+    assert not list(workspace.glob(".crows-stage-*"))
+    assert not list(workspace.glob(".crows-rollback-*"))

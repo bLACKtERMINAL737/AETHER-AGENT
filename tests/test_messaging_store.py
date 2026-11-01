@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aether.messaging_store import MessagingStore
+from crows.messaging_store import MessagingStore
 
 
 def test_inbound_message_persists_and_deduplicates(tmp_path: Path):
@@ -150,7 +150,7 @@ def test_delivery_target_is_encrypted_and_decryptable(tmp_path: Path, monkeypatc
 
 
 def test_delivery_target_requires_encryption_key_and_is_not_queued(tmp_path: Path, monkeypatch):
-    from aether.messaging import MessagingContractError
+    from crows.messaging import MessagingContractError
 
     monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
     monkeypatch.delenv("CROWS_MESSAGING_TARGET_KEY", raising=False)
@@ -240,7 +240,7 @@ def test_expired_lease_becomes_unknown_not_automatically_requeued(tmp_path: Path
 )
 def test_retry_rejects_boolean_and_non_integer_limits(tmp_path: Path, monkeypatch, kwargs, message):
     from cryptography.fernet import Fernet
-    from aether.messaging import MessagingContractError
+    from crows.messaging import MessagingContractError
 
     monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
     store = MessagingStore(tmp_path / "retry-validation.sqlite3")
@@ -395,7 +395,7 @@ def test_retry_budget_cannot_be_increased_after_scheduling(tmp_path: Path, monke
     from datetime import datetime, timedelta, timezone
 
     from cryptography.fernet import Fernet
-    from aether.messaging import MessagingContractError
+    from crows.messaging import MessagingContractError
 
     monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
     store = MessagingStore(tmp_path / "immutable-retry-budget.sqlite3")
@@ -428,7 +428,7 @@ def test_outbound_idempotency_rejects_different_delivery_target(
     tmp_path: Path, monkeypatch
 ):
     from cryptography.fernet import Fernet
-    from aether.messaging import MessagingContractError
+    from crows.messaging import MessagingContractError
 
     monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
     monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
@@ -455,7 +455,7 @@ def test_outbound_idempotency_rejects_target_presence_change(
     tmp_path: Path, monkeypatch, first_target, second_target
 ):
     from cryptography.fernet import Fernet
-    from aether.messaging import MessagingContractError
+    from crows.messaging import MessagingContractError
 
     monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
     monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
@@ -474,7 +474,7 @@ def test_outbound_idempotency_fails_closed_for_corrupt_target(
     tmp_path: Path, monkeypatch
 ):
     from cryptography.fernet import Fernet
-    from aether.messaging import MessagingContractError
+    from crows.messaging import MessagingContractError
 
     monkeypatch.setenv("CROWS_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
     monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)

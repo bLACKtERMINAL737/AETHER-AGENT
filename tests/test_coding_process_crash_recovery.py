@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 
 def test_process_crash_releases_apply_lock_and_startup_marks_proposal_for_review(
@@ -19,7 +19,7 @@ def test_process_crash_releases_apply_lock_and_startup_marks_proposal_for_review
 import os
 import sys
 from pathlib import Path
-from aether.store import TaskStore
+from crows.store import TaskStore
 
 store = TaskStore(Path(sys.argv[1]))
 proposal_id = sys.argv[2]

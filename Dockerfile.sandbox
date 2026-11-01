@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /build
 COPY pyproject.toml README.md ./
-COPY aether ./aether
+COPY crows ./crows
 RUN pip install --no-cache-dir '.[dev]' && pip cache purge
 
 WORKDIR /workspace

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from aether.messaging_store import MessagingStore
+from crows.messaging_store import MessagingStore
 
 
 def test_delivery_metrics_aggregate_status_and_channel_without_message_content(tmp_path: Path):

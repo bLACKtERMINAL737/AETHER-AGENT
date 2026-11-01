@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aether.sandbox import DockerTestSandbox, SandboxError
+from crows.sandbox import DockerTestSandbox, SandboxError
 
 
 def test_snapshot_rejects_more_than_5000_files(tmp_path: Path) -> None:

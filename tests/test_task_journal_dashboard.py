@@ -1,4 +1,4 @@
-from aether import app as app_module
+from crows import app as app_module
 
 
 def test_task_journal_dashboard_is_in_static_ui():

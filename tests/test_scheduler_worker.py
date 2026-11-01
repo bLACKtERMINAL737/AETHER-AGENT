@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import aether.app as app_module
-from aether.scheduler_store import SchedulerStore
-from aether.store import TaskStore
+import crows.app as app_module
+from crows.scheduler_store import SchedulerStore
+from crows.store import TaskStore
 
 
 @pytest.mark.asyncio

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-import aether.coding as coding_module
-from aether.coding import CodingEngine, CodingError
-from aether.store import TaskStore
+import crows.coding as coding_module
+from crows.coding import CodingEngine, CodingError
+from crows.store import TaskStore
 
 
 class _UnusedRouter:
@@ -63,4 +63,4 @@ def test_apply_refuses_to_overwrite_permissions_changed_after_staging(
     saved = store.get_proposal(proposal["id"])
     assert saved is not None
     assert saved["status"] == "approved"
-    assert not list(workspace.glob(".aether-stage-*"))
+    assert not list(workspace.glob(".crows-stage-*"))

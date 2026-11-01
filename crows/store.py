@@ -56,7 +56,7 @@ class TaskStore:
         # Register Python casefold so cross-session search handles Unicode
         # consistently with the ranking logic below.
         con.create_function(
-            "aether_casefold",
+            "crows_casefold",
             1,
             lambda value: value.casefold() if isinstance(value, str) else "",
             deterministic=True,
@@ -682,7 +682,7 @@ class TaskStore:
         ))
         if not terms:
             return []
-        conditions = " OR ".join("instr(aether_casefold(m.content), aether_casefold(?)) > 0" for _ in terms)
+        conditions = " OR ".join("instr(crows_casefold(m.content), crows_casefold(?)) > 0" for _ in terms)
         with self.connect() as con:
             rows = con.execute(
                 "SELECT m.id, m.session_id, s.title AS session_title, m.role, "
