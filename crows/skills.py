@@ -23,7 +23,8 @@ def _version_key(version: str) -> tuple[int, int, int, bool, str]:
     match = _VERSION.fullmatch(version)
     if match is None:
         raise SkillError("Invalid skill version")
-    major, minor, patch, prerelease = match.groups()
+    major, minor, patch = match.groups()
+    prerelease = version.partition("-")[2] or None
     # Stable releases sort after prereleases of the same numeric version.
     return int(major), int(minor), int(patch), prerelease is None, prerelease or ""
 
