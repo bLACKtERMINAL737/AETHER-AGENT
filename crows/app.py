@@ -2943,8 +2943,16 @@ def build_agent_runtime_context(
         logger.warning("Could not read task journal for runtime context: %s", type(exc).__name__)
         recent_tasks = []
 
-    routes = router.available_routes()
-    route_by_id = {item["id"]: item for item in routes}
+    list_routes = getattr(router, "available_routes", None)
+    try:
+        routes = list_routes() if callable(list_routes) else []
+    except Exception as exc:
+        logger.warning("Could not read model routes for runtime context: %s", type(exc).__name__)
+        routes = []
+    route_by_id = {
+        item["id"]: item for item in routes
+        if isinstance(item, dict) and item.get("id")
+    }
     selected_route = model_route or (
         task_type if task_type in {"coding", "reasoning"} and route_by_id.get(task_type, {}).get("configured")
         else "primary"
@@ -2954,11 +2962,12 @@ def build_agent_runtime_context(
     })
     tool_catalog = [
         {
-            "name": item["name"],
-            "description": item["description"],
-            "input_schema": item["input_schema"],
+            "name": item.get("name", ""),
+            "description": item.get("description", ""),
+            "input_schema": item.get("input_schema", {}),
         }
         for item in tools.describe()
+        if isinstance(item, dict) and item.get("name")
     ]
 
     return {
