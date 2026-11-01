@@ -395,13 +395,58 @@ def discord_status():
     return {"channel": "discord", "configured": configured, "connector_type": "incoming_webhook"}
 
 
+async def _send_queued_outbound(queued: dict, *, channel: str) -> dict:
+    """Send one queued message only after atomically acquiring its outbox lease."""
+    saved = queued["message"]
+    if queued["duplicate"]:
+        if saved.get("status") in {"sent", "delivered"}:
+            return {
+                "conversation_id": queued["conversation_id"],
+                "message": saved,
+                "duplicate": True,
+            }
+        raise HTTPException(
+            status_code=409,
+            detail="This idempotency key was already processed or is being handled; inspect delivery status before retrying",
+        )
+
+    # Direct sends and the background worker share the same lease table. A
+    # targeted claim prevents both paths from sending the same outbox row.
+    worker_id = f"crows-direct-{os.getpid()}-{time.monotonic_ns()}"
+    result = await deliver_outbound_batch(
+        worker_id=worker_id, limit=1, message_id=saved["id"]
+    )
+    current = messaging_store.get_outbound(channel, saved["idempotency_key"])
+    if current and current.get("status") in {"sent", "delivered"}:
+        return {
+            "conversation_id": queued["conversation_id"],
+            "message": current,
+            "duplicate": False,
+        }
+    if result["retried"]:
+        return {
+            "conversation_id": queued["conversation_id"],
+            "message": current,
+            "duplicate": False,
+            "delivery_pending": True,
+        }
+    if result["claimed"] == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="The outbox worker already owns this delivery; check its status before retrying",
+        )
+    raise HTTPException(
+        status_code=502,
+        detail="Message delivery did not complete; inspect the outbox status before retrying",
+    )
+
+
 @app.post("/messaging/discord/send")
 async def discord_send(request: DiscordSendRequest):
-    """Send one text message to a preconfigured Discord incoming webhook."""
+    """Queue and send one text message through the shared leased outbox."""
     webhook_url = _discord_webhook_url()
     if not webhook_url:
         raise HTTPException(status_code=503, detail="A valid Discord webhook URL is not configured")
-    # A webhook is a fixed destination. Never accept an arbitrary URL from the request.
     try:
         queued = messaging_store.queue_outbound(
             channel="discord", provider_user_id="configured-webhook",
@@ -410,32 +455,7 @@ async def discord_send(request: DiscordSendRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    saved = queued["message"]
-    if queued["duplicate"]:
-        if saved.get("status") in {"sent", "delivered"}:
-            return {"conversation_id": queued["conversation_id"], "message": saved, "duplicate": True}
-        raise HTTPException(status_code=409, detail="This idempotency key was already processed or has an unknown outcome; inspect Discord and the inbox before retrying")
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-            response = await client.post(webhook_url, json={"content": request.text}, params={"wait": "true"})
-        body = response.json() if response.content else {}
-        if not response.is_success or not isinstance(body, dict) or not body.get("id"):
-            messaging_store.update_outbound_status("discord", request.idempotency_key, "failed")
-            raise HTTPException(status_code=502, detail="Discord rejected the message; delivery was not confirmed")
-        messaging_store.update_outbound_status(
-            "discord", request.idempotency_key, "sent", provider_message_id=str(body["id"])
-        )
-        return {
-            "conversation_id": queued["conversation_id"],
-            "message": messaging_store.get_outbound("discord", request.idempotency_key),
-            "duplicate": queued["duplicate"],
-        }
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, ValueError) as exc:
-        messaging_store.update_outbound_status("discord", request.idempotency_key, "unknown")
-        raise HTTPException(status_code=502, detail="Discord request outcome is unknown; check Discord before retrying") from exc
-
+    return await _send_queued_outbound(queued, channel="discord")
 
 @app.get("/messaging/telegram/status")
 def telegram_status():
@@ -502,7 +522,7 @@ async def telegram_webhook(request: Request):
 
 @app.post("/messaging/telegram/send")
 async def telegram_send(request: TelegramSendRequest):
-    """Send a Telegram message via the official Bot API and persist delivery outcome."""
+    """Queue and send a Telegram message through the shared leased outbox."""
     bot_token, _ = _telegram_config()
     if not bot_token:
         raise HTTPException(status_code=503, detail="Telegram bot token is not configured")
@@ -514,40 +534,7 @@ async def telegram_send(request: TelegramSendRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    saved = queued["message"]
-    if queued["duplicate"]:
-        if saved.get("status") in {"sent", "delivered"}:
-            return {"conversation_id": queued["conversation_id"], "message": saved, "duplicate": True}
-        raise HTTPException(
-            status_code=409,
-            detail="This idempotency key was already processed or has an unknown outcome; inspect the inbox before retrying",
-        )
-    try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-            response = await client.post(
-                f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                json={"chat_id": request.chat_id, "text": request.text},
-            )
-        body = response.json()
-        if not response.is_success or not isinstance(body, dict) or not body.get("ok"):
-            messaging_store.update_outbound_status("telegram", request.idempotency_key, "failed")
-            raise HTTPException(status_code=502, detail="Telegram rejected the message; delivery was not confirmed")
-        provider_message_id = str((body.get("result") or {}).get("message_id", "")) or None
-        messaging_store.update_outbound_status(
-            "telegram", request.idempotency_key, "sent", provider_message_id=provider_message_id
-        )
-        return {
-            "conversation_id": queued["conversation_id"],
-            "message": messaging_store.get_outbound("telegram", request.idempotency_key),
-            "duplicate": queued["duplicate"],
-        }
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, ValueError) as exc:
-        messaging_store.update_outbound_status("telegram", request.idempotency_key, "unknown")
-        raise HTTPException(status_code=502, detail="Telegram request outcome is unknown; check delivery before retrying") from exc
-
-
+    return await _send_queued_outbound(queued, channel="telegram")
 
 
 
@@ -692,9 +679,20 @@ async def messaging_worker_loop() -> None:
         await asyncio.sleep(interval)
 
 
-async def deliver_outbound_batch(*, worker_id: str = "crows-claw-worker", limit: int = 10) -> dict:
-    """Deliver one leased outbox batch. Expired/uncertain sends are never auto-retried."""
-    claimed = messaging_store.claim_outbound(worker_id=worker_id, limit=limit, lease_seconds=60)
+async def deliver_outbound_batch(
+    *, worker_id: str = "crows-claw-worker", limit: int = 10,
+    message_id: str | None = None,
+) -> dict:
+    """Deliver leased outbox messages, optionally restricting work to one message ID."""
+    if message_id is None:
+        claimed = messaging_store.claim_outbound(
+            worker_id=worker_id, limit=limit, lease_seconds=60
+        )
+    else:
+        claimed = messaging_store.claim_outbound(
+            worker_id=worker_id, limit=limit, lease_seconds=60,
+            message_id=message_id,
+        )
     outcomes = {"claimed": len(claimed), "sent": 0, "retried": 0, "failed": 0, "unknown": 0, "skipped": 0}
     for item in claimed:
         message_id = item["id"]

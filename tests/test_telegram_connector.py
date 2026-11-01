@@ -123,6 +123,40 @@ async def test_telegram_send_persists_success_and_uses_bot_api(monkeypatch, isol
 
 
 @pytest.mark.asyncio
+async def test_telegram_direct_send_does_not_race_background_outbox_worker(monkeypatch, isolated_store):
+    monkeypatch.setenv("AETHER_TELEGRAM_BOT_TOKEN", "test-token")
+    original_queue = isolated_store.queue_outbound
+
+    def queue_then_claim_for_background_worker(**kwargs):
+        queued = original_queue(**kwargs)
+        if not queued["duplicate"]:
+            claimed = isolated_store.claim_outbound(
+                worker_id="background-worker", limit=1, lease_seconds=60
+            )
+            assert [item["id"] for item in claimed] == [queued["message"]["id"]]
+        return queued
+
+    monkeypatch.setattr(isolated_store, "queue_outbound", queue_then_claim_for_background_worker)
+    request = app_module.TelegramSendRequest(
+        chat_id="777", text="hello", idempotency_key="telegram-worker-race"
+    )
+    with pytest.raises(HTTPException) as error:
+        await app_module.telegram_send(request)
+    assert error.value.status_code == 409
+    assert FakeAsyncClient.calls == []
+    assert isolated_store.get_outbound("telegram", "telegram-worker-race")["status"] == "accepted"
+
+    # The background worker already owns the active lease. A second claim
+    # must not send the same message, even when it uses the same worker ID;
+    # the original worker continues from its already-claimed batch.
+    assert isolated_store.claim_outbound(
+        worker_id="background-worker", limit=1, lease_seconds=60
+    ) == []
+    assert FakeAsyncClient.calls == []
+    assert isolated_store.get_outbound("telegram", "telegram-worker-race")["status"] == "accepted"
+
+
+@pytest.mark.asyncio
 async def test_telegram_send_marks_unknown_and_blocks_same_key_retry(monkeypatch, isolated_store):
     monkeypatch.setenv("AETHER_TELEGRAM_BOT_TOKEN", "test-token")
 
