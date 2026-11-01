@@ -2982,11 +2982,6 @@ def build_agent_runtime_context(
     }
 
 
-@app.get("/agent/status")
-def agent_runtime_status():
-    """Return a secret-free snapshot of the running agent's configuration and capabilities."""
-    return build_agent_runtime_context()
-
 class SkillActivationRequest(BaseModel):
     version: str = Field(min_length=5, max_length=64)
     approved: bool = False
