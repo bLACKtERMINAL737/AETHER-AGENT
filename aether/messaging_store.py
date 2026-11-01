@@ -205,6 +205,33 @@ class MessagingStore:
             if existing:
                 if existing["conversation_id"] != conversation_id or existing["text"] != text:
                     raise MessagingContractError("idempotency_key was already used for a different message")
+
+                stored_target = con.execute(
+                    "SELECT ciphertext FROM messaging_delivery_targets WHERE message_id=?",
+                    (existing["id"],),
+                ).fetchone()
+
+                if stored_target is None:
+                    existing_target = None
+                else:
+                    if self._target_cipher is None:
+                        raise MessagingContractError(
+                            "existing delivery target cannot be verified for this idempotency_key"
+                        )
+                    try:
+                        existing_target = self._target_cipher.decrypt(
+                            bytes(stored_target["ciphertext"])
+                        ).decode("utf-8")
+                    except (InvalidToken, UnicodeDecodeError) as exc:
+                        raise MessagingContractError(
+                            "existing delivery target cannot be verified for this idempotency_key"
+                        ) from exc
+
+                if existing_target != delivery_target:
+                    raise MessagingContractError(
+                        "idempotency_key was already used for a different message or delivery target"
+                    )
+
                 return {"conversation_id": conversation_id, "message": dict(existing), "duplicate": True}
             message_id = str(uuid4())
             con.execute(
