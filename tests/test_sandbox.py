@@ -72,6 +72,12 @@ def test_test_runner_has_network_disabled_and_read_only_flags(tmp_path: Path, mo
     assert "--network=none" in captured["command"]
     assert "--read-only" in captured["command"]
     assert "--cap-drop=ALL" in captured["command"]
+    assert captured["command"][captured["command"].index("-e") + 1] == "TMPDIR=/workspace/.pytest-tmp"
+    workspace_mount = captured["command"][captured["command"].index("-v") + 1]
+    snapshot_path = Path(workspace_mount.split(":/workspace:", 1)[0])
+    pytest_tmp = snapshot_path / ".pytest-tmp"
+    assert pytest_tmp.is_dir()
+    assert pytest_tmp.stat().st_mode & 0o777 == 0o777
     assert result["sandboxed"] is True
 
 
