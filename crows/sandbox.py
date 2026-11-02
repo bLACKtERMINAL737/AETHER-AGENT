@@ -136,6 +136,12 @@ class DockerTestSandbox:
             snapshot = Path(temp) / "workspace"
             snapshot.mkdir(mode=0o777)
             self._snapshot(snapshot)
+            # Pytest may create substantial temporary databases and files. Keep
+            # them on the disposable workspace mount rather than the small /tmp
+            # tmpfs, while preserving the real workspace isolation boundary.
+            pytest_tmp = snapshot / ".pytest-tmp"
+            pytest_tmp.mkdir(mode=0o777)
+            pytest_tmp.chmod(0o777)
             cid_file = Path(temp) / "container-id"
             command = [
                 "docker", "run", "--rm", "--pull=never",
@@ -145,6 +151,7 @@ class DockerTestSandbox:
                 "--pids-limit", str(self.pids_limit),
                 "--memory", self.memory_limit, "--cpus", self.cpu_limit,
                 "--user", "65534:65534",
+                "-e", "TMPDIR=/workspace/.pytest-tmp",
                 "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
                 "-v", f"{snapshot}:/workspace:rw",
                 "-w", "/workspace", self.image,

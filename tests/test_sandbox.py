@@ -62,6 +62,11 @@ def test_test_runner_has_network_disabled_and_read_only_flags(tmp_path: Path, mo
     def fake_popen(command, **kwargs):
         captured["command"] = command
         captured["kwargs"] = kwargs
+        workspace_mount = command[command.index("-v") + 1]
+        snapshot_path = Path(workspace_mount.split(":/workspace:", 1)[0])
+        pytest_tmp = snapshot_path / ".pytest-tmp"
+        captured["pytest_tmp_is_dir"] = pytest_tmp.is_dir()
+        captured["pytest_tmp_mode"] = pytest_tmp.stat().st_mode & 0o777
         return Process()
 
     monkeypatch.setattr("crows.sandbox.shutil.which", fake_which)
@@ -72,6 +77,11 @@ def test_test_runner_has_network_disabled_and_read_only_flags(tmp_path: Path, mo
     assert "--network=none" in captured["command"]
     assert "--read-only" in captured["command"]
     assert "--cap-drop=ALL" in captured["command"]
+    assert captured["command"][captured["command"].index("-e") + 1] == "TMPDIR=/workspace/.pytest-tmp"
+    # Capture these while fake_popen runs: TemporaryDirectory is cleaned up
+    # as soon as run_pytest returns, before assertions below execute.
+    assert captured["pytest_tmp_is_dir"] is True
+    assert captured["pytest_tmp_mode"] == 0o777
     assert result["sandboxed"] is True
 
 
