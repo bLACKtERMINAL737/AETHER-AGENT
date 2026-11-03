@@ -101,8 +101,15 @@ class InboundDispatchStore:
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             rows = con.execute(
-                """SELECT * FROM messaging_inbound_dispatch
-                   WHERE state='pending' ORDER BY created_at,id LIMIT ?""",
+                """SELECT * FROM messaging_inbound_dispatch AS candidate
+                   WHERE candidate.state='pending'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messaging_inbound_dispatch AS active
+                         WHERE active.channel=candidate.channel
+                           AND active.conversation_id=candidate.conversation_id
+                           AND active.state='processing'
+                     )
+                   ORDER BY candidate.created_at,candidate.id LIMIT ?""",
                 (limit,),
             ).fetchall()
             for row in rows:
