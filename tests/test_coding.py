@@ -796,7 +796,7 @@ async def test_new_file_proposal_rejects_existing_or_sensitive_targets(tmp_path:
 
 def test_approved_new_file_is_created_without_overwriting(tmp_path: Path):
     engine, store, workspace, _ = make_engine(tmp_path, "{}")
-    content = "def answer():\\n    return 42\\n"
+    content = "def answer():\n    return 42\n"
     proposal = store.create_proposal("Add helper", [{
         "path": "helper.py",
         "original_content": "",
@@ -826,12 +826,12 @@ def test_new_file_apply_refuses_a_concurrent_existing_target(tmp_path: Path):
     }])
     engine.approve(proposal["id"])
     target = workspace / "helper.py"
-    target.write_text("external content\\n", encoding="utf-8")
+    target.write_text("external content\n", encoding="utf-8")
 
     with pytest.raises(CodingError, match="no longer available|appeared before apply"):
         engine.apply(proposal["id"])
 
-    assert target.read_text(encoding="utf-8") == "external content\\n"
+    assert target.read_text(encoding="utf-8") == "external content\n"
     assert store.get_proposal(proposal["id"])["status"] == "approved"
 
 
