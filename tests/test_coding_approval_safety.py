@@ -210,7 +210,7 @@ async def test_coding_proposal_api_returns_pending_proposal_without_applying(
     import crows.app as app_module
 
     class FakeCoding:
-        async def propose(self, instruction, paths):
+        async def propose(self, instruction, paths, new_paths=None):
             assert instruction == "Change behavior"
             assert paths == ["sample.py"]
             return {"id": "proposal-api-1", "status": "pending", "changes": []}
@@ -239,7 +239,7 @@ async def test_coding_proposal_api_maps_validation_error_to_client_error(
     import crows.app as app_module
 
     class InvalidCoding:
-        async def propose(self, instruction, paths):
+        async def propose(self, instruction, paths, new_paths=None):
             raise CodingError("Select between 1 and 8 files")
 
     monkeypatch.setenv("AETHER_API_TOKEN", "test-token")

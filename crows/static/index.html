@@ -180,10 +180,12 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
   <div class="grid">
     <section class="panel">
       <h2>1. Select existing files</h2>
-      <div class="muted small">Only files in the configured workspace can be proposed for edits.</div>
+      <div class="muted small">Select existing files to edit, or declare new relative paths to create. New parent folders must already exist. All changes require review and approval.</div>
       <label for="dir">Workspace folder</label>
       <div style="display:flex;gap:8px"><input id="dir" value="." aria-label="Workspace folder"><button id="refresh">Refresh</button></div>
       <div id="files" class="files">Loading workspace files…</div>
+      <label for="newPaths">New file paths (one relative path per line, optional)</label>
+      <textarea id="newPaths" placeholder="src/new_module.py&#10;docs/usage.md" rows="3"></textarea>
       <label for="instruction">What should Crows change?</label>
       <textarea id="instruction" placeholder="Example: Find and fix the off-by-one bug. Keep the public API unchanged."></textarea>
       <div class="actions"><button class="primary" id="propose">Generate proposal</button><button id="health">Check API</button></div>
@@ -710,11 +712,13 @@ $("refresh").onclick=refreshFiles;
 $("health").onclick=async()=>{try{const h=await api("/health");setStatus("leftStatus","API status: "+h.status+" · provider configured: "+h.provider_configured,h.status==="ok"?"good":"");}catch(e){setStatus("leftStatus",e.message,"bad");}};
 $("propose").onclick=async()=>{
   const paths=[...$("files").querySelectorAll("input:checked")].map(x=>x.value);
-  if(!paths.length){setStatus("leftStatus","Select at least one file.","bad");return;}
+  const new_paths=$("newPaths").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  if(!paths.length&&!new_paths.length){setStatus("leftStatus","Select existing files or enter at least one new file path.","bad");return;}
+  if(paths.length+new_paths.length>8){setStatus("leftStatus","Select or declare no more than 8 files combined.","bad");return;}
   if(!$("instruction").value.trim()){setStatus("leftStatus","Enter the requested code change.","bad");return;}
   $("propose").disabled=true;setStatus("leftStatus","Asking the model to prepare a proposal…");
   try{
-    currentProposal=await api("/coding/proposals",{method:"POST",body:JSON.stringify({instruction:$("instruction").value,paths})});
+    currentProposal=await api("/coding/proposals",{method:"POST",body:JSON.stringify({instruction:$("instruction").value,paths,new_paths})});
     $("empty").style.display="none";$("proposal").style.display="block";
     $("summary").textContent=currentProposal.summary;
     $("proposalMeta").textContent="ID: "+currentProposal.id+" · Status: "+currentProposal.status+" · "+currentProposal.changes.length+" file(s)";

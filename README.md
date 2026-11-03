@@ -16,6 +16,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Bounded provider retries** for transient network, timeout, and HTTP 5xx failures, with a configurable total attempt budget (1–6) across routes and route-labelled failure logs.
 - **Configurable model request timeout** shared across primary, coding, reasoning, and fallback routes, with validated 1–600 second bounds.
 - **Coding proposals** that show file diffs and require explicit approval before changes are applied.
+- **Approval-gated new-file proposals** that can create explicitly declared workspace files, without overwriting existing paths and with rollback protection if a multi-file apply fails.
 - **Proposal state protection** so only valid pending proposals can be approved or rejected, and already-applied changes cannot be applied again.
 - **Test-and-fix workflow** with up to three rounds on a disposable workspace copy; only a passing candidate becomes a proposal.
 - **Optional Docker test sandbox** for running pytest against a disposable snapshot.

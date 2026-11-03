@@ -762,3 +762,113 @@ def test_replace_in_workspace_rejects_symlink_parent(tmp_path: Path):
         engine._replace_in_workspace("linked/sample.py", outside / "sample.py")
 
     assert (outside / "sample.py").read_text(encoding="utf-8") == "outside"
+
+
+@pytest.mark.asyncio
+async def test_new_file_proposal_is_pending_and_does_not_create_file(tmp_path: Path):
+    answer = (
+        '{"summary":"add helper module","changes":['
+        '{"path":"helper.py","content":"def answer():\\n    return 42\\n"}]}'
+    )
+    engine, store, workspace, _ = make_engine(tmp_path, answer)
+    proposal = await engine.propose("Add a helper module", [], new_paths=["helper.py"])
+
+    assert proposal["status"] == "pending"
+    assert proposal["changes"][0]["original_exists"] is False
+    assert "+++ b/helper.py" in proposal["changes"][0]["diff"]
+    assert not (workspace / "helper.py").exists()
+
+
+@pytest.mark.asyncio
+async def test_new_file_proposal_rejects_existing_or_sensitive_targets(tmp_path: Path):
+    engine, store, workspace, _ = make_engine(
+        tmp_path,
+        '{"summary":"bad","changes":[{"path":"helper.py","content":"VALUE = 1\\n"}]}',
+    )
+    (workspace / "helper.py").write_text("existing\\n", encoding="utf-8")
+    with pytest.raises(CodingError, match="already exists"):
+        await engine.propose("Add helper", [], new_paths=["helper.py"])
+    with pytest.raises(CodingError, match="Sensitive file"):
+        await engine.propose("Add environment file", [], new_paths=[".env"])
+    with pytest.raises(CodingError, match="Parent directory"):
+        await engine.propose("Add nested helper", [], new_paths=["missing/helper.py"])
+
+
+def test_approved_new_file_is_created_without_overwriting(tmp_path: Path):
+    engine, store, workspace, _ = make_engine(tmp_path, "{}")
+    content = "def answer():\n    return 42\n"
+    proposal = store.create_proposal("Add helper", [{
+        "path": "helper.py",
+        "original_content": "",
+        "original_sha256": __import__("hashlib").sha256(b"").hexdigest(),
+        "original_exists": False,
+        "content": content,
+        "diff": "",
+    }])
+    engine.approve(proposal["id"])
+
+    result = engine.apply(proposal["id"])
+
+    assert result["status"] == "applied"
+    assert result["created_files"] == ["helper.py"]
+    assert (workspace / "helper.py").read_text(encoding="utf-8") == content
+
+
+def test_new_file_apply_refuses_a_concurrent_existing_target(tmp_path: Path):
+    engine, store, workspace, _ = make_engine(tmp_path, "{}")
+    proposal = store.create_proposal("Add helper", [{
+        "path": "helper.py",
+        "original_content": "",
+        "original_sha256": __import__("hashlib").sha256(b"").hexdigest(),
+        "original_exists": False,
+        "content": "VALUE = 1\\n",
+        "diff": "",
+    }])
+    engine.approve(proposal["id"])
+    target = workspace / "helper.py"
+    target.write_text("external content\n", encoding="utf-8")
+
+    with pytest.raises(CodingError, match="no longer available|appeared before apply"):
+        engine.apply(proposal["id"])
+
+    assert target.read_text(encoding="utf-8") == "external content\n"
+    assert store.get_proposal(proposal["id"])["status"] == "approved"
+
+
+def test_created_file_is_removed_if_later_change_fails(tmp_path: Path, monkeypatch):
+    import hashlib
+    import os
+
+    engine, store, workspace, source = make_engine(tmp_path, "{}")
+    original = source.read_text(encoding="utf-8")
+    proposal = store.create_proposal("Create then fail", [
+        {
+            "path": "created.py", "original_content": "",
+            "original_sha256": hashlib.sha256(b"").hexdigest(),
+            "original_exists": False, "content": "VALUE = 1\\n", "diff": "",
+        },
+        {
+            "path": "sample.py", "original_content": original,
+            "original_sha256": hashlib.sha256(original.encode()).hexdigest(),
+            "content": "def value():\\n    return 2\\n", "diff": "",
+        },
+    ])
+    engine.approve(proposal["id"])
+    real_rename = os.rename
+    calls = 0
+
+    def fail_second_replace(src, dst, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("simulated replacement failure")
+        return real_rename(src, dst, **kwargs)
+
+    monkeypatch.setattr("crows.coding.os.rename", fail_second_replace)
+
+    with pytest.raises(CodingError, match="Apply failed"):
+        engine.apply(proposal["id"])
+
+    assert not (workspace / "created.py").exists()
+    assert source.read_text(encoding="utf-8") == original
+    assert store.get_proposal(proposal["id"])["status"] == "approved"
