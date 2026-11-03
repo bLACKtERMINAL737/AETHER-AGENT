@@ -151,6 +151,10 @@ class TaskStore:
                     FROM messaging_session_routes_legacy
                 """)
                 con.execute("DROP TABLE messaging_session_routes_legacy")
+                con.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_messaging_session_routes_channel "
+                    "ON messaging_session_routes(channel, updated_at DESC)"
+                )
 
     def create_task(self, title: str, input_text: str) -> dict[str, Any]:
         now, task_id = utc_now(), str(uuid4())
@@ -699,7 +703,7 @@ class TaskStore:
                 (session_id, f"{channel.title()} conversation", now, now),
             )
             con.execute(
-                "INSERT INTO messaging_session_routes(conversation_id,channel,session_id,created_at,updated_at) "
+                "INSERT INTO messaging_session_routes(route_id,conversation_id,channel,session_id,created_at,updated_at) "
                 "VALUES(?,?,?,?,?,?)",
                 (f"{channel}:{conversation_id}", conversation_id, channel, session_id, now, now),
             )
