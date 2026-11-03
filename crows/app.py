@@ -31,6 +31,7 @@ from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
+from .evaluation import evaluate_workflow
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crows")
@@ -1132,6 +1133,15 @@ def get_agent_workflow(workflow_id: str):
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow
+
+
+@app.get("/agents/workflows/{workflow_id}/evaluation")
+def evaluate_agent_workflow(workflow_id: str):
+    """Return a deterministic evaluation of saved workflow checkpoints."""
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return {"workflow_id": workflow_id, "evaluation": evaluate_workflow(workflow)}
 
 
 def _workflow_control_phase_allows_change(workflow: dict[str, Any]) -> bool:
