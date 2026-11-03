@@ -284,6 +284,9 @@ class ScheduleCreateRequest(BaseModel):
 
 class AgentPlanRequest(BaseModel):
     goal: str = Field(min_length=1, max_length=8_000)
+    # Supplying a previewed plan executes that exact, user-reviewed plan without
+    # asking the model to silently regenerate or alter it.
+    subtasks: list[dict[str, Any]] | None = Field(default=None, max_length=8)
 
 
 class AgentDelegateRequest(BaseModel):
@@ -1586,16 +1589,15 @@ def parse_qa_verdict(result: Any) -> dict[str, Any]:
     return {"verdict": final_verdict, "summary": summary.strip()[:1000], "findings": normalized[:50], "blocking_findings": blocking}
 
 
-@app.post("/agents/orchestrate")
-async def orchestrate_agent_work(request: AgentPlanRequest):
-    """Execute dependency-ready tasks concurrently with bounded, durable checkpoints."""
+async def _generate_agent_plan(goal: str) -> list[dict[str, Any]]:
+    """Ask the planner for a bounded DAG without creating or executing tasks."""
     route = "reasoning" if reasoning_provider.configured else "primary"
     prompt = (
         "Return only JSON: {subtasks:[{title,input,role,depends_on}]}. Create 1-4 tasks for the goal. "
         "depends_on is an array of zero-based prerequisite task indexes, or [] if independent. "
         "Dependencies must form an acyclic graph. Roles must be coding, research, memory, or monitor. "
         "Keep tasks narrow. Do not claim execution.\n\n"
-        + request.goal
+        + goal
     )
     try:
         response = await router.chat(prompt, route)
@@ -1617,6 +1619,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         subtasks = plan_subtasks(data.get("subtasks") if isinstance(data, dict) else None)
         if any(item["role"] not in {"coding", "research", "memory", "monitor"} for item in subtasks):
             raise ValueError("Planner selected a reserved role")
+        return subtasks
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail="No model route configured for planning.") from exc
     except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as exc:
@@ -1628,6 +1631,34 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
     except Exception as exc:
         logger.exception("Unexpected agent planner failure")
         raise HTTPException(status_code=502, detail="Planner failed unexpectedly; no tasks were created.") from exc
+
+
+@app.post("/agents/plan")
+async def preview_agent_plan(request: AgentPlanRequest):
+    """Return a validated plan for review; this endpoint never creates or runs tasks."""
+    if request.subtasks is not None:
+        raise HTTPException(status_code=400, detail="Do not supply subtasks when requesting a new plan preview.")
+    subtasks = await _generate_agent_plan(request.goal)
+    return {
+        "goal": request.goal,
+        "subtasks": subtasks,
+        "executed": False,
+        "approval_required": True,
+    }
+
+
+@app.post("/agents/orchestrate")
+async def orchestrate_agent_work(request: AgentPlanRequest):
+    """Execute a generated or explicitly reviewed dependency-ready plan."""
+    if request.subtasks is None:
+        subtasks = await _generate_agent_plan(request.goal)
+    else:
+        try:
+            subtasks = plan_subtasks(request.subtasks)
+            if any(item["role"] not in {"coding", "research", "memory", "monitor"} for item in subtasks):
+                raise ValueError("Supplied plan contains a reserved role")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Reviewed plan is invalid; no tasks were created.") from exc
 
     # Never allow a model-generated plan or environment value to create unbounded work.
     try:

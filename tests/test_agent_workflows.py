@@ -679,3 +679,99 @@ async def test_qa_quality_gate_requires_explicit_structured_pass(
     assert result["diagnostics"]["qa_verdict"] == expected_verdict
     if expected_status == "partial":
         assert any(item["category"] == "qa_quality_gate" for item in result["diagnostics"]["failures"])
+
+
+
+@pytest.mark.asyncio
+async def test_plan_preview_returns_validated_plan_without_creating_tasks_or_workflow(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    result = await app_module.preview_agent_plan(
+        app_module.AgentPlanRequest(goal="Inspect the repository safely")
+    )
+
+    assert result["executed"] is False
+    assert result["approval_required"] is True
+    assert result["goal"] == "Inspect the repository safely"
+    assert result["subtasks"] == [
+        {**item, "depends_on": item.get("depends_on", [])}
+        for item in router.plan["subtasks"]
+    ]
+    assert store.list_workflows(limit=10) == []
+    assert store.list_tasks(limit=10) == []
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_executes_the_exact_reviewed_plan_without_replanning(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    reviewed = [
+        {
+            "title": "Only reviewed task",
+            "input": "Perform this bounded read-only check",
+            "role": "research",
+            "depends_on": [],
+        }
+    ]
+    executed = []
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert store.claim_task(task_id)
+        if task["title"] == "[qa_security] Review specialist results":
+            # The orchestrator always runs a separate, strict QA gate after
+            # specialist work. Give that gate a valid explicit PASS fixture.
+            result = {
+                "answer": json.dumps({
+                    "verdict": "PASS",
+                    "summary": "The reviewed specialist result is verified.",
+                    "findings": [],
+                })
+            }
+        else:
+            executed.append(task["title"])
+            result = {"answer": "verified"}
+        store.set_task_status(task_id, "succeeded", result=result)
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "result": result,
+            "tool_calls": 0,
+            "tool_attempts": 0,
+        }
+
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Reviewed goal", subtasks=reviewed)
+    )
+
+    assert result["status"] == "succeeded"
+    assert executed == ["[research] Only reviewed task"]
+    assert router.planning_calls == []
+    assert store.get_workflow(result["workflow_id"])["plan"] == reviewed
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_rejects_invalid_reviewed_plan_before_creating_work(
+    tmp_path, monkeypatch
+):
+    store, router = configure(monkeypatch, tmp_path)
+    invalid = [
+        {
+            "title": "Unsafe role",
+            "input": "Try to use a reserved role",
+            "role": "planner",
+            "depends_on": [],
+        }
+    ]
+
+    with pytest.raises(HTTPException) as error:
+        await app_module.orchestrate_agent_work(
+            app_module.AgentPlanRequest(goal="Invalid reviewed plan", subtasks=invalid)
+        )
+
+    assert error.value.status_code == 400
+    assert store.list_workflows(limit=10) == []
+    assert router.planning_calls == []
