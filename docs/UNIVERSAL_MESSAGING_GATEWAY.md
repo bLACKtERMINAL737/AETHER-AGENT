@@ -1,75 +1,49 @@
-"""Explicit channel policy registry for the shared inbound agent runtime.
+# Shared inbound messaging gateway
 
-Provider webhooks normalize and authenticate events before enqueueing them.
-This registry controls which channels may invoke the conservative, tool-free
-agent reply path; it does not dynamically load code or enable outbound
-transports. Outbound delivery still requires a configured transport.
-"""
-from __future__ import annotations
+Crows uses a provider-neutral inbound dispatch boundary:
 
-from dataclasses import dataclass
-import re
+1. A provider connector authenticates and validates its own webhook or interaction.
+2. The connector normalizes the event into the persistent messaging inbox.
+3. Channel-to-session routing selects an isolated conversation session.
+4. The durable dispatch journal records the normalized message and session route.
+5. The shared inbound agent worker applies an explicit channel reply policy, loads
+   bounded session history, and invokes the same tool-free model path.
+6. The worker persists the turn and queues a deterministic-idempotency outbound
+   message. The shared outbox handles provider delivery.
 
-_CHANNEL_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+## Inbound reply policy registry
 
+`crows.messaging_gateway.InboundChannelRegistry` is an explicit allowlist.
+The built-in registry currently enables Telegram (4,096-character replies) and
+Discord (2,000-character replies). A policy supplies a channel key, safe display
+label, and maximum reply size. Unknown channels fail closed before a model call.
+The registry never imports connector code dynamically.
 
-@dataclass(frozen=True)
-class InboundChannelPolicy:
-    """Bounded reply policy applied after a verified message is dispatched."""
+A new channel needs all of the following before it is production-ready:
+- a provider-specific authentication and normalization adapter;
+- durable inbox and channel-scoped session routing;
+- an explicit inbound reply policy;
+- a provider-specific outbound transport and delivery-status mapping;
+- tests for idempotency, ordering, isolation, failure, and uncertain delivery.
 
-    channel_name: str
-    display_name: str
-    max_reply_chars: int
+Registering a reply policy alone does not enable a provider integration. In
+particular, it does not create a webhook endpoint or outbound transport.
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.channel_name, str) or not _CHANNEL_RE.fullmatch(self.channel_name):
-            raise ValueError("channel_name must be a lowercase provider key")
-        if (
-            not isinstance(self.display_name, str)
-            or not self.display_name.strip()
-            or len(self.display_name.strip()) > 64
-        ):
-            raise ValueError("display_name must contain 1 to 64 characters")
-        if (
-            isinstance(self.max_reply_chars, bool)
-            or not isinstance(self.max_reply_chars, int)
-            or not 1 <= self.max_reply_chars <= 20_000
-        ):
-            raise ValueError("max_reply_chars must be between 1 and 20000")
-        object.__setattr__(self, "display_name", self.display_name.strip())
+## Safety and delivery semantics
 
+Inbound content and conversation history are untrusted. The shared agent worker
+has no tool registry, workspace, shell, browser, coding, or arbitrary action
+capabilities. It does not claim to perform external actions.
 
-class InboundChannelRegistry:
-    """Explicit allowlist for inbound agent replies; registration is never dynamic."""
+The dispatch journal serializes work within each channel/conversation. Expired
+leases become `unknown` and are not automatically replayed. A dispatch marked
+`completed` means a reply was generated and durably queued, not that the
+provider confirmed delivery. Inspect the outbound journal for delivery status.
 
-    def __init__(self) -> None:
-        self._policies: dict[str, InboundChannelPolicy] = {}
+## Current connector coverage
 
-    def register(self, policy: InboundChannelPolicy) -> None:
-        if not isinstance(policy, InboundChannelPolicy):
-            raise ValueError("policy must be an InboundChannelPolicy")
-        if policy.channel_name in self._policies:
-            raise ValueError(f"inbound reply policy already registered: {policy.channel_name}")
-        self._policies[policy.channel_name] = policy
-
-    def get(self, channel: str) -> InboundChannelPolicy:
-        if not isinstance(channel, str):
-            raise ValueError("channel must be text")
-        try:
-            return self._policies[channel]
-        except KeyError as exc:
-            raise ValueError(f"inbound agent replies are not enabled for channel: {channel}") from exc
-
-    def list_channels(self) -> list[str]:
-        return sorted(self._policies)
-
-
-def build_default_inbound_channels() -> InboundChannelRegistry:
-    """Return the built-in reply policies for currently supported connectors."""
-    registry = InboundChannelRegistry()
-    registry.register(InboundChannelPolicy("telegram", "Telegram", 4096))
-    registry.register(InboundChannelPolicy("discord", "Discord", 2000))
-    return registry
-
-
-DEFAULT_INBOUND_CHANNELS = build_default_inbound_channels()
+- Telegram: verified text webhook, inbox persistence, session routing, optional
+  autonomous tool-free replies, and outbound bot messages.
+- Discord: signed slash-command interactions, inbox persistence, session routing,
+  optional autonomous tool-free replies, and deferred private response updates.
+- Other platforms: no production inbound or outbound connector is implied.
