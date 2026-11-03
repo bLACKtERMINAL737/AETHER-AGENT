@@ -31,6 +31,7 @@ from .messaging_dispatch import InboundDispatchError, InboundDispatchStore
 from .messaging_runtime import inbound_agent_worker_loop
 from .scheduler_store import SchedulerStore
 from .messaging import MAX_ID_CHARS, MessagingContractError
+from .messaging_adapters import build_outbound_adapter_registry, OutboundTransportMessage
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
@@ -62,6 +63,11 @@ reasoning_provider = ModelProvider(
     timeout_seconds=settings.model_timeout_seconds,
 )
 router = ModelRouter(primary_provider, coding_provider, fallback_provider, reasoning=reasoning_provider)
+
+outbound_adapter_registry = build_outbound_adapter_registry(
+    telegram_config=lambda: _telegram_config(),
+    discord_webhook_url=lambda: _discord_webhook_url(),
+)
 coding = CodingEngine(
     settings.workspace, store, router,
     enable_test_runner=get_env("CROWS_ENABLE_TEST_RUNNER", "").lower() == "true",
@@ -870,74 +876,27 @@ async def deliver_outbound_batch(
             outcomes["failed"] += 1
             continue
         try:
-            discord_method = "post"
-            if channel == "telegram":
-                bot_token, _ = _telegram_config()
-                if not bot_token:
-                    messaging_store.finish_outbound_lease(
-                        message_id, worker_id=worker_id, status="failed"
-                    )
-                    outcomes["failed"] += 1
-                    continue
-                url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-                payload = {"chat_id": target, "text": item["text"]}
-            elif channel == "discord":
-                if target == "configured-webhook":
-                    webhook_url = _discord_webhook_url()
-                    if not webhook_url:
-                        messaging_store.finish_outbound_lease(
-                            message_id, worker_id=worker_id, status="failed"
-                        )
-                        outcomes["failed"] += 1
-                        continue
-                    url = webhook_url
-                else:
-                    try:
-                        interaction_target = json.loads(target)
-                    except (TypeError, json.JSONDecodeError):
-                        interaction_target = {}
-                    if (
-                        not isinstance(interaction_target, dict)
-                        or interaction_target.get("kind") != "discord_interaction"
-                        or not re.fullmatch(r"[0-9]{1,25}", str(interaction_target.get("application_id", "")))
-                        or not re.fullmatch(r"[A-Za-z0-9._~=-]{20,200}", str(interaction_target.get("token", "")))
-                    ):
-                        messaging_store.finish_outbound_lease(
-                            message_id, worker_id=worker_id, status="failed"
-                        )
-                        outcomes["failed"] += 1
-                        continue
-                    url = (
-                        "https://discord.com/api/webhooks/"
-                        + interaction_target["application_id"] + "/"
-                        + interaction_target["token"] + "/messages/@original"
-                    )
-                    discord_method = "patch"
-                payload = {"content": item["text"]}
-            else:
+            try:
+                adapter = outbound_adapter_registry.get(channel)
+            except MessagingContractError:
                 messaging_store.finish_outbound_lease(
                     message_id, worker_id=worker_id, status="failed"
                 )
                 outcomes["failed"] += 1
                 continue
-
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-                if channel == "discord" and discord_method == "patch":
-                    response = await client.patch(url, json=payload)
-                else:
-                    response = await client.post(
-                        url, json=payload,
-                        params={"wait": "true"} if channel == "discord" else None,
-                    )
-            if response.status_code == 429:
-                retry_after = 5
-                try:
-                    retry_after = int(response.headers.get("Retry-After", "5"))
-                except (TypeError, ValueError):
-                    pass
+            receipt = await adapter.send(
+                OutboundTransportMessage(
+                    channel=channel,
+                    delivery_target=target,
+                    text=item["text"],
+                    idempotency_key=item["idempotency_key"],
+                )
+            )
+            if receipt.status_code == 429:
                 retry_result = messaging_store.retry_outbound_lease(
                     message_id, worker_id=worker_id,
-                    delay_seconds=min(max(retry_after, 1), 300), max_retries=3,
+                    delay_seconds=min(max(receipt.retry_after_seconds or 5, 1), 300),
+                    max_retries=3,
                 )
                 if retry_result == "scheduled":
                     outcomes["retried"] += 1
@@ -946,17 +905,10 @@ async def deliver_outbound_batch(
                 else:
                     outcomes["skipped"] += 1
                 continue
-            body = response.json() if response.content else {}
-            if channel == "telegram":
-                ok = response.is_success and isinstance(body, dict) and body.get("ok") is True
-                provider_id = str((body.get("result") or {}).get("message_id", "")) or None
-            else:
-                ok = response.is_success and isinstance(body, dict) and bool(body.get("id"))
-                provider_id = str(body.get("id")) if ok else None
-            status = "sent" if ok else "failed"
+            status = "sent" if receipt.success else "failed"
             finished = messaging_store.finish_outbound_lease(
                 message_id, worker_id=worker_id, status=status,
-                provider_message_id=provider_id,
+                provider_message_id=receipt.provider_message_id,
             )
             if not finished:
                 outcomes["skipped"] += 1
