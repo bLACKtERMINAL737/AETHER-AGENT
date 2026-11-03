@@ -144,6 +144,10 @@ class TaskStore:
                 (utc_now(), task_id),
             )
             if cursor.rowcount == 1:
+                con.execute(
+                    "UPDATE workflow_controls SET state='running',updated_at=? WHERE workflow_id=?",
+                    (utc_now(), workflow_id),
+                )
                 return True
             row = con.execute("SELECT id FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
