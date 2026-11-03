@@ -71,3 +71,33 @@ def evaluate_workflow(workflow: dict[str, Any]) -> dict[str, Any]:
         ),
         "diagnostics": results.get("diagnostics") if isinstance(results.get("diagnostics"), dict) else {},
     }
+
+
+def summarize_workflows(workflows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate recent workflow evaluations without exposing workflow content or IDs."""
+    outcomes = {"passed": 0, "incomplete": 0, "needs_attention": 0}
+    task_counts = {status: 0 for status in ("queued", "running", "succeeded", "failed", "unknown", "blocked")}
+    qa_verdicts = {"PASS": 0, "NEEDS_ATTENTION": 0, "NOT_PASSED": 0, "UNVERIFIED": 0}
+    tool_calls = 0
+    tool_attempts = 0
+    for workflow in workflows:
+        report = evaluate_workflow(workflow)
+        outcomes[report["outcome"]] += 1
+        for status, count in report["task_counts"].items():
+            if status in task_counts and type(count) is int and count >= 0:
+                task_counts[status] += count
+        verdict = report["qa_verdict"]
+        if verdict in qa_verdicts:
+            qa_verdicts[verdict] += 1
+        tool_calls += report["tool_calls"]
+        tool_attempts += report["tool_attempts"]
+    total = len(workflows)
+    return {
+        "sampled_workflows": total,
+        "outcomes": outcomes,
+        "pass_rate": round(outcomes["passed"] / total, 4) if total else None,
+        "task_counts": task_counts,
+        "qa_verdicts": qa_verdicts,
+        "tool_calls": tool_calls,
+        "tool_attempts": tool_attempts,
+    }
