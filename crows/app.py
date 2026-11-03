@@ -855,7 +855,8 @@ def messaging_inbound(request: MessagingInboundRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return result
+    session = store.get_or_create_messaging_session(result["conversation_id"], request.channel)
+    return {**result, "session_id": session["id"]}
 
 
 @app.post("/messaging/outbound")
