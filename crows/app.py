@@ -876,7 +876,14 @@ async def deliver_outbound_batch(
             outcomes["failed"] += 1
             continue
         try:
-            adapter = outbound_adapter_registry.get(channel)
+            try:
+                adapter = outbound_adapter_registry.get(channel)
+            except MessagingContractError:
+                messaging_store.finish_outbound_lease(
+                    message_id, worker_id=worker_id, status="failed"
+                )
+                outcomes["failed"] += 1
+                continue
             receipt = await adapter.send(
                 OutboundTransportMessage(
                     channel=channel,
