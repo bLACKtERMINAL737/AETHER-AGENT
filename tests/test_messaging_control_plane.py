@@ -70,10 +70,15 @@ def test_messaging_control_plane_distinguishes_config_from_enabled_workers(monke
 
 def test_messaging_channels_lists_registered_channels_and_real_configuration(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("CROWS_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("AETHER_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("CROWS_TELEGRAM_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("AETHER_TELEGRAM_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("CROWS_DISCORD_APPLICATION_ID", raising=False)
+    monkeypatch.delenv("AETHER_DISCORD_APPLICATION_ID", raising=False)
     monkeypatch.delenv("CROWS_DISCORD_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("AETHER_DISCORD_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("CROWS_DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("AETHER_DISCORD_WEBHOOK_URL", raising=False)
     store = MessagingStore(tmp_path / "messaging.sqlite3")
     monkeypatch.setattr(app_module, "messaging_store", store)
 
