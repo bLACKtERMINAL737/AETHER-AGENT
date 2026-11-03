@@ -864,6 +864,7 @@ async def deliver_outbound_batch(
             outcomes["failed"] += 1
             continue
         try:
+            discord_method = "post"
             if channel == "telegram":
                 bot_token, _ = _telegram_config()
                 if not bot_token:
@@ -905,6 +906,7 @@ async def deliver_outbound_batch(
                         + interaction_target["application_id"] + "/"
                         + interaction_target["token"] + "/messages/@original"
                     )
+                    discord_method = "patch"
                 payload = {"content": item["text"]}
             else:
                 messaging_store.finish_outbound_lease(
@@ -914,10 +916,13 @@ async def deliver_outbound_batch(
                 continue
 
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-                response = await client.post(
-                    url, json=payload,
-                    params={"wait": "true"} if channel == "discord" else None,
-                )
+                if channel == "discord" and discord_method == "patch":
+                    response = await client.patch(url, json=payload)
+                else:
+                    response = await client.post(
+                        url, json=payload,
+                        params={"wait": "true"} if channel == "discord" else None,
+                    )
             if response.status_code == 429:
                 retry_after = 5
                 try:
