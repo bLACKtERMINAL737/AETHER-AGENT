@@ -1596,7 +1596,7 @@ async def _generate_agent_plan(goal: str) -> list[dict[str, Any]]:
         "Return only JSON: {subtasks:[{title,input,role,depends_on}]}. Create 1-4 tasks for the goal. "
         "depends_on is an array of zero-based prerequisite task indexes, or [] if independent. "
         "Dependencies must form an acyclic graph. Roles must be coding, research, memory, or monitor. "
-        "Keep tasks narrow. Do not claim execution.\\n\\n"
+        "Keep tasks narrow. Do not claim execution.\n\n"
         + goal
     )
     try:
@@ -1608,11 +1608,11 @@ async def _generate_agent_plan(goal: str) -> list[dict[str, Any]]:
             raise ValueError("Planner response has no textual answer")
         raw_answer = raw_answer.strip()
         if raw_answer.startswith("```"):
-            raw_answer = re.sub(r"^```(?:json)?\\s*|\\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
+            raw_answer = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_answer, flags=re.IGNORECASE).strip()
         try:
             data = json.loads(raw_answer)
         except json.JSONDecodeError:
-            object_match = re.search(r"\\{.*\\}", raw_answer, flags=re.DOTALL)
+            object_match = re.search(r"\{.*\}", raw_answer, flags=re.DOTALL)
             if object_match is None:
                 raise
             data = json.loads(object_match.group(0))
