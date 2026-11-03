@@ -39,11 +39,17 @@ def test_messaging_control_plane_reports_readiness_without_secrets(monkeypatch, 
 
 def test_messaging_control_plane_distinguishes_config_from_enabled_workers(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("CROWS_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("AETHER_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("CROWS_TELEGRAM_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("AETHER_TELEGRAM_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("CROWS_DISCORD_APPLICATION_ID", raising=False)
+    monkeypatch.delenv("AETHER_DISCORD_APPLICATION_ID", raising=False)
     monkeypatch.delenv("CROWS_DISCORD_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("AETHER_DISCORD_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("CROWS_DISCORD_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("AETHER_DISCORD_WEBHOOK_URL", raising=False)
     monkeypatch.delenv("CROWS_MESSAGING_TARGET_KEY", raising=False)
+    monkeypatch.delenv("AETHER_MESSAGING_TARGET_KEY", raising=False)
     monkeypatch.setenv("CROWS_MESSAGING_WORKER_ENABLED", "false")
     monkeypatch.setenv("CROWS_INBOUND_AGENT_WORKER_ENABLED", "false")
     store = MessagingStore(tmp_path / "messaging.sqlite3")
