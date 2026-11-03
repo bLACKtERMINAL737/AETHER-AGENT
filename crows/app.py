@@ -1990,6 +1990,8 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 )
                 raise
 
+        while store.get_workflow_control(workflow_id) == "paused":
+            await asyncio.sleep(0.25)
         outcomes = ordered_outcomes()
         if store.get_workflow_control(workflow_id) == "cancel_requested":
             review = {
