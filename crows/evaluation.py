@@ -101,3 +101,76 @@ def summarize_workflows(workflows: list[dict[str, Any]]) -> dict[str, Any]:
         "tool_calls": tool_calls,
         "tool_attempts": tool_attempts,
     }
+
+
+def build_workflow_timeline(
+    workflow: dict[str, Any],
+    task_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build a sanitized timeline from durable workflow, task, and tool journals."""
+    events: list[tuple[str, int, dict[str, Any]]] = []
+    sequence = 0
+
+    def add(at: Any, event: str, status: Any, **metadata: Any) -> None:
+        nonlocal sequence
+        if not isinstance(at, str) or not at:
+            return
+        item = {
+            "at": at,
+            "event": event,
+            "status": status if isinstance(status, str) else "unknown",
+        }
+        for key in ("phase", "plan_index", "role", "tool_name"):
+            value = metadata.get(key)
+            if value is not None:
+                item[key] = value
+        events.append((at, sequence, item))
+        sequence += 1
+
+    add(workflow.get("created_at"), "workflow.created", "running")
+    records = {
+        item.get("id"): item
+        for item in task_records
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    results = workflow.get("results")
+    results = results if isinstance(results, dict) else {}
+    outcomes = results.get("tasks")
+    outcomes = outcomes if isinstance(outcomes, list) else []
+
+    def add_task_events(outcome: dict[str, Any], *, phase: str, plan_index: int | None = None) -> None:
+        task_id = outcome.get("task_id")
+        task = records.get(task_id) if isinstance(task_id, str) else None
+        if task is None:
+            return
+        role = outcome.get("role") if isinstance(outcome.get("role"), str) else (
+            "qa_security" if phase == "qa" else None
+        )
+        metadata = {"phase": phase, "plan_index": plan_index, "role": role}
+        add(task.get("created_at"), "task.created", "queued", **metadata)
+        add(task.get("updated_at"), "task.status", task.get("status"), **metadata)
+        executions = task.get("tool_executions")
+        if not isinstance(executions, list):
+            return
+        for execution in executions:
+            if not isinstance(execution, dict):
+                continue
+            tool_name = execution.get("tool_name")
+            tool_metadata = {**metadata, "tool_name": tool_name[:100] if isinstance(tool_name, str) else None}
+            add(execution.get("created_at"), "tool.started", "running", **tool_metadata)
+            add(execution.get("updated_at"), "tool.status", execution.get("status"), **tool_metadata)
+
+    for index, outcome in enumerate(outcomes):
+        if isinstance(outcome, dict):
+            plan_index = outcome.get("plan_index", index)
+            if not isinstance(plan_index, int) or isinstance(plan_index, bool):
+                plan_index = index
+            add_task_events(outcome, phase="specialist", plan_index=plan_index)
+
+    qa_review = results.get("qa_review")
+    if isinstance(qa_review, dict):
+        add_task_events(qa_review, phase="qa")
+
+    add(workflow.get("updated_at"), "workflow.status", workflow.get("status"))
+    events.sort(key=lambda item: (item[0], item[1]))
+    return [item[2] for item in events]
