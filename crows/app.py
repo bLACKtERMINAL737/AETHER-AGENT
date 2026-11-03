@@ -417,7 +417,7 @@ def _discord_webhook_url() -> str:
 def _discord_interaction_config() -> tuple[str, str]:
     application_id = (get_env("CROWS_DISCORD_APPLICATION_ID", "") or "").strip()
     public_key = (get_env("CROWS_DISCORD_PUBLIC_KEY", "") or "").strip().lower()
-    if not application_id.isdecimal() or not re.fullmatch(r"[0-9a-f]{64}", public_key):
+    if not re.fullmatch(r"[0-9]{1,25}", application_id) or not re.fullmatch(r"[0-9a-f]{64}", public_key):
         return "", ""
     return application_id, public_key
 
@@ -487,10 +487,10 @@ async def discord_interactions(request: Request):
     user = member.get("user") if isinstance(member, dict) else payload.get("user")
     if (
         not isinstance(interaction_id, str) or not interaction_id.isdecimal()
-        or not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._-]{20,200}", token)
-        or not isinstance(channel_id, str) or not channel_id.isdecimal()
+        or not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._~=-]{20,200}", token)
+        or not isinstance(channel_id, str) or not re.fullmatch(r"[0-9]{1,25}", channel_id)
         or not isinstance(user, dict) or not isinstance(user.get("id"), str)
-        or not user["id"].isdecimal()
+        or not re.fullmatch(r"[0-9]{1,25}", user["id"])
         or not isinstance(data, dict) or data.get("name") != "crows"
     ):
         return {"type": 4, "data": {"content": "Use the configured /crows command with a message.", "flags": 64}}
@@ -893,8 +893,8 @@ async def deliver_outbound_batch(
                     if (
                         not isinstance(interaction_target, dict)
                         or interaction_target.get("kind") != "discord_interaction"
-                        or not str(interaction_target.get("application_id", "")).isdecimal()
-                        or not re.fullmatch(r"[A-Za-z0-9._-]{20,200}", str(interaction_target.get("token", "")))
+                        or not re.fullmatch(r"[0-9]{1,25}", str(interaction_target.get("application_id", "")))
+                        or not re.fullmatch(r"[A-Za-z0-9._~=-]{20,200}", str(interaction_target.get("token", "")))
                     ):
                         messaging_store.finish_outbound_lease(
                             message_id, worker_id=worker_id, status="failed"
