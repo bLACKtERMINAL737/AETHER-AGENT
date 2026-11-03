@@ -23,3 +23,10 @@ The registry intentionally starts empty. Telegram, Discord, WhatsApp, Slack, ema
 Run `pytest -q tests/test_messaging.py`.
 
 This suite tests the provider-neutral contract only. It does not prove delivery to any external messaging platform.
+
+
+## Agent session routing
+
+Each verified inbound conversation scope now resolves to one durable Crows agent session. The route is keyed by the opaque conversation ID and channel, created atomically with the session record, and reused across repeated inbound events and process restarts. Different channels remain isolated even when their provider-side user identifiers happen to match. Conversation list/history responses expose the associated internal `session_id` when one exists.
+
+This is the routing foundation only: inbound events are still persisted in the messaging inbox and are not yet automatically dispatched to the model or converted into agent chat turns. A later gateway dispatch layer must apply per-channel policy, user consent, rate limits, and idempotent processing before invoking the shared agent runtime.

@@ -532,6 +532,16 @@ class MessagingStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_conversation(self, conversation_id: str) -> dict | None:
+        if not isinstance(conversation_id, str) or not _CONVERSATION_RE.fullmatch(conversation_id):
+            raise MessagingContractError("conversation ID is invalid")
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT id, channel, display_name, created_at, updated_at FROM messaging_conversations WHERE id=?",
+                (conversation_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def list_conversations(self, *, limit: int = 50) -> list[dict]:
         if not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
