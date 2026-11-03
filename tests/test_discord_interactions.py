@@ -72,6 +72,7 @@ def discord_setup(monkeypatch, tmp_path: Path):
     sessions = TaskStore(db_path)
     monkeypatch.setattr(app_module, "messaging_store", messages)
     monkeypatch.setattr(app_module, "inbound_dispatch_store", dispatches)
+    monkeypatch.setattr(app_module, "store", sessions)
     FakeClient.calls = []
     monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeClient)
     return private_key, messages, dispatches, sessions
