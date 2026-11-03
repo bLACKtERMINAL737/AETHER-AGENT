@@ -2099,6 +2099,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
             "workflow_id": workflow_id,
             "goal": request.goal,
             "status": final_status,
+            "control_state": "completed",
             "tasks": outcomes,
             "qa_review": review,
             "workspace_modified": False,
