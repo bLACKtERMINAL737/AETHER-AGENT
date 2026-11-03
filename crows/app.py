@@ -1500,6 +1500,7 @@ async def recover_agent_workflow(workflow_id: str):
             and qa_verdict == "PASS"
         )
         final_status = "succeeded" if all_ok else "partial"
+        store.set_workflow_control(workflow_id, "completed")
         store.update_workflow(
             workflow_id,
             final_status,
