@@ -92,6 +92,7 @@ async def test_telegram_adapter_reports_missing_configuration_without_network():
 
 @pytest.mark.asyncio
 async def test_discord_webhook_adapter_uses_wait_and_parses_receipt():
+    FakeClient.response = FakeResponse(200, {"id": "discord-message"})
     adapter = DiscordOutboundAdapter(
         lambda: "https://discord.com/api/webhooks/123/secret"
     )
