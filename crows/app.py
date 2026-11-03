@@ -445,13 +445,19 @@ def _verify_discord_interaction(raw_body: bytes, signature: str, timestamp: str)
 
 @app.get("/messaging/discord/status")
 def discord_status():
-    configured = bool(_discord_webhook_url())
+    webhook_configured = bool(_discord_webhook_url())
     application_id, public_key = _discord_interaction_config()
+    interactions_configured = bool(application_id and public_key)
     return {
         "channel": "discord",
-        "configured": configured or bool(application_id and public_key),
-        "connector_type": "incoming_webhook",
-        "interactions_configured": bool(application_id and public_key),
+        "configured": webhook_configured or interactions_configured,
+        "webhook_configured": webhook_configured,
+        "interactions_configured": interactions_configured,
+        "connector_type": (
+            "incoming_webhook_and_interactions" if webhook_configured and interactions_configured
+            else "incoming_webhook" if webhook_configured
+            else "interactions" if interactions_configured else "none"
+        ),
     }
 
 
