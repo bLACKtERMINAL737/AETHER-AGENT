@@ -127,6 +127,23 @@ class InboundDispatchStore:
                     claimed.append(dict(updated))
         return claimed
 
+    def renew(self, dispatch_id: str, *, worker_id: str,
+              lease_seconds: int = 120) -> bool:
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 5 <= lease_seconds <= 900:
+            raise InboundDispatchError("lease_seconds must be between 5 and 900")
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        lease_until = (now_dt + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as con:
+            con.execute(
+                """UPDATE messaging_inbound_dispatch
+                   SET lease_until=?,updated_at=?
+                   WHERE id=? AND state='processing' AND lease_owner=?
+                     AND lease_until >= ?""",
+                (lease_until, now, dispatch_id, worker_id, now),
+            )
+            return con.execute("SELECT changes()").fetchone()[0] == 1
+
     def finish(self, dispatch_id: str, *, worker_id: str, state: str,
                diagnostic: str | None = None) -> bool:
         if state not in {"completed", "failed", "unknown"}:
