@@ -114,7 +114,7 @@ async def process_inbound_dispatch(
         queued = messages.queue_outbound(
             channel=channel, provider_user_id=f"dispatch:{dispatch_id}",
             text=answer, idempotency_key=f"inbound-reply:{dispatch_id}",
-            delivery_target=target,
+            delivery_target=target, conversation_id=dispatch["conversation_id"],
         )
         if queued["message"].get("status") not in {"accepted", "sent", "delivered"}:
             raise ValueError("The outbound reply is not in a deliverable state.")
