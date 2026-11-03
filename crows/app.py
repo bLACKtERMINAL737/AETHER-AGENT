@@ -31,7 +31,7 @@ from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
-from .evaluation import evaluate_workflow
+from .evaluation import evaluate_workflow, summarize_workflows
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crows")
@@ -1142,6 +1142,14 @@ def evaluate_agent_workflow(workflow_id: str):
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return {"workflow_id": workflow_id, "evaluation": evaluate_workflow(workflow)}
+
+@app.get("/agents/evaluations")
+def summarize_agent_evaluations(limit: int = 50):
+    """Return content-free aggregate evaluation metrics for recent workflows."""
+    if not 1 <= limit <= 200:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 200")
+    workflows = store.list_workflows(limit)
+    return {"summary": summarize_workflows(workflows)}
 
 
 def _workflow_control_phase_allows_change(workflow: dict[str, Any]) -> bool:
