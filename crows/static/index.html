@@ -231,6 +231,20 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
 
   <section class="panel" style="margin-top:16px" aria-labelledby="workflowsHeading">
     <div class="top"><div><h2 id="workflowsHeading">Agent Workflows</h2><div class="muted">Inspect durable multi-step runs. Recovery is explicit and only available for interrupted workflows.</div></div><button id="refreshWorkflows">Refresh workflows</button></div>
+    <div style="margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:12px;background:#07111b">
+      <h2>Review-first planning</h2>
+      <div class="muted small">Generate a plan without running tasks. Inspect every task and dependency before explicitly executing the exact reviewed plan.</div>
+      <label for="agentPlanGoal">What should Crows work on?</label>
+      <textarea id="agentPlanGoal" maxlength="8000" placeholder="Describe a bounded goal for the agent team…"></textarea>
+      <div class="actions">
+        <button id="previewAgentPlan" class="primary">Generate plan preview</button>
+        <button id="executeAgentPlan" disabled>Execute reviewed plan</button>
+        <button id="discardAgentPlan" disabled>Discard preview</button>
+      </div>
+      <div id="agentPlanStatus" class="status" role="status"></div>
+      <pre id="agentPlanPreview" hidden></pre>
+      <div class="muted small">Previewing does not create tasks. Execution uses the exact displayed plan, and the normal task journal and QA gate still apply.</div>
+    </div>
     <div class="task-grid">
       <div>
         <div id="workflowList" class="task-list"><div class="muted">Loading workflows…</div></div>
@@ -773,6 +787,68 @@ $("runTests").onclick=async()=>{
  try{const result=await api("/coding/run-tests",{method:"POST",body:"{}"});$("testOutput").style.display="block";$("testOutput").textContent="Passed: "+result.passed+"\nReturn code: "+result.returncode+"\nSandboxed: "+result.sandboxed+"\nNetwork: "+result.network+"\n\nSTDOUT\n"+result.stdout+"\nSTDERR\n"+result.stderr;setStatus("testStatus",result.passed?"Tests passed.":"Tests failed; inspect output.",result.passed?"good":"bad");}
  catch(e){setStatus("testStatus",e.message,"bad");}
  finally{$("runTests").disabled=false;}
+};
+
+let reviewedAgentPlan = null;
+function renderAgentPlanPreview(plan){
+  const pre=$("agentPlanPreview");
+  pre.hidden=false;
+  pre.textContent=JSON.stringify({
+    goal:plan.goal,
+    approval_required:true,
+    executed:false,
+    subtasks:plan.subtasks.map((task,index)=>({
+      index,
+      title:task.title,
+      role:task.role,
+      input:task.input,
+      depends_on:task.depends_on||[]
+    }))
+  },null,2);
+  $("executeAgentPlan").disabled=false;
+  $("discardAgentPlan").disabled=false;
+}
+$("previewAgentPlan").onclick=async()=>{
+  const goal=$("agentPlanGoal").value.trim();
+  if(!goal){setStatus("agentPlanStatus","Enter a goal before generating a plan.","bad");return;}
+  $("previewAgentPlan").disabled=true;
+  $("executeAgentPlan").disabled=true;
+  reviewedAgentPlan=null;
+  $("agentPlanPreview").hidden=true;
+  setStatus("agentPlanStatus","Generating a preview only; no tasks will be created…");
+  try{
+    const plan=await api("/agents/plan",{method:"POST",body:JSON.stringify({goal})});
+    if(plan.executed!==false||plan.approval_required!==true||!Array.isArray(plan.subtasks)||!plan.subtasks.length)throw new Error("Planner response did not contain a valid review-only plan.");
+    reviewedAgentPlan={goal:plan.goal,subtasks:plan.subtasks};
+    renderAgentPlanPreview(plan);
+    setStatus("agentPlanStatus","Plan ready for review. Nothing has executed yet.","good");
+  }catch(e){setStatus("agentPlanStatus",e.message,"bad");}
+  finally{$("previewAgentPlan").disabled=false;}
+};
+$("discardAgentPlan").onclick=()=>{
+  reviewedAgentPlan=null;
+  $("agentPlanPreview").hidden=true;
+  $("executeAgentPlan").disabled=true;
+  $("discardAgentPlan").disabled=true;
+  setStatus("agentPlanStatus","Plan preview discarded. No tasks were created.");
+};
+$("executeAgentPlan").onclick=async()=>{
+  if(!reviewedAgentPlan)return;
+  if(!confirm("Execute this exact reviewed plan? Crows will create workflow tasks and run them, including its QA/security review."))return;
+  $("executeAgentPlan").disabled=true;
+  $("previewAgentPlan").disabled=true;
+  setStatus("agentPlanStatus","Executing the exact reviewed plan…");
+  try{
+    const result=await api("/agents/orchestrate",{method:"POST",body:JSON.stringify(reviewedAgentPlan)});
+    reviewedAgentPlan=null;
+    $("agentPlanPreview").textContent=JSON.stringify(result,null,2);
+    $("agentPlanPreview").hidden=false;
+    $("discardAgentPlan").disabled=true;
+    setStatus("agentPlanStatus","Execution finished with status: "+(result.status||"unknown")+". Inspect the saved workflow below.","good");
+    await refreshWorkflows();
+    if(result.workflow_id)await loadWorkflowDetail(result.workflow_id);
+  }catch(e){setStatus("agentPlanStatus",e.message,"bad");$("executeAgentPlan").disabled=false;}
+  finally{$("previewAgentPlan").disabled=false;}
 };
 
 let selectedWorkflowId = null;
