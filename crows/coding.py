@@ -113,8 +113,11 @@ class CodingEngine:
                 src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
                 follow_symlinks=False,
             )
-            os.unlink(source.name, dir_fd=directory_fd)
-            os.fsync(directory_fd)
+            try:
+                os.unlink(source.name, dir_fd=directory_fd)
+            except OSError:
+                # The outer staging cleanup removes a leftover temporary name.
+                pass
         finally:
             os.close(directory_fd)
 
@@ -399,7 +402,7 @@ class CodingEngine:
             raise CodingError("Proposal is already being applied or is no longer approved")
 
         changes = proposal["changes"]
-        staged: list[tuple[Path, Path, str, int]] = []
+        staged: list[tuple[Path, Path, str, int, bool]] = []
         rollback_incomplete = False
         try:
             # Validate every target and detect edits made since the proposal was generated.
@@ -430,7 +433,7 @@ class CodingEngine:
                     handle.flush()
                     os.fsync(handle.fileno())
                 staged.append((target, Path(temp_name), current, original_mode, is_new))
-            replaced: list[tuple[Path, str, str, int, str]] = []
+            replaced: list[tuple[Path, str, str, int, str, bool]] = []
             try:
                 # Recheck each target immediately before replacement. A workspace
                 # file may be edited by another process after the initial validation
