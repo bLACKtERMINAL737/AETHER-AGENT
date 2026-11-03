@@ -298,7 +298,8 @@ class ToolRequest(BaseModel):
 
 class CodingProposalRequest(BaseModel):
     instruction: str = Field(min_length=1, max_length=8_000)
-    paths: list[str] = Field(min_length=1, max_length=8)
+    paths: list[str] = Field(default_factory=list, max_length=8)
+    new_paths: list[str] = Field(default_factory=list, max_length=8)
 
 
 class CodingIterationRequest(BaseModel):
@@ -2703,7 +2704,7 @@ async def chat(request: ChatRequest):
 @app.post("/coding/proposals")
 async def create_coding_proposal(request: CodingProposalRequest):
     try:
-        return await coding.propose(request.instruction, request.paths)
+        return await coding.propose(request.instruction, request.paths, request.new_paths)
     except ProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except CodingError as exc:
