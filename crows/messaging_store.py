@@ -236,13 +236,14 @@ class MessagingStore:
             self._target_cipher.encrypt(delivery_target.encode("utf-8"))
             if delivery_target is not None else None
         )
+        preserve_conversation = conversation_id is not None
         if conversation_id is None:
             conversation_id = self._scope(channel, provider_user_id)
         elif not isinstance(conversation_id, str) or not _CONVERSATION_RE.fullmatch(conversation_id):
             raise MessagingContractError("conversation_id is invalid")
         now = _now()
         with self.connect() as con:
-            if conversation_id is not None:
+            if preserve_conversation:
                 existing_conversation = con.execute(
                     "SELECT channel FROM messaging_conversations WHERE id=?",
                     (conversation_id,),
