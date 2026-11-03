@@ -524,10 +524,7 @@ async def telegram_webhook(request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Telegram message failed validation") from exc
     session = store.get_or_create_messaging_session(result["conversation_id"], "telegram")
-    return {
-        "ok": True, "duplicate": result["duplicate"],
-        "conversation_id": result["conversation_id"], "session_id": session["id"],
-    }
+    return {"ok": True, "duplicate": result["duplicate"]}
 
 
 @app.post("/messaging/telegram/send")
@@ -821,7 +818,7 @@ def messaging_conversations(limit: int = 50):
         raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
     conversations = messaging_store.list_conversations(limit=limit)
     for conversation in conversations:
-        session = store.get_messaging_session(conversation["id"])
+        session = store.get_messaging_session(conversation["id"], conversation["channel"])
         conversation["session_id"] = session["id"] if session else None
     return {"conversations": conversations}
 
@@ -834,7 +831,8 @@ def messaging_conversation_messages(conversation_id: str, limit: int = 100):
         messages = messaging_store.list_messages(conversation_id, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid conversation ID") from exc
-    session = store.get_messaging_session(conversation_id)
+    conversation = messaging_store.get_conversation(conversation_id)
+    session = store.get_messaging_session(conversation_id, conversation["channel"]) if conversation else None
     return {
         "conversation_id": conversation_id, "session_id": session["id"] if session else None,
         "messages": messages,
