@@ -31,6 +31,9 @@ def test_workflow_evaluation_endpoint_returns_safe_deterministic_report(tmp_path
     monkeypatch.setattr(app_module, "store", store)
     monkeypatch.delenv("CROWS_API_TOKEN", raising=False)
     monkeypatch.setenv("AETHER_API_TOKEN", "evaluation-token")
+    # Middleware captures its token when Starlette first builds the app stack.
+    # Rebuild it so this test does not inherit a stack created by another test.
+    monkeypatch.setattr(app_module.app, "middleware_stack", None)
 
     with TestClient(
         app_module.app,
