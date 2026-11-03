@@ -254,8 +254,8 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
         <h2>Selected workflow</h2>
         <div id="workflowDetailHint" class="muted">Select a workflow to inspect its plan, task checkpoints, and QA result.</div>
         <pre id="workflowDetail" class="task-detail" hidden></pre>
-        <div class="actions"><button id="recoverWorkflow" class="primary" disabled>Recover interrupted workflow</button></div>
-        <div class="muted small">Recovery may execute tasks still queued in the saved checkpoint. Review the workflow details first.</div>
+        <div class="actions"><button id="pauseWorkflow" disabled>Pause</button><button id="resumeWorkflow" disabled>Resume</button><button id="cancelWorkflow" disabled>Cancel workflow</button><button id="recoverWorkflow" class="primary" disabled>Recover interrupted workflow</button></div>
+        <div class="muted small">Pause takes effect after the active task batch finishes. Cancel stops future tasks without replaying uncertain work. Recovery may execute only tasks still queued in the saved checkpoint.</div>
       </div>
     </div>
   </section>
@@ -882,11 +882,31 @@ async function loadWorkflowDetail(id){
     $("workflowDetail").hidden=false;
     $("workflowDetailHint").textContent="Workflow ID: "+selectedWorkflowId+" · Status: "+(selectedWorkflowStatus||"unknown");
     $("workflowDetail").textContent=JSON.stringify(workflow,null,2);
+    const control=workflow.control_state||"completed";
     $("recoverWorkflow").disabled=selectedWorkflowStatus!=="unknown";
+    $("pauseWorkflow").disabled=selectedWorkflowStatus!=="running"||control!=="running";
+    $("resumeWorkflow").disabled=selectedWorkflowStatus!=="running"||control!=="paused";
+    $("cancelWorkflow").disabled=selectedWorkflowStatus!=="running"||!["running","paused"].includes(control);
+    $("workflowDetailHint").textContent="Workflow ID: "+selectedWorkflowId+" · Status: "+(selectedWorkflowStatus||"unknown")+" · Control: "+control;
     setStatus("workflowStatus",selectedWorkflowStatus==="unknown"?"Interrupted workflow selected. Review its checkpoints before recovery.":"Workflow details loaded.");
   }catch(e){setStatus("workflowStatus",e.message,"bad");}
 }
 $("refreshWorkflows").onclick=refreshWorkflows;
+async function changeWorkflowControl(action){
+  if(!selectedWorkflowId)return;
+  if(action==="cancel"&&!confirm("Cancel this workflow? The active task batch will finish; tasks not yet started will not run."))return;
+  for(const id of ["pauseWorkflow","resumeWorkflow","cancelWorkflow"])$(id).disabled=true;
+  setStatus("workflowStatus",action==="cancel"?"Requesting cancellation…":action==="pause"?"Requesting pause…":"Resuming workflow…");
+  try{
+    await api("/agents/workflows/"+encodeURIComponent(selectedWorkflowId)+"/"+action,{method:"POST",body:"{}"});
+    await refreshWorkflows();
+    await loadWorkflowDetail(selectedWorkflowId);
+    setStatus("workflowStatus","Workflow control updated. Inspect the persisted control state.","good");
+  }catch(e){setStatus("workflowStatus",e.message,"bad");await loadWorkflowDetail(selectedWorkflowId);}
+}
+$("pauseWorkflow").onclick=()=>changeWorkflowControl("pause");
+$("resumeWorkflow").onclick=()=>changeWorkflowControl("resume");
+$("cancelWorkflow").onclick=()=>changeWorkflowControl("cancel");
 $("recoverWorkflow").onclick=async()=>{
   if(!selectedWorkflowId||selectedWorkflowStatus!=="unknown")return;
   if(!confirm("Recover this interrupted workflow? Only tasks still queued in the saved checkpoint may execute. Review the workflow details first."))return;
