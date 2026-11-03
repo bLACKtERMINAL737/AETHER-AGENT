@@ -38,7 +38,7 @@ rotating it without migration makes queued replies unreadable.
 Discord requires a quick acknowledgement. Crows returns a private deferred response
 and generates the answer asynchronously. Dispatch completion means the response was
 queued, not that Discord confirmed it; inspect the outbound delivery status separately.
-Expired or uncertain work is not replayed automatically.
+Discord interaction tokens expire; delayed or expired delivery may fail and must be reconciled from the outbox. Expired or uncertain work is not replayed automatically.
 
 ## Limitations
 
