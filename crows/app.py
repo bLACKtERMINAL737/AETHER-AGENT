@@ -31,7 +31,7 @@ from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
-from .evaluation import evaluate_workflow, summarize_workflows
+from .evaluation import build_workflow_timeline, evaluate_workflow, summarize_workflows
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crows")
@@ -1133,6 +1133,41 @@ def get_agent_workflow(workflow_id: str):
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow
+
+
+@app.get("/agents/workflows/{workflow_id}/timeline")
+def get_agent_workflow_timeline(workflow_id: str):
+    """Return an ordered, content-minimizing view of persisted workflow activity."""
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    results = workflow.get("results")
+    results = results if isinstance(results, dict) else {}
+    outcomes = results.get("tasks")
+    outcomes = outcomes if isinstance(outcomes, list) else []
+    qa_review = results.get("qa_review")
+    task_ids = []
+    for item in outcomes:
+        if isinstance(item, dict) and isinstance(item.get("task_id"), str):
+            task_ids.append(item["task_id"])
+    if isinstance(qa_review, dict) and isinstance(qa_review.get("task_id"), str):
+        task_ids.append(qa_review["task_id"])
+
+    task_records = []
+    for task_id in dict.fromkeys(task_ids):
+        task = store.get_task(task_id)
+        if task is None:
+            continue
+        task_records.append({
+            **task,
+            "tool_executions": store.list_tool_executions(task_id),
+        })
+    return {
+        "status": workflow.get("status"),
+        "control_state": workflow.get("control_state"),
+        "timeline": build_workflow_timeline(workflow, task_records),
+    }
 
 
 @app.get("/agents/workflows/{workflow_id}/evaluation")
