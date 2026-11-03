@@ -111,11 +111,12 @@ class TaskStore:
               updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS messaging_session_routes (
-              conversation_id TEXT PRIMARY KEY,
+              conversation_id TEXT NOT NULL,
               channel TEXT NOT NULL,
               session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
               created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY(conversation_id, channel)
             );
             CREATE INDEX IF NOT EXISTS idx_messaging_session_routes_channel
               ON messaging_session_routes(channel, updated_at DESC);
@@ -688,8 +689,8 @@ class TaskStore:
         with self.connect() as con:
             row = con.execute(
                 "SELECT s.* FROM messaging_session_routes r JOIN sessions s ON s.id=r.session_id "
-                "WHERE r.conversation_id=?",
-                (conversation_id,),
+                "WHERE r.conversation_id=? AND r.channel=?",
+                (conversation_id, channel),
             ).fetchone()
         return dict(row) if row else None
 
