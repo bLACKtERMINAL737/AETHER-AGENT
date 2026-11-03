@@ -4,6 +4,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from crows.messaging_dispatch import InboundDispatchStore
+from crows.messaging_gateway import InboundChannelPolicy, build_default_inbound_channels
 from crows.messaging_runtime import process_inbound_dispatch
 from crows.messaging_store import MessagingStore
 from crows.store import TaskStore
@@ -61,6 +62,7 @@ async def test_inbound_telegram_generates_session_reply_and_enqueues_encrypted_o
     result = await process_inbound_dispatch(
         claimed[0], worker_id="worker-1", dispatches=dispatches,
         messages=messages, sessions=sessions, router=router,
+        channels=build_default_inbound_channels(),
     )
 
     assert result == "completed"
@@ -128,16 +130,16 @@ def test_inbound_destination_requires_encryption_key(tmp_path: Path, monkeypatch
 async def test_unconfigured_channel_fails_closed_without_model_call(runtime):
     messages, dispatches, sessions, router = runtime
     ingested = messages.ingest(
-        channel="discord", provider_message_id="discord-1",
+        channel="whatsapp", provider_message_id="whatsapp-1",
         provider_user_id="user-1", text="hello",
     )
     session = sessions.get_or_create_messaging_session(
-        ingested["conversation_id"], "discord"
+        ingested["conversation_id"], "whatsapp"
     )
     queued = dispatches.enqueue(
         message_id=ingested["message"]["id"],
         conversation_id=ingested["conversation_id"],
-        channel="discord", session_id=session["id"],
+        channel="whatsapp", session_id=session["id"],
     )
     claimed = dispatches.claim(worker_id="worker-1", limit=1)
     result = await process_inbound_dispatch(
@@ -147,3 +149,36 @@ async def test_unconfigured_channel_fails_closed_without_model_call(runtime):
     assert result == "failed"
     assert dispatches.get(queued["id"])["state"] == "failed"
     assert router.calls == []
+
+
+
+@pytest.mark.asyncio
+async def test_shared_runtime_accepts_explicit_channel_policy_and_applies_reply_limit(runtime):
+    messages, dispatches, sessions, router = runtime
+    ingested = messages.ingest(
+        channel="matrix", provider_message_id="matrix-1",
+        provider_user_id="room-42", text="hello", delivery_target="room-42",
+    )
+    session = sessions.get_or_create_messaging_session(
+        ingested["conversation_id"], "matrix"
+    )
+    queued = dispatches.enqueue(
+        message_id=ingested["message"]["id"],
+        conversation_id=ingested["conversation_id"],
+        channel="matrix",
+        session_id=session["id"],
+    )
+    claimed = dispatches.claim(worker_id="worker-matrix", limit=1)
+    channels = build_default_inbound_channels()
+    channels.register(InboundChannelPolicy("matrix", "Matrix", 5))
+
+    result = await process_inbound_dispatch(
+        claimed[0], worker_id="worker-matrix", dispatches=dispatches,
+        messages=messages, sessions=sessions, router=router, channels=channels,
+    )
+
+    assert result == "completed"
+    outbound = messages.get_outbound("matrix", f"inbound-reply:{queued['id']}")
+    assert outbound["status"] == "accepted"
+    assert outbound["text"] == "Hello"
+    assert "Matrix" in router.calls[0][0]
