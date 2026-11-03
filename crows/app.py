@@ -18,6 +18,7 @@ from ipaddress import ip_address
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -413,10 +414,133 @@ def _discord_webhook_url() -> str:
         return ""
 
 
+def _discord_interaction_config() -> tuple[str, str]:
+    application_id = (get_env("CROWS_DISCORD_APPLICATION_ID", "") or "").strip()
+    public_key = (get_env("CROWS_DISCORD_PUBLIC_KEY", "") or "").strip().lower()
+    if not re.fullmatch(r"[0-9]{1,25}", application_id) or not re.fullmatch(r"[0-9a-f]{64}", public_key):
+        return "", ""
+    return application_id, public_key
+
+
+def _verify_discord_interaction(raw_body: bytes, signature: str, timestamp: str) -> bool:
+    application_id, public_key = _discord_interaction_config()
+    if not application_id or not public_key:
+        return False
+    if not re.fullmatch(r"[0-9a-fA-F]{128}", signature or ""):
+        return False
+    if not re.fullmatch(r"[0-9]{1,16}", timestamp or ""):
+        return False
+    try:
+        if abs(time.time() - int(timestamp)) > 300:
+            return False
+        verifier = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key))
+        verifier.verify(bytes.fromhex(signature), timestamp.encode("ascii") + raw_body)
+        return True
+    except (ValueError, TypeError):
+        return False
+    except Exception:
+        # InvalidSignature is intentionally reduced to a boolean; do not leak details.
+        return False
+
+
 @app.get("/messaging/discord/status")
 def discord_status():
-    configured = bool(_discord_webhook_url())
-    return {"channel": "discord", "configured": configured, "connector_type": "incoming_webhook"}
+    webhook_configured = bool(_discord_webhook_url())
+    application_id, public_key = _discord_interaction_config()
+    interactions_configured = bool(application_id and public_key)
+    return {
+        "channel": "discord",
+        "configured": webhook_configured or interactions_configured,
+        "webhook_configured": webhook_configured,
+        "interactions_configured": interactions_configured,
+        "connector_type": (
+            "incoming_webhook_and_interactions" if webhook_configured and interactions_configured
+            else "incoming_webhook" if webhook_configured
+            else "interactions" if interactions_configured else "none"
+        ),
+    }
+
+
+@app.post("/messaging/webhooks/discord")
+async def discord_interactions(request: Request):
+    """Accept signed Discord slash-command interactions and queue a private agent reply."""
+    raw_body = await request.body()
+    if len(raw_body) > 1_048_576:
+        raise HTTPException(status_code=413, detail="Discord interaction payload is too large")
+    signature = request.headers.get("X-Signature-Ed25519", "")
+    timestamp = request.headers.get("X-Signature-Timestamp", "")
+    if not _verify_discord_interaction(raw_body, signature, timestamp):
+        raise HTTPException(status_code=401, detail="Invalid Discord interaction signature")
+    try:
+        payload = json.loads(raw_body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Discord interaction JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid Discord interaction")
+    if payload.get("type") == 1:
+        return {"type": 1}
+    if payload.get("type") != 2:
+        return {"type": 4, "data": {"content": "Unsupported interaction.", "flags": 64}}
+
+    application_id, _ = _discord_interaction_config()
+    if str(payload.get("application_id", "")) != application_id:
+        raise HTTPException(status_code=401, detail="Discord application ID does not match configuration")
+    interaction_id = payload.get("id")
+    token = payload.get("token")
+    data = payload.get("data")
+    channel_id = payload.get("channel_id")
+    member = payload.get("member")
+    user = member.get("user") if isinstance(member, dict) else payload.get("user")
+    if (
+        not isinstance(interaction_id, str) or not interaction_id.isdecimal()
+        or not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9._~=-]{20,200}", token)
+        or not isinstance(channel_id, str) or not re.fullmatch(r"[0-9]{1,25}", channel_id)
+        or not isinstance(user, dict) or not isinstance(user.get("id"), str)
+        or not re.fullmatch(r"[0-9]{1,25}", user["id"])
+        or not isinstance(data, dict) or data.get("name") != "crows"
+    ):
+        return {"type": 4, "data": {"content": "Use the configured /crows command with a message.", "flags": 64}}
+    options = data.get("options")
+    message_text = None
+    if isinstance(options, list):
+        for option in options:
+            if isinstance(option, dict) and option.get("name") in {"message", "prompt"}:
+                message_text = option.get("value")
+                break
+    if not isinstance(message_text, str) or not message_text.strip() or len(message_text) > 2000:
+        return {"type": 4, "data": {"content": "Please provide a message of 1–2,000 characters.", "flags": 64}}
+    if not messaging_store.delivery_targets_configured:
+        raise HTTPException(status_code=503, detail="CROWS_MESSAGING_TARGET_KEY is required for encrypted Discord reply routing")
+
+    target = json.dumps(
+        {"kind": "discord_interaction", "application_id": application_id, "token": token},
+        separators=(",", ":"),
+    )
+    try:
+        result = messaging_store.ingest(
+            channel="discord",
+            provider_message_id=interaction_id,
+            provider_user_id=f"{channel_id}:{user['id']}",
+            text=message_text,
+            display_name=str(user.get("global_name") or user.get("username") or "Discord user")[:200],
+            delivery_target=target,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Discord interaction failed validation") from exc
+    session = store.get_or_create_messaging_session(result["conversation_id"], "discord")
+    try:
+        inbound_dispatch_store.enqueue(
+            message_id=result["message"]["id"],
+            conversation_id=result["conversation_id"],
+            channel="discord",
+            session_id=session["id"],
+        )
+    except InboundDispatchError as exc:
+        logger.exception("Could not queue Discord interaction for agent dispatch")
+        raise HTTPException(status_code=503, detail="Discord interaction was stored but dispatch queueing failed") from exc
+    # Discord requires an acknowledgement within three seconds. The model runs
+    # asynchronously; the worker edits this private deferred response afterwards.
+    return {"type": 5, "data": {"flags": 64}}
 
 
 async def _send_queued_outbound(queued: dict, *, channel: str) -> dict:
@@ -746,6 +870,7 @@ async def deliver_outbound_batch(
             outcomes["failed"] += 1
             continue
         try:
+            discord_method = "post"
             if channel == "telegram":
                 bot_token, _ = _telegram_config()
                 if not bot_token:
@@ -757,14 +882,37 @@ async def deliver_outbound_batch(
                 url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
                 payload = {"chat_id": target, "text": item["text"]}
             elif channel == "discord":
-                webhook_url = _discord_webhook_url()
-                if target != "configured-webhook" or not webhook_url:
-                    messaging_store.finish_outbound_lease(
-                        message_id, worker_id=worker_id, status="failed"
+                if target == "configured-webhook":
+                    webhook_url = _discord_webhook_url()
+                    if not webhook_url:
+                        messaging_store.finish_outbound_lease(
+                            message_id, worker_id=worker_id, status="failed"
+                        )
+                        outcomes["failed"] += 1
+                        continue
+                    url = webhook_url
+                else:
+                    try:
+                        interaction_target = json.loads(target)
+                    except (TypeError, json.JSONDecodeError):
+                        interaction_target = {}
+                    if (
+                        not isinstance(interaction_target, dict)
+                        or interaction_target.get("kind") != "discord_interaction"
+                        or not re.fullmatch(r"[0-9]{1,25}", str(interaction_target.get("application_id", "")))
+                        or not re.fullmatch(r"[A-Za-z0-9._~=-]{20,200}", str(interaction_target.get("token", "")))
+                    ):
+                        messaging_store.finish_outbound_lease(
+                            message_id, worker_id=worker_id, status="failed"
+                        )
+                        outcomes["failed"] += 1
+                        continue
+                    url = (
+                        "https://discord.com/api/webhooks/"
+                        + interaction_target["application_id"] + "/"
+                        + interaction_target["token"] + "/messages/@original"
                     )
-                    outcomes["failed"] += 1
-                    continue
-                url = webhook_url
+                    discord_method = "patch"
                 payload = {"content": item["text"]}
             else:
                 messaging_store.finish_outbound_lease(
@@ -774,10 +922,13 @@ async def deliver_outbound_batch(
                 continue
 
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
-                response = await client.post(
-                    url, json=payload,
-                    params={"wait": "true"} if channel == "discord" else None,
-                )
+                if channel == "discord" and discord_method == "patch":
+                    response = await client.patch(url, json=payload)
+                else:
+                    response = await client.post(
+                        url, json=payload,
+                        params={"wait": "true"} if channel == "discord" else None,
+                    )
             if response.status_code == 429:
                 retry_after = 5
                 try:

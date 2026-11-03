@@ -217,6 +217,7 @@ class MessagingStore:
     def queue_outbound(
         self, *, channel: str, provider_user_id: str, text: str,
         idempotency_key: str, delivery_target: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict:
         channel = _validate_channel(channel)
         text = _validate_text(text)
@@ -235,9 +236,20 @@ class MessagingStore:
             self._target_cipher.encrypt(delivery_target.encode("utf-8"))
             if delivery_target is not None else None
         )
-        conversation_id = self._scope(channel, provider_user_id)
+        preserve_conversation = conversation_id is not None
+        if conversation_id is None:
+            conversation_id = self._scope(channel, provider_user_id)
+        elif not isinstance(conversation_id, str) or not _CONVERSATION_RE.fullmatch(conversation_id):
+            raise MessagingContractError("conversation_id is invalid")
         now = _now()
         with self.connect() as con:
+            if preserve_conversation:
+                existing_conversation = con.execute(
+                    "SELECT channel FROM messaging_conversations WHERE id=?",
+                    (conversation_id,),
+                ).fetchone()
+                if existing_conversation is None or existing_conversation["channel"] != channel:
+                    raise MessagingContractError("conversation_id does not identify an existing channel conversation")
             con.execute(
                 "INSERT INTO messaging_conversations(id,channel,created_at,updated_at) VALUES(?,?,?,?) "
                 "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",

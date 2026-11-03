@@ -1022,8 +1022,10 @@ async function refreshDiscordConnectorStatus(){
   try{
     const result=await api("/messaging/discord/status");
     target.textContent=result.configured
-      ? "Discord incoming webhook configured. Messages will be sent to the configured destination."
-      : "Discord webhook not configured or URL is invalid. Set CROWS_DISCORD_WEBHOOK_URL on the backend.";
+      ? (result.interactions_configured
+          ? "Discord signed slash-command intake is configured."
+          : "Discord incoming webhook configured. Slash-command intake is not configured.")
+      : "Discord webhook or interactions are not configured. Set CROWS_DISCORD_WEBHOOK_URL or the Discord application ID/public key.";
     target.dataset.configured=String(Boolean(result.configured));
   }catch(e){
     target.textContent="Could not check Discord configuration. Verify backend status and API access.";

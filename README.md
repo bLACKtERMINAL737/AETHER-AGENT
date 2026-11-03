@@ -272,7 +272,9 @@ export CROWS_MESSAGING_WORKER_ENABLED=true
 export CROWS_MESSAGING_WORKER_INTERVAL_SECONDS=2
 ```
 
-The worker sends only target-backed messages that it can atomically lease. Telegram destinations are decrypted in the backend; Discord resolves the fixed `configured-webhook` reference through `CROWS_DISCORD_WEBHOOK_URL`. Transport errors and expired leases become `unknown` and are not automatically retried because delivery may already have occurred. The worker stops with the FastAPI application. Run one application worker process against a SQLite database; multi-process deployment needs a separately evaluated worker topology.
+The worker sends only target-backed messages that it can atomically lease. Telegram destinations are decrypted in the backend; Discord resolves either the fixed `configured-webhook` reference or a signed interaction token stored in encrypted form. Transport errors and expired leases become `unknown` and are not automatically retried because delivery may already have occurred. The worker stops with the FastAPI application. Run one application worker process against a SQLite database; multi-process deployment needs a separately evaluated worker topology.
+
+Discord also supports signed `/crows message:<text>` interactions through `POST /messaging/webhooks/discord`. Configure `CROWS_DISCORD_APPLICATION_ID`, `CROWS_DISCORD_PUBLIC_KEY`, the persistent `CROWS_MESSAGING_TARGET_KEY`, and both messaging workers. See [Discord interactions](docs/DISCORD_INTERACTIONS.md). This is slash-command intake, not a Discord Gateway listener.
 
 
 ### Messaging outbox retry and reconciliation
