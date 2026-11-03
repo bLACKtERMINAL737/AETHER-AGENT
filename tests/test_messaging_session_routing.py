@@ -15,7 +15,7 @@ def test_messaging_conversation_resolves_to_one_persistent_agent_session(tmp_pat
 
     assert first["id"] == second["id"]
     assert first["title"] == "Telegram conversation"
-    assert store.get_messaging_session(conversation_id)["id"] == first["id"]
+    assert store.get_messaging_session(conversation_id, "telegram")["id"] == first["id"]
 
 
 def test_messaging_session_routes_are_isolated_by_channel(tmp_path):
