@@ -234,8 +234,15 @@ class TaskStore:
                 "SELECT state FROM workflow_controls WHERE workflow_id=?",
                 (workflow_id,),
             ).fetchone()
+            workflow = con.execute(
+                "SELECT status FROM agent_workflows WHERE id=?",
+                (workflow_id,),
+            ).fetchone()
+        if workflow is None:
+            raise KeyError("Workflow not found")
+        # Older persisted workflows predate the control table. Keep them readable.
         if row is None:
-            raise KeyError("Workflow control not found")
+            return "running" if workflow["status"] == "running" else "completed"
         return str(row["state"])
 
     def set_workflow_control(self, workflow_id: str, state: str) -> bool:
