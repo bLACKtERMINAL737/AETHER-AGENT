@@ -285,6 +285,10 @@ After checking the provider directly, an operator can resolve an `unknown` outbo
 
 The authenticated `GET /agents/execution/metrics` endpoint reports aggregate counts for queued, running, succeeded, failed, and uncertain tasks; workflow states; and tool execution states. It also reports the oldest queued-task and unknown-workflow timestamps. It deliberately omits task IDs, goals, inputs, results, tool arguments, and error text.
 
+### Deterministic workflow evaluation
+
+The authenticated `GET /agents/workflows/{workflow_id}/evaluation` endpoint evaluates a saved workflow without making model calls. It checks plan/checkpoint consistency, specialist task outcomes, final QA verdict, and aggregate tool-call counts. A workflow is marked `passed` only when the workflow itself succeeded, every planned task has a successful checkpoint, and the final QA verdict is an explicit `PASS`. Incomplete, failed, malformed, or inconsistent checkpoints are reported conservatively. The report omits workflow goals, task prompts, task IDs, tool arguments, and raw task results.
+
 
 ### Declarative skills registry (review-gated foundation)
 
