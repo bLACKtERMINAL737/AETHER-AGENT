@@ -17,6 +17,14 @@ Show one end-to-end flow:
 **Safety boundary:** never expose the local API to a public network, show provider keys on screen, or approve a diff without reading it. The test runner operates on a disposable snapshot; it is not a guarantee that arbitrary code is safe.
 
 
+## Reviewable agent planning
+
+Use `POST /agents/plan` with a goal to generate a bounded, dependency-validated specialist plan. This endpoint is preview-only: it creates no workflow or task and returns `executed: false` plus `approval_required: true`.
+
+Review the returned goal, task titles, inputs, roles, and dependency indexes. To execute exactly that reviewed plan, send `POST /agents/orchestrate` with both the original goal and the returned `subtasks` array. When `subtasks` is supplied, Crows validates and executes that exact plan without asking the planner model to regenerate it. Invalid or reserved roles are rejected before any workflow is created.
+
+For compatibility, `POST /agents/orchestrate` without `subtasks` retains the existing generate-and-execute behavior. For a review-first workflow, always call `/agents/plan` first and explicitly submit the reviewed `subtasks`.
+
 ## Minimum AI-agent acceptance gates (must pass before submission)
 
 The submission should prove that Crows executes agent work, not just that the API starts or a model produces fluent text. Run these checks on the exact release candidate and record the result honestly.
