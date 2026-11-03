@@ -1134,6 +1134,17 @@ def get_agent_workflow(workflow_id: str):
     return workflow
 
 
+def _workflow_control_phase_allows_change(workflow: dict[str, Any]) -> bool:
+    checkpoint = workflow.get("results") or {}
+    qa = checkpoint.get("qa_review")
+    # Once QA has been created, it is an active task just like a specialist.
+    # Do not accept a pause/cancel request that cannot be honored safely.
+    return not (
+        isinstance(qa, dict)
+        and qa.get("status") in {"queued", "running", "succeeded"}
+    )
+
+
 @app.post("/agents/workflows/{workflow_id}/pause")
 def pause_agent_workflow(workflow_id: str):
     workflow = store.get_workflow(workflow_id)
@@ -1141,6 +1152,8 @@ def pause_agent_workflow(workflow_id: str):
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow["status"] != "running":
         raise HTTPException(status_code=409, detail="Only a running workflow can be paused.")
+    if not _workflow_control_phase_allows_change(workflow):
+        raise HTTPException(status_code=409, detail="Workflow controls are unavailable after QA review has started.")
     try:
         changed = store.set_workflow_control(workflow_id, "paused")
     except KeyError as exc:
@@ -1173,6 +1186,8 @@ def cancel_agent_workflow(workflow_id: str):
         raise HTTPException(status_code=404, detail="Workflow not found")
     if workflow["status"] != "running":
         raise HTTPException(status_code=409, detail="Only a running workflow can be cancelled.")
+    if not _workflow_control_phase_allows_change(workflow):
+        raise HTTPException(status_code=409, detail="Workflow controls are unavailable after QA review has started.")
     try:
         changed = store.set_workflow_control(workflow_id, "cancel_requested")
     except KeyError as exc:
