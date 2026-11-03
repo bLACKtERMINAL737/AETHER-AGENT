@@ -47,3 +47,19 @@ provider confirmed delivery. Inspect the outbound journal for delivery status.
 - Discord: signed slash-command interactions, inbox persistence, session routing,
   optional autonomous tool-free replies, and deferred private response updates.
 - Other platforms: no production inbound or outbound connector is implied.
+
+
+## Shared outbound transport registry
+
+The durable outbox worker dispatches through an explicit
+`OutboundTransportRegistry`. Telegram and Discord are registered as concrete
+transports; channel-specific HTTP methods, payloads, response parsing, and
+Discord interaction-target validation live inside their adapters. The worker
+retains responsibility for leases, retry scheduling, delivery-state
+persistence, and uncertain-outcome handling. A 429 response is retried within
+the existing bounded policy; network/response-decoding uncertainty remains
+`unknown` and is never automatically replayed.
+
+This registry currently contains only the Telegram and Discord transports.
+Registering a future adapter does not by itself add its inbound webhook,
+authentication, session-routing, or channel policy integration.
