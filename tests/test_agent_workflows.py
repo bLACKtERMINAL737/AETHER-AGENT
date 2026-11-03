@@ -719,13 +719,25 @@ async def test_orchestrator_executes_the_exact_reviewed_plan_without_replanning(
 
     async def fake_run(task_id):
         task = store.get_task(task_id)
-        executed.append(task["title"])
         assert store.claim_task(task_id)
-        store.set_task_status(task_id, "succeeded", result={"answer": "verified"})
+        if task["title"] == "[qa_security] Review specialist results":
+            # The orchestrator always runs a separate, strict QA gate after
+            # specialist work. Give that gate a valid explicit PASS fixture.
+            result = {
+                "answer": json.dumps({
+                    "verdict": "PASS",
+                    "summary": "The reviewed specialist result is verified.",
+                    "findings": [],
+                })
+            }
+        else:
+            executed.append(task["title"])
+            result = {"answer": "verified"}
+        store.set_task_status(task_id, "succeeded", result=result)
         return {
             "task_id": task_id,
             "status": "succeeded",
-            "result": "verified",
+            "result": result,
             "tool_calls": 0,
             "tool_attempts": 0,
         }
