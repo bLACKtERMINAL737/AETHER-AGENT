@@ -109,6 +109,15 @@ class InboundDispatchStore:
                            AND active.conversation_id=candidate.conversation_id
                            AND active.state='processing'
                      )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messaging_inbound_dispatch AS earlier
+                         WHERE earlier.channel=candidate.channel
+                           AND earlier.conversation_id=candidate.conversation_id
+                           AND earlier.state='pending'
+                           AND (earlier.created_at < candidate.created_at
+                                OR (earlier.created_at = candidate.created_at
+                                    AND earlier.id < candidate.id))
+                     )
                    ORDER BY candidate.created_at,candidate.id LIMIT ?""",
                 (limit,),
             ).fetchall()
