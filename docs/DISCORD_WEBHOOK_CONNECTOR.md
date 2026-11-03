@@ -1,6 +1,6 @@
 # Discord incoming webhook connector
 
-This integration sends text messages to one backend-configured Discord incoming webhook. It does not connect to Discord's Gateway and cannot read inbound messages.
+This integration sends text messages to one backend-configured Discord incoming webhook. It does not connect to Discord's Gateway. Signed slash-command intake is documented separately in [Discord interactions](DISCORD_INTERACTIONS.md).
 
 ## Configuration
 
@@ -19,5 +19,5 @@ A successful webhook response with a Discord message ID is recorded as `sent`; t
 ## Limitations
 
 - One configured webhook destination only.
-- No inbound Discord messages, Gateway bot, per-user routing, attachments, embeds, or multi-server destination management.
+- No Discord Gateway listener, arbitrary channel-message ingestion, attachments, embeds, or multi-server webhook destination management.
 - Keep the endpoint protected by the existing Crows API authentication and only send content to destinations you are authorized to use.
