@@ -134,7 +134,7 @@ async def test_unconfigured_channel_fails_closed_without_model_call(runtime):
         provider_user_id="user-1", text="hello",
     )
     session = sessions.get_or_create_messaging_session(
-        ingested["conversation_id"], "discord"
+        ingested["conversation_id"], "whatsapp"
     )
     queued = dispatches.enqueue(
         message_id=ingested["message"]["id"],
