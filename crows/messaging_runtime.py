@@ -102,6 +102,8 @@ async def process_inbound_dispatch(
             prompt, task_type="general", history=history,
             allow_fallback=True,
         )
+        if heartbeat.done():
+            heartbeat.result()
         answer = result.get("answer") if isinstance(result, dict) else None
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError("The model returned an empty reply.")
@@ -158,7 +160,9 @@ async def inbound_agent_worker_loop(
             expired = dispatches.expire_leases()
             if expired:
                 logger.warning("Marked %s expired inbound dispatch leases unknown", expired)
-            claimed = dispatches.claim(worker_id=worker_id, limit=10, lease_seconds=120)
+            # Claim one item at a time: later leases must not expire while this
+            # single worker is waiting on a slow model response.
+            claimed = dispatches.claim(worker_id=worker_id, limit=1, lease_seconds=120)
             for item in claimed:
                 await process_inbound_dispatch(
                     item, worker_id=worker_id, dispatches=dispatches,
