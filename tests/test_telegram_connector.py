@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from starlette.requests import Request
 
 from crows import app as app_module
+from crows.messaging_dispatch import InboundDispatchStore
 from crows.messaging_store import MessagingStore
 
 
@@ -46,8 +47,11 @@ def isolated_store(monkeypatch, tmp_path: Path):
     from cryptography.fernet import Fernet
 
     monkeypatch.setenv("AETHER_MESSAGING_TARGET_KEY", Fernet.generate_key().decode())
-    store = MessagingStore(tmp_path / "messaging.sqlite3")
+    db_path = tmp_path / "messaging.sqlite3"
+    store = MessagingStore(db_path)
+    dispatch_store = InboundDispatchStore(db_path)
     monkeypatch.setattr(app_module, "messaging_store", store)
+    monkeypatch.setattr(app_module, "inbound_dispatch_store", dispatch_store)
     FakeAsyncClient.calls = []
     FakeAsyncClient.response = FakeResponse(200, {"ok": True, "result": {"message_id": 71}})
     monkeypatch.setattr(app_module.httpx, "AsyncClient", FakeAsyncClient)
@@ -104,6 +108,10 @@ async def test_telegram_webhook_persists_and_deduplicates_message(monkeypatch, i
     conversations = isolated_store.list_conversations()
     assert len(conversations) == 1
     assert conversations[0]["last_message"] == "hello from telegram"
+    dispatches = app_module.inbound_dispatch_store.list_recent()
+    assert len(dispatches) == 1
+    assert dispatches[0]["channel"] == "telegram"
+    assert dispatches[0]["state"] == "pending"
 
 
 @pytest.mark.asyncio
