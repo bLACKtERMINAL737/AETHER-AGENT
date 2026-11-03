@@ -27,6 +27,7 @@ from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .messaging_store import MessagingStore
 from .messaging_dispatch import InboundDispatchError, InboundDispatchStore
+from .messaging_runtime import inbound_agent_worker_loop
 from .scheduler_store import SchedulerStore
 from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
@@ -93,6 +94,14 @@ async def lifespan(app: FastAPI):
     if get_env("CROWS_MESSAGING_WORKER_ENABLED", "").lower() == "true":
         worker_task = asyncio.create_task(messaging_worker_loop())
         logger.info("Messaging outbox worker started")
+    inbound_worker_task = None
+    if get_env("CROWS_INBOUND_AGENT_WORKER_ENABLED", "").lower() == "true":
+        inbound_worker_task = asyncio.create_task(
+            inbound_agent_worker_loop(
+                inbound_dispatch_store, messaging_store, store, router
+            )
+        )
+        logger.info("Inbound agent worker started")
     scheduler_task = None
     if get_env("CROWS_SCHEDULER_WORKER_ENABLED", "").lower() == "true":
         scheduler_task = asyncio.create_task(scheduler_worker_loop())
@@ -107,6 +116,13 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
             logger.info("Messaging outbox worker stopped")
+        if inbound_worker_task is not None:
+            inbound_worker_task.cancel()
+            try:
+                await inbound_worker_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Inbound agent worker stopped")
         if scheduler_task is not None:
             scheduler_task.cancel()
             try:
@@ -514,6 +530,11 @@ async def telegram_webhook(request: Request):
     display_name = " ".join(
         part for part in (str(sender.get("first_name", "")).strip(), str(sender.get("last_name", "")).strip()) if part
     ) or None
+    if not messaging_store.delivery_targets_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="CROWS_MESSAGING_TARGET_KEY is required for encrypted Telegram reply routing",
+        )
     try:
         result = messaging_store.ingest(
             channel="telegram",
@@ -522,6 +543,7 @@ async def telegram_webhook(request: Request):
             text=text_value,
             received_at=received_at,
             display_name=display_name,
+            delivery_target=str(chat_id),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Telegram message failed validation") from exc

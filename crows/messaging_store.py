@@ -125,9 +125,14 @@ class MessagingStore:
         namespace = "aether-claw"
         return conversation_scope(channel, provider_user_id, namespace=namespace)
 
+    @property
+    def delivery_targets_configured(self) -> bool:
+        return self._target_cipher is not None
+
     def ingest(
         self, *, channel: str, provider_message_id: str, provider_user_id: str,
         text: str, received_at: str | None = None, display_name: str | None = None,
+        delivery_target: str | None = None,
     ) -> dict:
         channel = _validate_channel(channel)
         text = _validate_text(text)
@@ -146,6 +151,18 @@ class MessagingStore:
             if not isinstance(display_name, str) or len(display_name) > 200:
                 raise MessagingContractError("display_name is invalid")
             display_name = display_name.strip() or None
+        if delivery_target is not None:
+            if (not isinstance(delivery_target, str) or not delivery_target.strip()
+                    or len(delivery_target) > MAX_ID_CHARS):
+                raise MessagingContractError("delivery_target is invalid")
+            delivery_target = delivery_target.strip()
+            if self._target_cipher is None:
+                raise MessagingContractError(
+                    "CROWS_MESSAGING_TARGET_KEY is required when an inbound delivery_target is supplied"
+                )
+            encrypted_target = self._target_cipher.encrypt(delivery_target.encode("utf-8"))
+        else:
+            encrypted_target = None
         conversation_id = self._scope(channel, provider_user_id)
         now = _now()
         with self.connect() as con:
@@ -159,6 +176,29 @@ class MessagingStore:
                 (channel, provider_message_id),
             ).fetchone()
             if existing:
+                if encrypted_target is not None:
+                    stored = con.execute(
+                        "SELECT ciphertext FROM messaging_delivery_targets WHERE message_id=?",
+                        (existing["id"],),
+                    ).fetchone()
+                    if stored is None:
+                        con.execute(
+                            "INSERT INTO messaging_delivery_targets(message_id,ciphertext,created_at) VALUES(?,?,?)",
+                            (existing["id"], encrypted_target, now),
+                        )
+                    else:
+                        try:
+                            current_target = self._target_cipher.decrypt(
+                                bytes(stored["ciphertext"])
+                            ).decode("utf-8")
+                        except (InvalidToken, UnicodeDecodeError) as exc:
+                            raise MessagingContractError(
+                                "existing inbound delivery target cannot be verified"
+                            ) from exc
+                        if current_target != delivery_target:
+                            raise MessagingContractError(
+                                "provider message ID was already used for a different delivery target"
+                            )
                 return {"conversation_id": conversation_id, "message": dict(existing), "duplicate": True}
             message_id = str(uuid4())
             con.execute(
@@ -166,6 +206,11 @@ class MessagingStore:
                 "VALUES(?,?,?,?,?,?,?,?,?)",
                 (message_id, conversation_id, channel, "inbound", text, "accepted", provider_message_id, received_at, now),
             )
+            if encrypted_target is not None:
+                con.execute(
+                    "INSERT INTO messaging_delivery_targets(message_id,ciphertext,created_at) VALUES(?,?,?)",
+                    (message_id, encrypted_target, now),
+                )
             row = con.execute("SELECT * FROM messaging_messages WHERE id=?", (message_id,)).fetchone()
         return {"conversation_id": conversation_id, "message": dict(row), "duplicate": False}
 
@@ -539,6 +584,15 @@ class MessagingStore:
             row = con.execute(
                 "SELECT id, channel, display_name, created_at, updated_at FROM messaging_conversations WHERE id=?",
                 (conversation_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_message(self, message_id: str) -> dict | None:
+        if not isinstance(message_id, str) or not message_id.strip() or len(message_id) > 128:
+            raise MessagingContractError("message ID is invalid")
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT * FROM messaging_messages WHERE id=?", (message_id.strip(),)
             ).fetchone()
         return dict(row) if row else None
 

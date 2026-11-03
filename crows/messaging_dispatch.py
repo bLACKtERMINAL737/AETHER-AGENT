@@ -101,8 +101,24 @@ class InboundDispatchStore:
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             rows = con.execute(
-                """SELECT * FROM messaging_inbound_dispatch
-                   WHERE state='pending' ORDER BY created_at,id LIMIT ?""",
+                """SELECT * FROM messaging_inbound_dispatch AS candidate
+                   WHERE candidate.state='pending'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messaging_inbound_dispatch AS active
+                         WHERE active.channel=candidate.channel
+                           AND active.conversation_id=candidate.conversation_id
+                           AND active.state='processing'
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messaging_inbound_dispatch AS earlier
+                         WHERE earlier.channel=candidate.channel
+                           AND earlier.conversation_id=candidate.conversation_id
+                           AND earlier.state='pending'
+                           AND (earlier.created_at < candidate.created_at
+                                OR (earlier.created_at = candidate.created_at
+                                    AND earlier.id < candidate.id))
+                     )
+                   ORDER BY candidate.created_at,candidate.id LIMIT ?""",
                 (limit,),
             ).fetchall()
             for row in rows:
@@ -119,6 +135,23 @@ class InboundDispatchStore:
                     ).fetchone()
                     claimed.append(dict(updated))
         return claimed
+
+    def renew(self, dispatch_id: str, *, worker_id: str,
+              lease_seconds: int = 120) -> bool:
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 5 <= lease_seconds <= 900:
+            raise InboundDispatchError("lease_seconds must be between 5 and 900")
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        lease_until = (now_dt + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as con:
+            con.execute(
+                """UPDATE messaging_inbound_dispatch
+                   SET lease_until=?,updated_at=?
+                   WHERE id=? AND state='processing' AND lease_owner=?
+                     AND lease_until >= ?""",
+                (lease_until, now, dispatch_id, worker_id, now),
+            )
+            return con.execute("SELECT changes()").fetchone()[0] == 1
 
     def finish(self, dispatch_id: str, *, worker_id: str, state: str,
                diagnostic: str | None = None) -> bool:
