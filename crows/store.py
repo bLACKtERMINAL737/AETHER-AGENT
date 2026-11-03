@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import fcntl
 from contextlib import contextmanager
@@ -109,6 +110,15 @@ class TaskStore:
               state TEXT NOT NULL CHECK(state IN ('running','paused','cancel_requested','completed')),
               updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS messaging_session_routes (
+              conversation_id TEXT PRIMARY KEY,
+              channel TEXT NOT NULL,
+              session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_messaging_session_routes_channel
+              ON messaging_session_routes(channel, updated_at DESC);
             CREATE TABLE IF NOT EXISTS session_messages (
               id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
               role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
@@ -642,6 +652,46 @@ class TaskStore:
             cursor = con.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return cursor.rowcount > 0
 
+
+    def get_or_create_messaging_session(self, conversation_id: str, channel: str) -> dict[str, Any]:
+        """Resolve one durable agent session for an opaque channel conversation scope."""
+        if not isinstance(conversation_id, str) or not re.fullmatch(r"msg_[a-f0-9]{40}", conversation_id):
+            raise ValueError("Invalid messaging conversation ID")
+        if not isinstance(channel, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", channel):
+            raise ValueError("Invalid messaging channel")
+        now = utc_now()
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            existing = con.execute(
+                "SELECT s.* FROM messaging_session_routes r JOIN sessions s ON s.id=r.session_id "
+                "WHERE r.conversation_id=? AND r.channel=?",
+                (conversation_id, channel),
+            ).fetchone()
+            if existing:
+                return dict(existing)
+            session_id = str(uuid4())
+            con.execute(
+                "INSERT INTO sessions(id,title,created_at,updated_at) VALUES(?,?,?,?)",
+                (session_id, f"{channel.title()} conversation", now, now),
+            )
+            con.execute(
+                "INSERT INTO messaging_session_routes(conversation_id,channel,session_id,created_at,updated_at) "
+                "VALUES(?,?,?,?,?)",
+                (conversation_id, channel, session_id, now, now),
+            )
+            row = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+        return dict(row)
+
+    def get_messaging_session(self, conversation_id: str) -> dict[str, Any] | None:
+        if not isinstance(conversation_id, str) or not re.fullmatch(r"msg_[a-f0-9]{40}", conversation_id):
+            raise ValueError("Invalid messaging conversation ID")
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT s.* FROM messaging_session_routes r JOIN sessions s ON s.id=r.session_id "
+                "WHERE r.conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+        return dict(row) if row else None
 
     def create_session(self, title: str = "New conversation") -> dict[str, Any]:
         session_id, now = str(uuid4()), utc_now()
