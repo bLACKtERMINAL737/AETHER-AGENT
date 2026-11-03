@@ -63,3 +63,28 @@ the existing bounded policy; network/response-decoding uncertainty remains
 This registry currently contains only the Telegram and Discord transports.
 Registering a future adapter does not by itself add its inbound webhook,
 authentication, session-routing, or channel policy integration.
+
+
+## Unified messaging control plane
+
+The authenticated GET /messaging/status endpoint returns a secret-free snapshot
+for the Web UI and operators. It reports configured worker flags, whether
+encrypted delivery-target storage is configured, per-channel inbound
+configuration, inbound reply-policy registration, outbound adapter registration,
+outbound provider configuration, and whether the current prerequisites for
+autonomous tool-free replies are satisfied. It also includes aggregate outbox
+metrics (pending, leased, unknown, retry counts, and status totals).
+
+The endpoint reports configuration, not a live provider health check: it does
+not send test messages or claim that a webhook URL has been registered with a
+provider. Credential values, webhook URLs, tokens, and message contents are
+never returned. Telegram inbound readiness reflects its webhook secret; Telegram
+outbound readiness reflects its bot token. Discord inbound readiness reflects
+valid Interactions application ID and public key; outbound readiness reflects
+a configured webhook or valid Interactions configuration for per-interaction
+responses. Autonomous replies additionally require the relevant worker flags,
+channel policy, registered transport, and encrypted reply-target key.
+
+GET /messaging/channels remains compatible and now reports the union of stored,
+policy-registered, and transport-registered channel names; its configured flag
+reflects whether any supported provider direction is configured.
