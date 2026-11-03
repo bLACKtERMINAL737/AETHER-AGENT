@@ -9,6 +9,7 @@ A local-first, modular AI agent foundation focused on reliable task execution, e
 - **Persistent task journal** backed by SQLite, including explicit tool-execution states and crash-safe handling of interrupted work.
 - **Durable agent workflows** that persist the validated plan, specialist task IDs/results, and final QA checkpoint, with read endpoints for later inspection.
 - **Reviewable agent plans**: preview a validated specialist dependency graph without creating tasks, then explicitly execute the exact reviewed plan.
+- **Durable workflow controls**: pause between active task batches, resume paused workflows, or request cancellation without replaying uncertain work; control state survives server restarts.
 - **Task Journal UI panel** to create local task records, review statuses, and inspect recorded tool-execution details using the existing task API. Creating a record does not automatically execute the task.
 - **Workspace tools** for listing files and searching text while preventing paths from escaping the configured workspace.
 - **Auto and Manual model modes**: Auto locally classifies task intent and selects a configured route; Manual lets the user explicitly select a configured route. Neither mode exposes credentials.

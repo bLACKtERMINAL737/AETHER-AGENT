@@ -851,3 +851,34 @@ def test_terminal_task_result_is_not_overwritten_by_late_same_state_write(tmp_pa
     saved = store.get_task(task["id"])
     assert saved["status"] == "succeeded"
     assert saved["result_json"] == '{"answer": "first"}'
+
+
+
+def test_workflow_control_is_durable_and_enforces_safe_transitions(tmp_path: Path):
+    db_path = tmp_path / "workflow-control.sqlite3"
+    store = TaskStore(db_path)
+    workflow = store.create_workflow("Control lifecycle", [])
+    workflow_id = workflow["id"]
+
+    assert workflow["control_state"] == "running"
+    assert store.set_workflow_control(workflow_id, "paused") is True
+    reopened = TaskStore(db_path)
+    assert reopened.get_workflow(workflow_id)["control_state"] == "paused"
+
+    assert reopened.set_workflow_control(workflow_id, "running") is True
+    assert reopened.set_workflow_control(workflow_id, "cancel_requested") is True
+    assert reopened.set_workflow_control(workflow_id, "running") is False
+    assert reopened.set_workflow_control(workflow_id, "completed") is True
+    assert reopened.set_workflow_control(workflow_id, "running") is False
+    assert reopened.get_workflow(workflow_id)["control_state"] == "completed"
+
+
+def test_legacy_workflow_without_control_row_remains_readable(tmp_path: Path):
+    store = TaskStore(tmp_path / "legacy-workflow.sqlite3")
+    workflow = store.create_workflow("Legacy", [])
+    with store.connect() as con:
+        con.execute("DELETE FROM workflow_controls WHERE workflow_id=?", (workflow["id"],))
+
+    saved = store.get_workflow(workflow["id"])
+    assert saved is not None
+    assert saved["control_state"] == "running"
