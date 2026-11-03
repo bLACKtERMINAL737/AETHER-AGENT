@@ -32,6 +32,7 @@ from .messaging_runtime import inbound_agent_worker_loop
 from .scheduler_store import SchedulerStore
 from .messaging import MAX_ID_CHARS, MessagingContractError
 from .messaging_adapters import build_outbound_adapter_registry, OutboundTransportMessage
+from .messaging_gateway import DEFAULT_INBOUND_CHANNELS
 from .security import LocalAPIProtection
 from .tools import ToolRegistry, ToolError, provider_tool_name
 from .agents import dependency_order, list_agent_roles, plan_subtasks
@@ -943,10 +944,63 @@ def messaging_delivery_metrics():
     return messaging_store.delivery_metrics()
 
 
+@app.get("/messaging/status")
+def messaging_control_plane_status():
+    """Return a secret-free snapshot of configured messaging capabilities and queue health."""
+    telegram_bot_token, telegram_webhook_secret = _telegram_config()
+    discord_webhook = bool(_discord_webhook_url())
+    discord_application_id, discord_public_key = _discord_interaction_config()
+    discord_interactions = bool(discord_application_id and discord_public_key)
+    target_key_configured = bool(get_env("CROWS_MESSAGING_TARGET_KEY", "").strip())
+    outbound_enabled = get_env("CROWS_MESSAGING_WORKER_ENABLED", "").lower() == "true"
+    inbound_enabled = get_env("CROWS_INBOUND_AGENT_WORKER_ENABLED", "").lower() == "true"
+    configured = {
+        "telegram": {"inbound": bool(telegram_webhook_secret), "outbound": bool(telegram_bot_token)},
+        "discord": {"inbound": discord_interactions, "outbound": discord_webhook or discord_interactions},
+    }
+    registered_outbound = set(outbound_adapter_registry.list_channels())
+    registered_inbound = set(DEFAULT_INBOUND_CHANNELS.list_channels())
+    channels = []
+    for channel in sorted(registered_inbound | registered_outbound | set(configured)):
+        values = configured.get(channel, {})
+        inbound_ready = bool(values.get("inbound"))
+        outbound_ready = bool(values.get("outbound"))
+        policy_enabled = channel in registered_inbound
+        transport_registered = channel in registered_outbound
+        channels.append({
+            "channel": channel,
+            "inbound_policy_enabled": policy_enabled,
+            "inbound_connector_configured": inbound_ready,
+            "outbound_transport_registered": transport_registered,
+            "outbound_connector_configured": outbound_ready,
+            "inbound_agent_replies_ready": (
+                inbound_ready and policy_enabled and target_key_configured and inbound_enabled
+                and outbound_ready and transport_registered and outbound_enabled
+            ),
+        })
+    return {
+        "workers": {"outbound_enabled": outbound_enabled, "inbound_agent_enabled": inbound_enabled},
+        "security": {"delivery_target_encryption_configured": target_key_configured},
+        "channels": channels,
+        "delivery": messaging_store.delivery_metrics(),
+    }
+
+
 @app.get("/messaging/channels")
 def messaging_channels():
-    """List registered channels; empty until provider adapters are configured."""
-    return {"channels": messaging_store.list_channels(), "configured": False}
+    """List stored and registered channels with their real configuration state."""
+    stored = set(messaging_store.list_channels())
+    registered = set(outbound_adapter_registry.list_channels())
+    policies = set(DEFAULT_INBOUND_CHANNELS.list_channels())
+    channels = sorted(stored | registered | policies)
+    status = messaging_control_plane_status()
+    return {
+        "channels": channels,
+        "configured": any(
+            item["inbound_connector_configured"] or item["outbound_connector_configured"]
+            for item in status["channels"]
+        ),
+    }
 
 
 @app.get("/messaging/conversations")
