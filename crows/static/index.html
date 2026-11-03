@@ -132,6 +132,13 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       <div><h2 id="messagingHeading">Universal Messaging Inbox</h2><div class="muted small">Review stored conversations and queue outbound message intents. External platforms are not connected until a verified adapter is configured.</div></div>
       <button id="refreshMessaging" type="button">Refresh inbox</button>
     </div>
+    <section style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px" aria-labelledby="messagingGatewayHeading">
+      <div class="top">
+        <div><h3 id="messagingGatewayHeading">Gateway control plane</h3><div class="muted small">Configuration and durable delivery health. Enabled workers are not proof of live provider connectivity.</div></div>
+        <button id="refreshMessagingStatus" type="button">Refresh status</button>
+      </div>
+      <div id="messagingGatewayStatus" class="muted small" role="status" aria-live="polite" style="margin-top:8px">Loading gateway status…</div>
+    </section>
     <div class="grid" style="margin-top:12px">
       <div>
         <h3>Conversations</h3>
@@ -963,6 +970,26 @@ $("createTask").onclick=async()=>{
   finally{$("createTask").disabled=false;}
 };
 
+async function refreshMessagingControlPlane(){
+  const target=$("messagingGatewayStatus");
+  target.textContent="Checking gateway configuration and delivery health…";
+  try{
+    const result=await api("/messaging/status");
+    const lines=[];
+    const workers=result.workers||{};
+    const security=result.security||{};
+    lines.push("Workers — outbound: "+(workers.outbound_enabled?"enabled":"disabled")+"; inbound agent: "+(workers.inbound_agent_enabled?"enabled":"disabled")+".");
+    lines.push("Encrypted reply destinations: "+(security.delivery_target_encryption_configured?"configured":"not configured")+".");
+    for(const channel of result.channels||[]){
+      lines.push(channel.channel+": inbound "+(channel.inbound_connector_configured?"configured":"not configured")+"; outbound "+(channel.outbound_connector_configured?"configured":"not configured")+"; policy "+(channel.inbound_policy_enabled?"enabled":"disabled")+"; transport "+(channel.outbound_transport_registered?"registered":"not registered")+"; autonomous replies "+(channel.inbound_agent_replies_ready?"ready":"not ready")+".");
+    }
+    const queue=(result.delivery||{}).queue||{};
+    lines.push("Outbox — pending: "+(queue.pending||0)+"; leased: "+(queue.leased||0)+"; unknown: "+(queue.unknown||0)+"; scheduled retries: "+(queue.scheduled_retries||0)+".");
+    target.replaceChildren();
+    for(const line of lines){const row=document.createElement("div");row.className="small";row.textContent=line;target.append(row);}
+  }catch(e){target.textContent="Could not load messaging gateway status. Verify API access and server health."; }
+}
+$("refreshMessagingStatus").onclick=refreshMessagingControlPlane;
 async function refreshMessagingInbox(){
   const list=$("messagingConversationList"),channels=$("messagingChannels");
   list.textContent="Loading conversations…";
@@ -970,6 +997,7 @@ async function refreshMessagingInbox(){
     const [channelData,conversationData]=await Promise.all([
       api("/messaging/channels"),api("/messaging/conversations?limit=100")
     ]);
+    await refreshMessagingControlPlane();
     channels.textContent=channelData.channels.length
       ? "Channels with stored conversations: "+channelData.channels.join(", ")+". No live connector status is implied."
       : "No channels have stored conversations yet.";
@@ -1089,6 +1117,7 @@ $("sendTelegramMessage").onclick=async()=>{
   }finally{button.disabled=false;}
 }
 $("refreshMessaging").onclick=refreshMessagingInbox;
+refreshMessagingControlPlane();
 $("queueMessaging").onclick=async()=>{
   const channel=$("messagingOutChannel").value.trim();
   const recipient=$("messagingOutRecipient").value.trim();
