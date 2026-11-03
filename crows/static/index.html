@@ -1023,8 +1023,8 @@ async function refreshDiscordConnectorStatus(){
     const result=await api("/messaging/discord/status");
     target.textContent=result.configured
       ? (result.interactions_configured
-          ? "Discord webhook and signed slash-command intake are configured."
-          : "Discord incoming webhook configured. Signed slash-command intake is not configured.")
+          ? "Discord signed slash-command intake is configured."
+          : "Discord incoming webhook configured. Slash-command intake is not configured.")
       : "Discord webhook or interactions are not configured. Set CROWS_DISCORD_WEBHOOK_URL or the Discord application ID/public key.";
     target.dataset.configured=String(Boolean(result.configured));
   }catch(e){
