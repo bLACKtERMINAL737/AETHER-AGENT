@@ -775,3 +775,79 @@ async def test_orchestrator_rejects_invalid_reviewed_plan_before_creating_work(
     assert error.value.status_code == 400
     assert store.list_workflows(limit=10) == []
     assert router.planning_calls == []
+
+
+
+@pytest.mark.asyncio
+async def test_workflow_pause_resume_and_cancel_endpoints_are_durable(tmp_path, monkeypatch):
+    store, _router = configure(monkeypatch, tmp_path)
+    workflow = store.create_workflow("Control endpoint lifecycle", [])
+    workflow_id = workflow["id"]
+
+    paused = app_module.pause_agent_workflow(workflow_id)
+    assert paused["control_state"] == "paused"
+    assert store.get_workflow(workflow_id)["control_state"] == "paused"
+
+    resumed = app_module.resume_agent_workflow(workflow_id)
+    assert resumed["control_state"] == "running"
+
+    cancelled = app_module.cancel_agent_workflow(workflow_id)
+    assert cancelled["control_state"] == "cancel_requested"
+    with pytest.raises(HTTPException) as error:
+        app_module.resume_agent_workflow(workflow_id)
+    assert error.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_cancelled_workflow_does_not_schedule_remaining_tasks_or_qa(
+    tmp_path, monkeypatch
+):
+    store, _router = configure(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        app_module,
+        "get_env",
+        lambda key, default="": "1" if key == "CROWS_AGENT_MAX_CONCURRENCY" else default,
+    )
+    executed = []
+
+    async def fake_run(task_id):
+        task = store.get_task(task_id)
+        assert task is not None and store.claim_task(task_id)
+        executed.append(task["title"])
+        if len(executed) == 1:
+            app_module.cancel_agent_workflow(active_workflow_id[0])
+        store.set_task_status(task_id, "succeeded", result={"answer": "verified"})
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "result": {"answer": "verified"},
+            "tool_calls": 0,
+            "tool_attempts": 0,
+        }
+
+    active_workflow_id = [None]
+    original_create_workflow = store.create_workflow
+
+    def capture_workflow(goal, plan):
+        workflow = original_create_workflow(goal, plan)
+        active_workflow_id[0] = workflow["id"]
+        return workflow
+
+    monkeypatch.setattr(store, "create_workflow", capture_workflow)
+    monkeypatch.setattr(app_module, "run_agent_task", fake_run)
+    reviewed = [
+        {"title": "First bounded task", "input": "Run first", "role": "research", "depends_on": []},
+        {"title": "Second bounded task", "input": "Must not run", "role": "monitor", "depends_on": []},
+    ]
+    result = await app_module.orchestrate_agent_work(
+        app_module.AgentPlanRequest(goal="Cancel after first task", subtasks=reviewed)
+    )
+
+    assert result["status"] == "partial"
+    assert result["control_state"] == "completed"
+    assert len(executed) == 1
+    assert not any(title.startswith("[qa_security]") for title in executed)
+    saved = store.get_workflow(result["workflow_id"])
+    assert saved["control_state"] == "completed"
+    assert saved["results"]["qa_review"]["status"] == "not_run"
+    assert saved["results"]["tasks"][1]["status"] == "blocked"
