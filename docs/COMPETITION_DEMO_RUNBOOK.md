@@ -17,6 +17,16 @@ Show one end-to-end flow:
 **Safety boundary:** never expose the local API to a public network, show provider keys on screen, or approve a diff without reading it. The test runner operates on a disposable snapshot; it is not a guarantee that arbitrary code is safe.
 
 
+## Workflow pause, resume, and cancellation
+
+The selected workflow detail panel exposes **Pause**, **Resume**, and **Cancel workflow** controls for active runs. Control state is persisted separately from the workflow result status and remains available after a server restart.
+
+- Pause is cooperative: the active bounded batch is allowed to finish, then no new specialist tasks are scheduled until resumed.
+- Resume is accepted only from the paused state. A cancellation request cannot be reversed into running.
+- Cancel is also cooperative: the active batch finishes, unscheduled tasks are marked as not executed, and the workflow finishes as `partial` without starting the QA task. The UI requires confirmation.
+- These controls do not interrupt an external side effect already in progress. Review task/tool journals for uncertain outcomes; never assume cancellation rolled back an operation.
+- Completed workflows cannot be reopened through these controls. Existing explicit recovery remains the only route for eligible interrupted (`unknown`) workflows.
+
 ## Reviewable agent planning
 
 Use `POST /agents/plan` with a goal to generate a bounded, dependency-validated specialist plan. This endpoint is preview-only: it creates no workflow or task and returns `executed: false` plus `approval_required: true`.
