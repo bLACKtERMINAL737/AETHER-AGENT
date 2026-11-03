@@ -1134,6 +1134,54 @@ def get_agent_workflow(workflow_id: str):
     return workflow
 
 
+@app.post("/agents/workflows/{workflow_id}/pause")
+def pause_agent_workflow(workflow_id: str):
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow["status"] != "running":
+        raise HTTPException(status_code=409, detail="Only a running workflow can be paused.")
+    try:
+        changed = store.set_workflow_control(workflow_id, "paused")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Workflow control not found.") from exc
+    if not changed:
+        raise HTTPException(status_code=409, detail="Workflow is no longer in a pausable state.")
+    return {"workflow_id": workflow_id, "status": "running", "control_state": "paused"}
+
+
+@app.post("/agents/workflows/{workflow_id}/resume")
+def resume_agent_workflow(workflow_id: str):
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow["status"] != "running":
+        raise HTTPException(status_code=409, detail="Only a paused running workflow can be resumed.")
+    try:
+        changed = store.set_workflow_control(workflow_id, "running")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Workflow control not found.") from exc
+    if not changed:
+        raise HTTPException(status_code=409, detail="Workflow is not paused or cancellation was requested.")
+    return {"workflow_id": workflow_id, "status": "running", "control_state": "running"}
+
+
+@app.post("/agents/workflows/{workflow_id}/cancel")
+def cancel_agent_workflow(workflow_id: str):
+    workflow = store.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow["status"] != "running":
+        raise HTTPException(status_code=409, detail="Only a running workflow can be cancelled.")
+    try:
+        changed = store.set_workflow_control(workflow_id, "cancel_requested")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Workflow control not found.") from exc
+    if not changed:
+        raise HTTPException(status_code=409, detail="Workflow is already completing or cancellation was requested.")
+    return {"workflow_id": workflow_id, "status": "running", "control_state": "cancel_requested"}
+
+
 @app.post("/agents/workflows/{workflow_id}/recover")
 async def recover_agent_workflow(workflow_id: str):
     """Explicitly continue only checkpointed queued tasks; never replay uncertain work."""
@@ -1810,6 +1858,25 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
 
     try:
         while pending:
+            # Pause is durable and cooperative: finish the active batch, then wait
+            # before scheduling another task. Cancellation never replays active work.
+            while store.get_workflow_control(workflow_id) == "paused":
+                await asyncio.sleep(0.25)
+            if store.get_workflow_control(workflow_id) == "cancel_requested":
+                for index in sorted(pending):
+                    item = subtasks[index]
+                    outcomes_by_index[index] = {
+                        "plan_index": index,
+                        "title": item["title"],
+                        "role": item["role"],
+                        "depends_on": item.get("depends_on", []),
+                        "status": "blocked",
+                        "error": "Workflow was cancelled before this task was scheduled; task was not executed.",
+                    }
+                pending.clear()
+                persist_checkpoint()
+                break
+
             # Resolve failed prerequisites before scheduling any newly ready work.
             blocked_indexes = [
                 index for index in sorted(pending)
@@ -1924,6 +1991,34 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
                 raise
 
         outcomes = ordered_outcomes()
+        if store.get_workflow_control(workflow_id) == "cancel_requested":
+            review = {
+                "status": "not_run",
+                "summary": "QA/security review was not run because the workflow was cancelled.",
+            }
+            checkpoint["qa_review"] = review
+            checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
+            store.set_workflow_control(workflow_id, "completed")
+            store.update_workflow(
+                workflow_id,
+                "partial",
+                results=checkpoint,
+                error="Workflow was cancelled by request; remaining tasks and QA review were not executed.",
+            )
+            return {
+                "workflow_id": workflow_id,
+                "goal": request.goal,
+                "status": "partial",
+                "control_state": "completed",
+                "tasks": outcomes,
+                "qa_review": review,
+                "workspace_modified": False,
+                "approval_required_before_changes": True,
+                "max_concurrency": max_concurrency,
+                "task_timeout_seconds": task_timeout_seconds,
+                "diagnostics": checkpoint["diagnostics"],
+            }
+
         qa = store.create_task(
             "[qa_security] Review specialist results",
             "Review this goal and the specialist results independently for correctness, security risks, and missing tests. "
@@ -1975,6 +2070,7 @@ async def orchestrate_agent_work(request: AgentPlanRequest):
         checkpoint["diagnostics"] = build_diagnostics(outcomes, review)
         all_ok = all(item["status"] == "succeeded" for item in outcomes) and review["status"] == "succeeded" and review.get("verdict") == "PASS"
         final_status = "succeeded" if all_ok else "partial"
+        store.set_workflow_control(workflow_id, "completed")
         store.update_workflow(
             workflow_id,
             final_status,
