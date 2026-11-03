@@ -26,6 +26,7 @@ from .config import Settings, get_env
 from .provider import ModelProvider, ModelRouter, ProviderNotConfigured
 from .store import TaskStore
 from .messaging_store import MessagingStore
+from .messaging_dispatch import InboundDispatchError, InboundDispatchStore
 from .scheduler_store import SchedulerStore
 from .messaging import MAX_ID_CHARS, MessagingContractError
 from .security import LocalAPIProtection
@@ -39,6 +40,7 @@ settings = Settings.from_env()
 settings.workspace.mkdir(parents=True, exist_ok=True)
 store = TaskStore(settings.db_path)
 messaging_store = MessagingStore(settings.db_path)
+inbound_dispatch_store = InboundDispatchStore(settings.db_path)
 scheduler_store = SchedulerStore(settings.db_path)
 tools = ToolRegistry(settings.workspace)
 primary_provider = ModelProvider(
@@ -524,6 +526,16 @@ async def telegram_webhook(request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Telegram message failed validation") from exc
     session = store.get_or_create_messaging_session(result["conversation_id"], "telegram")
+    try:
+        inbound_dispatch_store.enqueue(
+            message_id=result["message"]["id"],
+            conversation_id=result["conversation_id"],
+            channel="telegram",
+            session_id=session["id"],
+        )
+    except InboundDispatchError as exc:
+        logger.exception("Could not queue Telegram message for agent dispatch")
+        raise HTTPException(status_code=503, detail="Telegram message was stored but dispatch queueing failed") from exc
     return {"ok": True, "duplicate": result["duplicate"]}
 
 
@@ -854,7 +866,26 @@ def messaging_inbound(request: MessagingInboundRequest):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     session = store.get_or_create_messaging_session(result["conversation_id"], request.channel)
-    return {**result, "session_id": session["id"]}
+    try:
+        dispatch = inbound_dispatch_store.enqueue(
+            message_id=result["message"]["id"],
+            conversation_id=result["conversation_id"],
+            channel=request.channel,
+            session_id=session["id"],
+        )
+    except InboundDispatchError as exc:
+        logger.exception("Could not queue normalized inbound message for dispatch")
+        raise HTTPException(status_code=503, detail="Inbound message was stored but dispatch queueing failed") from exc
+    return {**result, "session_id": session["id"], "dispatch_id": dispatch["id"], "dispatch_state": dispatch["state"]}
+
+
+@app.get("/messaging/dispatch")
+def list_inbound_dispatch(limit: int = 50):
+    """List sanitized inbound dispatch state without message content or session IDs."""
+    try:
+        return {"dispatches": inbound_dispatch_store.list_recent(limit)}
+    except InboundDispatchError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/messaging/outbound")
