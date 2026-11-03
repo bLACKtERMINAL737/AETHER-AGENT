@@ -104,6 +104,11 @@ class TaskStore:
               updated_at TEXT NOT NULL,
               error_text TEXT
             );
+            CREATE TABLE IF NOT EXISTS workflow_controls (
+              workflow_id TEXT PRIMARY KEY REFERENCES agent_workflows(id) ON DELETE CASCADE,
+              state TEXT NOT NULL CHECK(state IN ('running','paused','cancel_requested','completed')),
+              updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS session_messages (
               id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
               role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
@@ -190,6 +195,11 @@ class TaskStore:
                     now, now,
                 ),
             )
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO workflow_controls(workflow_id,state,updated_at) VALUES(?,?,?)",
+                (workflow_id, "running", now),
+            )
         return self.get_workflow(workflow_id)  # type: ignore[return-value]
 
     def get_workflow(self, workflow_id: str) -> dict[str, Any] | None:
@@ -202,6 +212,7 @@ class TaskStore:
         result = dict(row)
         result["plan"] = json.loads(result.pop("plan_json"))
         result["results"] = json.loads(result.pop("results_json"))
+        result["control_state"] = self.get_workflow_control(workflow_id)
         return result
 
     def list_workflows(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -216,6 +227,42 @@ class TaskStore:
             workflow for row in rows
             if (workflow := self.get_workflow(row["id"])) is not None
         ]
+
+    def get_workflow_control(self, workflow_id: str) -> str:
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT state FROM workflow_controls WHERE workflow_id=?",
+                (workflow_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError("Workflow control not found")
+        return str(row["state"])
+
+    def set_workflow_control(self, workflow_id: str, state: str) -> bool:
+        """Atomically change a live workflow control state; terminal states cannot reopen."""
+        if state not in {"running", "paused", "cancel_requested", "completed"}:
+            raise ValueError("Invalid workflow control state")
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT state FROM workflow_controls WHERE workflow_id=?",
+                (workflow_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Workflow not found")
+            current = row["state"]
+            allowed = {
+                "running": {"paused", "cancel_requested", "completed"},
+                "paused": {"running", "cancel_requested", "completed"},
+                "cancel_requested": {"cancel_requested", "completed"},
+                "completed": {"completed"},
+            }
+            if state not in allowed[current]:
+                return False
+            con.execute(
+                "UPDATE workflow_controls SET state=?,updated_at=? WHERE workflow_id=?",
+                (state, utc_now(), workflow_id),
+            )
+            return True
 
     def execution_metrics(self) -> dict[str, Any]:
         """Return aggregate task/workflow/tool health without exposing task content or IDs."""
