@@ -64,7 +64,7 @@ class CodingEngine:
         # Reject symlinks before resolve(), because resolve() hides the symlink itself.
         cursor = candidate
         while cursor != self.workspace and cursor != cursor.parent:
-            if cursor.is_symlink():
+            if cursor.is_symlink() or getattr(cursor, "is_junction", lambda: False)():
                 raise CodingError("Symlink paths are not supported")
             cursor = cursor.parent
         target = candidate.resolve()
