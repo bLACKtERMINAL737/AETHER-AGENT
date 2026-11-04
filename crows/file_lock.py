@@ -31,7 +31,7 @@ def file_lock(fd: int, *, blocking: bool = True) -> Iterator[bool]:
         if os.fstat(fd).st_size == 0:
             os.lseek(fd, 0, os.SEEK_SET)
             try:
-                os.write(fd, b"\\0")
+                os.write(fd, b"\0")
             except OSError:
                 # Another process may have initialized the same lock file.
                 if os.fstat(fd).st_size == 0:
