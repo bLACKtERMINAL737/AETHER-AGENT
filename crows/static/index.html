@@ -139,6 +139,13 @@ main>.warning{display:none}main>.panel[style*="margin-top:14px"]{display:none!im
       </div>
       <div id="messagingGatewayStatus" class="muted small" role="status" aria-live="polite" style="margin-top:8px">Loading gateway status…</div>
     </section>
+    <section style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px" aria-labelledby="deliveryAttentionHeading">
+      <div class="top">
+        <div><h3 id="deliveryAttentionHeading">Delivery attention</h3><div class="muted small">Failed and uncertain outbound records. Reconcile an unknown result only after checking the provider directly; reconciliation never resends.</div></div>
+        <button id="refreshMessagingDelivery" type="button">Refresh deliveries</button>
+      </div>
+      <div id="messagingDeliveryAttentionList" class="files" role="region" aria-live="polite" style="margin-top:8px">Loading delivery records…</div>
+    </section>
     <div class="grid" style="margin-top:12px">
       <div>
         <h3>Conversations</h3>
@@ -989,7 +996,70 @@ async function refreshMessagingControlPlane(){
     for(const line of lines){const row=document.createElement("div");row.className="small";row.textContent=line;target.append(row);}
   }catch(e){target.textContent="Could not load messaging gateway status. Verify API access and server health."; }
 }
-$("refreshMessagingStatus").onclick=refreshMessagingControlPlane;
+async function refreshMessagingDeliveryAttention(){
+  const target=$("messagingDeliveryAttentionList");
+  target.textContent="Loading failed and uncertain deliveries…";
+  try{
+    const data=await api("/messaging/outbox/attention?limit=100");
+    const messages=data.messages||[];
+    target.replaceChildren();
+    if(!messages.length){
+      target.textContent="No failed or uncertain outbound deliveries.";
+      return;
+    }
+    for(const message of messages){
+      const card=document.createElement("article");
+      card.style.cssText="padding:10px;margin:6px 0;border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere";
+      const meta=document.createElement("div");meta.className="small";
+      meta.textContent=message.channel+" · "+message.status+" · Updated "+(message.updated_at||"");
+      const retry=document.createElement("div");retry.className="muted small";
+      retry.textContent="Retry attempts: "+(message.retry_count||0)+" / "+(message.max_retries||0);
+      const id=document.createElement("div");id.className="muted small";
+      id.textContent="Record: "+message.message_id;
+      card.append(meta,retry,id);
+      if(message.status==="unknown"){
+        const note=document.createElement("div");note.className="muted small";
+        note.textContent="Check the provider's delivery history first, then record the verified outcome below. This action changes the journal only.";
+        const controls=document.createElement("div");
+        controls.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
+        const outcome=document.createElement("select");
+        outcome.setAttribute("aria-label","Verified delivery outcome");
+        const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="Select verified outcome";outcome.append(placeholder);
+        for(const value of ["sent","delivered","failed"]){
+          const option=document.createElement("option");option.value=value;option.textContent=value;outcome.append(option);
+        }
+        const evidence=document.createElement("input");
+        evidence.type="text";evidence.maxLength=1000;evidence.placeholder="Evidence from provider check";evidence.setAttribute("aria-label","Reconciliation evidence");
+        evidence.style.flex="1";
+        const reconcile=document.createElement("button");reconcile.type="button";reconcile.textContent="Record outcome";
+        reconcile.onclick=async()=>{
+          if(!outcome.value||!evidence.value.trim()){
+            setStatus("messagingStatus","Choose an outcome and enter evidence from the provider check.","bad");
+            return;
+          }
+          reconcile.disabled=true;
+          try{
+            await api("/messaging/outbox/"+encodeURIComponent(message.message_id)+"/reconcile",{
+              method:"POST",
+              body:JSON.stringify({status:outcome.value,evidence:evidence.value.trim()})
+            });
+            setStatus("messagingStatus","Delivery outcome recorded. No message was resent.","good");
+            await refreshMessagingDeliveryAttention();
+            await refreshMessagingControlPlane();
+          }catch(e){setStatus("messagingStatus",e.message,"bad");}
+          finally{reconcile.disabled=false;}
+        };
+        controls.append(outcome,evidence,reconcile);
+        card.append(note,controls);
+      }
+      target.append(card);
+    }
+  }catch(e){
+    target.textContent="Could not load delivery attention records. Verify API access and server health.";
+  }
+}
+$("refreshMessagingDelivery").onclick=refreshMessagingDeliveryAttention;
+$("refreshMessagingStatus").onclick=async()=>{await refreshMessagingControlPlane();await refreshMessagingDeliveryAttention();};
 async function refreshMessagingInbox(){
   const list=$("messagingConversationList"),channels=$("messagingChannels");
   list.textContent="Loading conversations…";
