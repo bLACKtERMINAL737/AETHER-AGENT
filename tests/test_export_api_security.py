@@ -1,6 +1,8 @@
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from crows import app as app_module
+from crows.security import LocalAPIProtection
 from crows.store import TaskStore
 
 
@@ -8,8 +10,11 @@ def make_client(monkeypatch, tmp_path):
     monkeypatch.setenv("CROWS_API_TOKEN", "coverage-audit-test-token")
     store = TaskStore(tmp_path / "exports.sqlite3")
     monkeypatch.setattr(app_module, "store", store)
+    isolated_app = FastAPI()
+    isolated_app.router.routes = list(app_module.app.router.routes)
+    isolated_app.add_middleware(LocalAPIProtection)
     return TestClient(
-        app_module.app,
+        isolated_app,
         base_url="http://127.0.0.1:8000",
         raise_server_exceptions=False,
     ), store
