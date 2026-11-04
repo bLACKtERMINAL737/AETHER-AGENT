@@ -6,9 +6,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .file_lock import file_lock
-from uuid import uuid4
 
 STATUSES = {"queued", "running", "succeeded", "failed", "unknown"}
 
