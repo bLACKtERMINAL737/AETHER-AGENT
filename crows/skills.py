@@ -13,9 +13,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
-from .file_lock import file_lock
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .file_lock import file_lock
 
 
 _SKILL_ID = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
