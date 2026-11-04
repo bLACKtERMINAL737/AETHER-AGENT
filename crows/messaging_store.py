@@ -637,6 +637,25 @@ class MessagingStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_outbound_attention(self, *, limit: int = 50) -> list[dict]:
+        """List failed and uncertain outbound records without content or delivery targets."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        with self.connect() as con:
+            rows = con.execute(
+                """SELECT m.id AS message_id, m.channel, m.status,
+                          m.created_at, m.updated_at,
+                          COALESCE(r.retry_count, 0) AS retry_count,
+                          COALESCE(r.max_retries, 0) AS max_retries,
+                          r.next_attempt_at
+                   FROM messaging_messages m
+                   LEFT JOIN messaging_delivery_retries r ON r.message_id=m.id
+                   WHERE m.direction='outbound' AND m.status IN ('failed','unknown')
+                   ORDER BY m.updated_at DESC, m.id LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def delivery_metrics(self) -> dict:
         """Return aggregate outbound delivery counts without exposing message content or IDs."""
         with self.connect() as con:
