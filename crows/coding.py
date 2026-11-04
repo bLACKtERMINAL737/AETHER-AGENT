@@ -222,6 +222,11 @@ class CodingEngine:
     @staticmethod
     def _fsync_directory(directory: Path) -> None:
         """Persist directory-entry changes after atomic file replacement."""
+        if os.name == "nt":
+            # Windows does not provide a portable directory fsync handle.
+            # File contents are flushed before os.replace; replacement itself
+            # is atomic on the same volume.
+            return
         flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
         fd = os.open(directory, flags)
         try:
@@ -460,7 +465,10 @@ class CodingEngine:
                         raise CodingError(f"File changed since proposal creation: {change['path']}. Generate a fresh proposal.")
                     original_mode = stat.S_IMODE(target.stat().st_mode)
                 fd, temp_name = tempfile.mkstemp(prefix=".crows-stage-", dir=str(target.parent))
-                os.fchmod(fd, original_mode)
+                if os.name == "nt":
+                    os.chmod(temp_name, original_mode)
+                else:
+                    os.fchmod(fd, original_mode)
                 with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                     handle.write(change["content"])
                     handle.flush()
@@ -565,7 +573,10 @@ class CodingEngine:
                         )
                         rollback_temp = Path(temp_name)
 
-                        os.fchmod(fd, original_mode)
+                        if os.name == "nt":
+                            os.chmod(temp_name, original_mode)
+                        else:
+                            os.fchmod(fd, original_mode)
                         with os.fdopen(
                             fd, "w", encoding="utf-8", newline=""
                         ) as handle:
