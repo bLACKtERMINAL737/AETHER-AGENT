@@ -102,12 +102,23 @@ class CodingEngine:
 
     def _create_in_workspace(self, relative: str, source: Path) -> None:
         """Atomically create a file without replacing an existing target."""
+        if os.name == "nt":
+            target = self._safe_path(relative, must_exist=False)
+            if target.exists() or target.is_symlink():
+                raise CodingError(f"New file path appeared before apply: {relative}")
+            # A same-volume hard link is atomic and fails if the destination
+            # already exists; unlike a check-then-write it cannot overwrite a
+            # concurrently-created file.
+            os.link(source, target, follow_symlinks=False)
+            try:
+                source.unlink()
+            except OSError:
+                pass
+            return
         if os.link not in getattr(os, "supports_dir_fd", set()):
             raise CodingError("Secure no-overwrite file creation is unavailable on this platform")
         directory_fd, name = self._open_workspace_parent(relative)
         try:
-            # linkat fails if the destination already exists; unlike rename, it
-            # cannot silently overwrite a file created after the stale check.
             os.link(
                 source.name, name,
                 src_dir_fd=directory_fd, dst_dir_fd=directory_fd,
@@ -116,13 +127,27 @@ class CodingEngine:
             try:
                 os.unlink(source.name, dir_fd=directory_fd)
             except OSError:
-                # The outer staging cleanup removes a leftover temporary name.
                 pass
         finally:
             os.close(directory_fd)
 
     def _delete_created_in_workspace(self, relative: str, expected_content: str) -> None:
         """Rollback a created file only if its identity and contents still match."""
+        if os.name == "nt":
+            target = self._safe_path(relative)
+            if target.is_symlink() or getattr(target, "is_junction", lambda: False)():
+                raise CodingError("Rollback refused to remove a symlink path")
+            before = target.stat(follow_symlinks=False)
+            current = target.read_text(encoding="utf-8")
+            after = target.stat(follow_symlinks=False)
+            if (
+                current != expected_content
+                or not stat.S_ISREG(after.st_mode)
+                or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+            ):
+                raise CodingError("Rollback refused to remove an externally changed file; manual reconciliation is required.")
+            target.unlink()
+            return
         directory_fd, name = self._open_workspace_parent(relative)
         file_fd = -1
         try:
@@ -160,6 +185,14 @@ class CodingEngine:
             part in {"", ".", ".."} for part in relative_path.parts
         ):
             raise CodingError("Invalid relative workspace path")
+        if os.name == "nt":
+            target = self._safe_path(relative)
+            if target.is_symlink() or getattr(target, "is_junction", lambda: False)():
+                raise CodingError("Symlink paths are not supported")
+            # tempfile is created in the target directory, so os.replace is an
+            # atomic same-volume replacement on Windows.
+            os.replace(source, target)
+            return
         supported = getattr(os, "supports_dir_fd", set())
         if _OS_OPEN not in supported or _OS_RENAME not in supported:
             raise CodingError("Secure directory-relative replacement is unavailable on this platform")
