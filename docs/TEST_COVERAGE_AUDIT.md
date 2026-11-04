@@ -1,6 +1,6 @@
 # Test Coverage Audit
 
-Audit baseline: `main` at `c045e67` (4 November 2026).
+Audit baseline: `main` after merge `02187be` (4 November 2026).
 
 This document distinguishes automated regression coverage from end-to-end acceptance evidence. A passing pytest suite does not, by itself, prove that every advertised capability works in a clean installation or with live external providers.
 
@@ -24,7 +24,7 @@ This document distinguishes automated regression coverage from end-to-end accept
 1. **Sensitive export endpoint integration tests.** Existing export tests validate helper output and route shape, but do not exercise both export endpoints through the application's authentication middleware. This audit adds that regression coverage.
 2. **Live end-to-end acceptance.** Mocked providers and unit tests cannot establish real-provider reliability, actual delivery, or real-model tool-use quality.
 3. **Clean-environment install.** Verify installation and startup from a fresh checkout without relying on the developer's existing virtual environment or local state.
-4. **Platform matrix.** The current CI workflow runs Ubuntu and macOS only. Windows behavior remains unverified until a Windows runner executes the suite and platform-specific failures are addressed.
+4. **Windows platform compatibility.** The CI workflow now runs Ubuntu 24.04, macOS 15, and Windows. PR #335 added Windows-specific workspace, coding-apply, SQLite initialization, timestamp-ordering, and test portability fixes; its Tests workflow completed successfully across the matrix. Keep platform-specific regression tests in place as code evolves.
 
 ## Not implemented (do not describe these as test gaps)
 
@@ -34,6 +34,7 @@ The master roadmap identifies browser automation, general terminal/command execu
 
 - Add a regression test when implemented behavior lacks a test.
 - Add an acceptance test when unit tests exist but the integrated user workflow is unverified.
+- Treat Windows support as CI-validated for the current matrix, not as proof that every optional dependency or Docker-backed workflow is supported on Windows.
 - Track live-provider and Docker checks separately from deterministic CI tests.
 - Re-run the full suite after each batch and record the exact commit and CI result.
 - Update this matrix as capabilities change; do not equate test count with product completeness.
