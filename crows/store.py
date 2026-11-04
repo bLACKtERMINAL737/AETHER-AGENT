@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,7 +60,19 @@ class TaskStore:
 
     def _init_db(self) -> None:
         with self.connect() as con:
-            con.execute("PRAGMA journal_mode=WAL")
+            # SQLite may return SQLITE_BUSY immediately for journal_mode=WAL
+            # when multiple Windows threads construct stores simultaneously.
+            # Retry this one-time database mode negotiation; normal queries
+            # continue to use SQLite's configured busy_timeout.
+            deadline = time.monotonic() + 15.0
+            while True:
+                try:
+                    con.execute("PRAGMA journal_mode=WAL")
+                    break
+                except sqlite3.OperationalError as exc:
+                    if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
             con.executescript("""
             CREATE TABLE IF NOT EXISTS tasks (
               id TEXT PRIMARY KEY, title TEXT NOT NULL, input_text TEXT NOT NULL,
