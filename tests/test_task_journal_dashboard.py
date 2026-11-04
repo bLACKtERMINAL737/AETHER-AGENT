@@ -4,7 +4,7 @@ from crows import app as app_module
 def test_task_journal_dashboard_is_in_static_ui():
     from pathlib import Path
 
-    html = (Path(app_module.__file__).parent / "static" / "index.html").read_text()
+    html = (Path(app_module.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
     assert 'id="tasksHeading"' in html
     assert 'id="refreshTasks"' in html
     assert 'id="createTask"' in html
