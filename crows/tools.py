@@ -101,7 +101,7 @@ class ToolRegistry:
         # path component was a symlink (including links that stay in-workspace).
         cursor = candidate
         while cursor != self.workspace and cursor != cursor.parent:
-            if cursor.is_symlink():
+            if cursor.is_symlink() or getattr(cursor, "is_junction", lambda: False)():
                 raise ToolError("Symlink paths are not supported")
             cursor = cursor.parent
         target = candidate.resolve()
