@@ -742,6 +742,15 @@ class TaskStore:
             exists = con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
             if not exists:
                 raise KeyError("Session not found")
+            latest = con.execute(
+                "SELECT MAX(created_at) AS created_at FROM session_messages WHERE session_id=?",
+                (session_id,),
+            ).fetchone()["created_at"]
+            if latest is not None and now <= latest:
+                from datetime import timedelta
+                latest_dt = datetime.fromisoformat(latest)
+                now_dt = datetime.fromisoformat(now)
+                now = max(now_dt, latest_dt + timedelta(microseconds=1)).isoformat()
             con.execute("INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
                         (message_id, session_id, role, content, now))
             con.execute("UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id))
@@ -763,10 +772,27 @@ class TaskStore:
         """Persist a successful user/assistant turn atomically."""
         user_id, assistant_id = str(uuid4()), str(uuid4())
         user_created_at, assistant_created_at = utc_now(), utc_now()
+        if assistant_created_at <= user_created_at:
+            from datetime import timedelta
+            assistant_created_at = (
+                datetime.fromisoformat(user_created_at) + timedelta(microseconds=1)
+            ).isoformat()
         with self.connect() as con:
             exists = con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
             if not exists:
                 raise KeyError("Session not found")
+            latest = con.execute(
+                "SELECT MAX(created_at) AS created_at FROM session_messages WHERE session_id=?",
+                (session_id,),
+            ).fetchone()["created_at"]
+            if latest is not None and user_created_at <= latest:
+                from datetime import timedelta
+                user_created_at = (
+                    datetime.fromisoformat(latest) + timedelta(microseconds=1)
+                ).isoformat()
+                assistant_created_at = (
+                    datetime.fromisoformat(user_created_at) + timedelta(microseconds=1)
+                ).isoformat()
             con.execute(
                 "INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
                 (user_id, session_id, "user", user_content, user_created_at),
