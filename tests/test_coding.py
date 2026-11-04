@@ -867,7 +867,7 @@ def test_created_file_is_removed_if_later_change_fails(tmp_path: Path, monkeypat
             raise OSError("simulated replacement failure")
         return real_rename(src, dst, **kwargs)
 
-    monkeypatch.setattr("crows.coding.os.rename", fail_second_replace)
+    monkeypatch.setattr("crows.coding.os." + replace_name, fail_second_replace)
 
     with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
