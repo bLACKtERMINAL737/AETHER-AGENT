@@ -186,7 +186,7 @@ def test_apply_rechecks_each_file_before_replacement_and_rolls_back(
 
     def rename_with_concurrent_edit(source, destination, **kwargs):
         nonlocal changed_second
-        if destination == first.name and not changed_second:
+        if Path(destination).name == first.name and not changed_second:
             result = real_rename(source, destination, **kwargs)
             second.write_text("SECOND = 99\\n", encoding="utf-8")
             changed_second = True
