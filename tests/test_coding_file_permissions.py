@@ -1,6 +1,7 @@
 """Verify coding apply and rollback preserve existing file permissions."""
 
 import hashlib
+import os
 import stat
 from pathlib import Path
 
@@ -40,6 +41,8 @@ def _make_proposal(tmp_path: Path):
 
 
 def test_apply_preserves_existing_file_permissions(tmp_path: Path):
+    if os.name == "nt":
+        pytest.skip("Windows exposes only the read-only file attribute through chmod")
     source, _original, proposed, _store, engine, proposal = _make_proposal(tmp_path)
 
     result = engine.apply(proposal["id"])
@@ -52,6 +55,8 @@ def test_apply_preserves_existing_file_permissions(tmp_path: Path):
 def test_successful_rollback_restores_original_file_permissions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    if os.name == "nt":
+        pytest.skip("Windows exposes only the read-only file attribute through chmod")
     source, original, _proposed, store, engine, proposal = _make_proposal(tmp_path)
     calls = 0
 

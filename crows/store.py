@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,7 +60,19 @@ class TaskStore:
 
     def _init_db(self) -> None:
         with self.connect() as con:
-            con.execute("PRAGMA journal_mode=WAL")
+            # SQLite may return SQLITE_BUSY immediately for journal_mode=WAL
+            # when multiple Windows threads construct stores simultaneously.
+            # Retry this one-time database mode negotiation; normal queries
+            # continue to use SQLite's configured busy_timeout.
+            deadline = time.monotonic() + 15.0
+            while True:
+                try:
+                    con.execute("PRAGMA journal_mode=WAL")
+                    break
+                except sqlite3.OperationalError as exc:
+                    if "locked" not in str(exc).lower() or time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.05)
             con.executescript("""
             CREATE TABLE IF NOT EXISTS tasks (
               id TEXT PRIMARY KEY, title TEXT NOT NULL, input_text TEXT NOT NULL,
@@ -742,6 +755,15 @@ class TaskStore:
             exists = con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
             if not exists:
                 raise KeyError("Session not found")
+            latest = con.execute(
+                "SELECT MAX(created_at) AS created_at FROM session_messages WHERE session_id=?",
+                (session_id,),
+            ).fetchone()["created_at"]
+            if latest is not None and now <= latest:
+                from datetime import timedelta
+                latest_dt = datetime.fromisoformat(latest)
+                now_dt = datetime.fromisoformat(now)
+                now = max(now_dt, latest_dt + timedelta(microseconds=1)).isoformat()
             con.execute("INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
                         (message_id, session_id, role, content, now))
             con.execute("UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id))
@@ -763,10 +785,27 @@ class TaskStore:
         """Persist a successful user/assistant turn atomically."""
         user_id, assistant_id = str(uuid4()), str(uuid4())
         user_created_at, assistant_created_at = utc_now(), utc_now()
+        if assistant_created_at <= user_created_at:
+            from datetime import timedelta
+            assistant_created_at = (
+                datetime.fromisoformat(user_created_at) + timedelta(microseconds=1)
+            ).isoformat()
         with self.connect() as con:
             exists = con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
             if not exists:
                 raise KeyError("Session not found")
+            latest = con.execute(
+                "SELECT MAX(created_at) AS created_at FROM session_messages WHERE session_id=?",
+                (session_id,),
+            ).fetchone()["created_at"]
+            if latest is not None and user_created_at <= latest:
+                from datetime import timedelta
+                user_created_at = (
+                    datetime.fromisoformat(latest) + timedelta(microseconds=1)
+                ).isoformat()
+                assistant_created_at = (
+                    datetime.fromisoformat(user_created_at) + timedelta(microseconds=1)
+                ).isoformat()
             con.execute(
                 "INSERT INTO session_messages(id,session_id,role,content,created_at) VALUES(?,?,?,?,?)",
                 (user_id, session_id, "user", user_content, user_created_at),

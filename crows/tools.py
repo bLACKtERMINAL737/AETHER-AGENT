@@ -101,7 +101,7 @@ class ToolRegistry:
         # path component was a symlink (including links that stay in-workspace).
         cursor = candidate
         while cursor != self.workspace and cursor != cursor.parent:
-            if cursor.is_symlink():
+            if cursor.is_symlink() or getattr(cursor, "is_junction", lambda: False)():
                 raise ToolError("Symlink paths are not supported")
             cursor = cursor.parent
         target = candidate.resolve()
@@ -117,6 +117,35 @@ class ToolRegistry:
             relative = file_path.relative_to(self.workspace)
             if not relative.parts:
                 return None
+
+            # Windows does not expose O_NOFOLLOW or dir_fd-relative open().
+            # Reject reparse-point components before and after opening, and
+            # verify the resolved target remains inside the workspace.
+            if os.name == "nt":
+                cursor = self.workspace
+                for part in relative.parts:
+                    cursor = cursor / part
+                    if cursor.is_symlink() or getattr(cursor, "is_junction", lambda: False)():
+                        return None
+                resolved = file_path.resolve(strict=True)
+                resolved.relative_to(self.workspace)
+                file_fd = os.open(file_path, os.O_RDONLY)
+                try:
+                    file_stat = os.fstat(file_fd)
+                    if (
+                        not stat.S_ISREG(file_stat.st_mode)
+                        or file_stat.st_size > 1_000_000
+                        or file_path.is_symlink()
+                        or getattr(file_path, "is_junction", lambda: False)()
+                    ):
+                        return None
+                    with os.fdopen(file_fd, "r", encoding="utf-8", errors="replace") as stream:
+                        file_fd = -1
+                        return stream.read().splitlines()
+                finally:
+                    if file_fd >= 0:
+                        os.close(file_fd)
+
             directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
             file_flags = os.O_RDONLY | os.O_NOFOLLOW
             directory_fd = os.open(self.workspace, directory_flags)
@@ -263,7 +292,7 @@ class ToolRegistry:
                     continue
                 for line_number, line in enumerate(lines, 1):
                     if query.casefold() in line.casefold():
-                        matches.append({"file": str(file_path.relative_to(self.workspace)), "line": line_number, "text": line[:500]})
+                        matches.append({"file": file_path.relative_to(self.workspace).as_posix(), "line": line_number, "text": line[:500]})
                         if len(matches) >= max_results:
                             return {"query": query, "matches": matches, "truncated": True}
         return {"query": query, "matches": matches, "truncated": False}

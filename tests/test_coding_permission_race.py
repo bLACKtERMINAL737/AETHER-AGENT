@@ -1,6 +1,7 @@
 """Ensure an external chmod during apply is not overwritten by staged content."""
 
 import hashlib
+import os
 import stat
 import tempfile
 from pathlib import Path
@@ -20,6 +21,8 @@ class _UnusedRouter:
 def test_apply_refuses_to_overwrite_permissions_changed_after_staging(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    if os.name == "nt":
+        pytest.skip("Windows chmod does not expose POSIX permission-mode changes")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     source = workspace / "sample.py"

@@ -180,19 +180,20 @@ def test_apply_rechecks_each_file_before_replacement_and_rolls_back(
     )
     engine.approve(proposal["id"])
 
-    real_rename = coding_module.os.rename
+    replace_name = "replace" if coding_module.os.name == "nt" else "rename"
+    real_rename = getattr(coding_module.os, replace_name)
     changed_second = False
 
     def rename_with_concurrent_edit(source, destination, **kwargs):
         nonlocal changed_second
-        if destination == first.name and not changed_second:
+        if Path(destination).name == first.name and not changed_second:
             result = real_rename(source, destination, **kwargs)
             second.write_text("SECOND = 99\\n", encoding="utf-8")
             changed_second = True
             return result
         return real_rename(source, destination, **kwargs)
 
-    monkeypatch.setattr(coding_module.os, "rename", rename_with_concurrent_edit)
+    monkeypatch.setattr(coding_module.os, replace_name, rename_with_concurrent_edit)
 
     with pytest.raises(CodingError, match="File changed while proposal was being applied"):
         engine.apply(proposal["id"])
