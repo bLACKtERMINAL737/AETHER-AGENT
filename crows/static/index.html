@@ -1068,6 +1068,7 @@ async function refreshMessagingInbox(){
       api("/messaging/channels"),api("/messaging/conversations?limit=100")
     ]);
     await refreshMessagingControlPlane();
+    await refreshMessagingDeliveryAttention();
     channels.textContent=channelData.channels.length
       ? "Channels with stored conversations: "+channelData.channels.join(", ")+". No live connector status is implied."
       : "No channels have stored conversations yet.";
