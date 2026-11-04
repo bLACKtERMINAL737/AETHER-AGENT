@@ -175,3 +175,16 @@ os._exit(23)
     assert len(workflows) == 1
     assert workflows[0]["status"] == "unknown"
     assert workflows[0]["results"]["tasks"][0]["status"] == "running"
+
+    # A second application startup must be a no-op for already-reconciled
+    # records: no duplicate journal entries, timestamp churn, or lost checkpoints.
+    task_before = task.copy()
+    tools_before = [entry.copy() for entry in tools]
+    workflow_before = workflows[0].copy()
+
+    run_application_startup(monkeypatch, store)
+
+    assert store.list_tasks() == [task_before]
+    assert store.list_tool_executions(task["id"]) == tools_before
+    assert store.list_workflows() == [workflow_before]
+    assert store.mark_interrupted_as_unknown() == 0
