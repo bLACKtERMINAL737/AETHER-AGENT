@@ -292,7 +292,7 @@ class ToolRegistry:
                     continue
                 for line_number, line in enumerate(lines, 1):
                     if query.casefold() in line.casefold():
-                        matches.append({"file": str(file_path.relative_to(self.workspace)), "line": line_number, "text": line[:500]})
+                        matches.append({"file": file_path.relative_to(self.workspace).as_posix(), "line": line_number, "text": line[:500]})
                         if len(matches) >= max_results:
                             return {"query": query, "matches": matches, "truncated": True}
         return {"query": query, "matches": matches, "truncated": False}
