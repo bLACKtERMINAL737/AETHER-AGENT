@@ -265,7 +265,8 @@ def test_apply_reports_rollback_failure_without_hiding_original_error(
     ])
     engine.approve(proposal["id"])
 
-    real_replace = os.rename
+    replace_name = "replace" if os.name == "nt" else "rename"
+    real_replace = getattr(os, replace_name)
     calls = 0
 
     def fail_second_replace(src, dst, **kwargs):
@@ -277,7 +278,7 @@ def test_apply_reports_rollback_failure_without_hiding_original_error(
             raise OSError("simulated rollback failure")
         return real_replace(src, dst, **kwargs)
 
-    monkeypatch.setattr("crows.coding.os.rename", fail_second_replace)
+    monkeypatch.setattr("crows.coding.os." + replace_name, fail_second_replace)
 
     with pytest.raises(CodingError, match="Apply failed"):
         engine.apply(proposal["id"])
@@ -855,7 +856,8 @@ def test_created_file_is_removed_if_later_change_fails(tmp_path: Path, monkeypat
         },
     ])
     engine.approve(proposal["id"])
-    real_rename = os.rename
+    replace_name = "replace" if os.name == "nt" else "rename"
+    real_rename = getattr(os, replace_name)
     calls = 0
 
     def fail_second_replace(src, dst, **kwargs):
