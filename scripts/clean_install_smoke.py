@@ -26,7 +26,7 @@ package_path = Path(crows.__file__).resolve()
 assert "site-packages" in str(package_path).lower(), package_path
 assert version("crows") == "0.4.0"
 
-with TestClient(app) as client:
+with TestClient(app, base_url="http://127.0.0.1") as client:
     health = client.get("/health")
     assert health.status_code == 200, health.text
     assert health.json()["status"] == "ok", health.json()
