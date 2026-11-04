@@ -85,6 +85,15 @@ a configured webhook or valid Interactions configuration for per-interaction
 responses. Autonomous replies additionally require the relevant worker flags,
 channel policy, registered transport, and encrypted reply-target key.
 
+The authenticated GET /messaging/outbox/attention endpoint lists only failed and
+uncertain outbound records (bounded to 100). It returns opaque record IDs,
+channel/status timestamps, and retry counters; it deliberately omits message
+text, recipient/delivery targets, and idempotency keys. The Web UI exposes these
+records and allows an operator to reconcile an `unknown` result after checking
+the provider directly. The reconciliation action requires an evidence note and
+a final status; it is audited and never resends the message. Failed records are
+visible for diagnosis but are not automatically retried.
+
 GET /messaging/channels remains compatible and now reports the union of stored,
 policy-registered, and transport-registered channel names; its configured flag
 reflects whether any supported provider direction is configured.
