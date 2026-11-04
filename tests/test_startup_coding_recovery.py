@@ -109,3 +109,69 @@ def test_startup_does_not_recover_proposal_while_real_apply_lock_is_held(
     recovered = store.get_proposal(proposal_id)
     assert recovered["status"] == "applying"
     assert "Process restarted while applying" in recovered["error_text"]
+
+
+
+def test_process_crash_is_reconciled_by_next_application_startup(
+    tmp_path, monkeypatch
+):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    db_path = tmp_path / "hard-crash.sqlite3"
+    child = """
+import os
+import sys
+from pathlib import Path
+from crows.store import TaskStore
+
+store = TaskStore(Path(sys.argv[1]))
+task = store.create_task("Interrupted specialist", "must not be replayed")
+assert store.claim_task(task["id"])
+store.begin_tool(task["id"], "external.write", {"value": "uncertain"})
+workflow = store.create_workflow(
+    "Interrupted workflow",
+    [{"title": "Interrupted specialist", "input": "must not be replayed", "role": "research"}],
+)
+store.update_workflow(
+    workflow["id"],
+    "running",
+    results={
+        "tasks": [{"task_id": task["id"], "status": "running"}],
+        "qa_review": None,
+    },
+)
+# Simulate an abrupt process death: no application shutdown hooks run.
+os._exit(23)
+"""
+    process = subprocess.run(
+        [sys.executable, "-c", child, str(db_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert process.returncode == 23, process.stderr
+
+    # A fresh application process opens the same durable database and runs
+    # its real FastAPI lifespan startup recovery.
+    store = TaskStore(db_path)
+    monkeypatch.setenv("CROWS_MESSAGING_WORKER_ENABLED", "false")
+    monkeypatch.setenv("CROWS_SCHEDULER_WORKER_ENABLED", "false")
+    monkeypatch.setattr(app_module, "store", store)
+    run_application_startup(monkeypatch, store)
+
+    tasks = store.list_tasks()
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["status"] == "unknown"
+    tools = store.list_tool_executions(task["id"])
+    assert len(tools) == 1
+    assert tools[0]["status"] == "unknown"
+
+    workflows = store.list_workflows()
+    assert len(workflows) == 1
+    assert workflows[0]["status"] == "unknown"
+    assert workflows[0]["results"]["tasks"][0]["status"] == "running"
