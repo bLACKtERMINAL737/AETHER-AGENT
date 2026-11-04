@@ -5,7 +5,6 @@ load Python, shell, prompt, or other executable content from skill directories.
 """
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import re
@@ -15,6 +14,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .file_lock import file_lock
 
 
 _SKILL_ID = re.compile(r"^[a-z][a-z0-9-]{1,62}$")
@@ -106,10 +107,9 @@ class SkillRegistry:
             0o600,
         )
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
+            with file_lock(fd):
+                yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
 
     def _skill_dir(self, skill_id: str) -> Path:
