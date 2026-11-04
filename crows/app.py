@@ -938,6 +938,14 @@ def reconcile_messaging_delivery(message_id: str, request: MessagingReconcileReq
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@app.get("/messaging/outbox/attention")
+def messaging_outbox_attention(limit: int = 50):
+    """List failed and uncertain outbound records without message content or secrets."""
+    if not 1 <= limit <= 100:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+    return {"messages": messaging_store.list_outbound_attention(limit=limit)}
+
+
 @app.get("/messaging/delivery/metrics")
 def messaging_delivery_metrics():
     """Return aggregate outbound delivery health without message content or secrets."""
