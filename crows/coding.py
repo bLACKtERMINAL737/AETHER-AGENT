@@ -109,7 +109,7 @@ class CodingEngine:
             # A same-volume hard link is atomic and fails if the destination
             # already exists; unlike a check-then-write it cannot overwrite a
             # concurrently-created file.
-            os.link(source, target, follow_symlinks=False)
+            os.link(source, target)
             try:
                 source.unlink()
             except OSError:
