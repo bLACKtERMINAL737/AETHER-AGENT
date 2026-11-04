@@ -123,9 +123,10 @@ def test_process_crash_is_reconciled_by_next_application_startup(
     child = """
 import os
 import sys
+from pathlib import Path
 from crows.store import TaskStore
 
-store = TaskStore(sys.argv[1])
+store = TaskStore(Path(sys.argv[1]))
 task = store.create_task("Interrupted specialist", "must not be replayed")
 assert store.claim_task(task["id"])
 store.begin_tool(task["id"], "external.write", {"value": "uncertain"})
