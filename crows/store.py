@@ -2,12 +2,13 @@ import json
 import os
 import re
 import sqlite3
-import fcntl
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from .file_lock import file_lock
 
 STATUSES = {"queued", "running", "succeeded", "failed", "unknown"}
 
@@ -28,25 +29,15 @@ class TaskStore:
     def coding_apply_lock(self, blocking: bool = True):
         """Coordinate coding apply and startup recovery across local OS processes.
 
-        The lock is released by the OS if a process exits or crashes. This lock
-        is intentionally local-filesystem/POSIX scoped, matching the local Mac
-        deployment; do not place the database on a network filesystem.
+        The lock is released by the OS if a process exits or crashes. This is
+        intended for local filesystems; do not place the database on a network
+        filesystem.
         """
         lock_path = self.db_path.with_name(self.db_path.name + ".coding-apply.lock")
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            flags = fcntl.LOCK_EX
-            if not blocking:
-                flags |= fcntl.LOCK_NB
-            try:
-                fcntl.flock(fd, flags)
-            except BlockingIOError:
-                yield False
-                return
-            try:
-                yield True
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+            with file_lock(fd, blocking=blocking) as acquired:
+                yield acquired
         finally:
             os.close(fd)
 
